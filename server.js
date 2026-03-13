@@ -11,6 +11,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
+const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
 
@@ -20,10 +21,67 @@ let overviewCache = {
   inFlight: null
 };
 
+let currentPort = PORT;
+let serverInstance = null;
+
 async function ensureData() {
   await fsp.mkdir(DATA_DIR, { recursive: true });
   await fsp.mkdir(LOG_DIR, { recursive: true });
   try { await fsp.access(TASKS_FILE); } catch { await fsp.writeFile(TASKS_FILE, '[]\n'); }
+}
+
+async function findAvailablePort(startPort, maxAttempts = 10) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i;
+    try {
+      await new Promise((resolve, reject) => {
+        const srv = http.createServer(() => {});
+        srv.on('error', reject);
+        srv.listen(port, () => {
+          srv.close(() => resolve());
+        });
+      });
+      return port;
+    } catch (err) {
+      if (err.code === 'EADDRINUSE') continue;
+      throw err;
+    }
+  }
+  throw new Error(`No available port found from ${startPort}`);
+}
+
+async function readRuntime() {
+  try {
+    const content = await fsp.readFile(RUNTIME_FILE, 'utf8');
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+async function writeRuntime(status) {
+  const data = {
+    pid: process.pid,
+    port: currentPort,
+    startedAt: Date.now(),
+    url: `http://127.0.0.1:${currentPort}`,
+    status
+  };
+  await fsp.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
+  return data;
+}
+
+async function updateRuntimeStatus(status) {
+  const runtime = await readRuntime();
+  const data = {
+    pid: runtime?.pid || process.pid,
+    port: runtime?.port || currentPort,
+    startedAt: runtime?.startedAt || Date.now(),
+    url: runtime?.url || `http://127.0.0.1:${currentPort}`,
+    status
+  };
+  await fsp.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
+  return data;
 }
 
 function runOpenClaw(args, timeout = 30000) {
@@ -350,6 +408,19 @@ async function requestHandler(req, res) {
         const force = parsed.query && (parsed.query.force === '1' || parsed.query.force === 'true');
         return json(res, 200, await buildOverview(force));
       }
+      if (req.method === 'GET' && pathname === '/api/runtime') {
+        const runtime = await readRuntime();
+        if (runtime) {
+          return json(res, 200, runtime);
+        }
+        return json(res, 200, {
+          pid: process.pid,
+          port: currentPort,
+          startedAt: null,
+          url: `http://127.0.0.1:${currentPort}`,
+          status: 'running'
+        });
+      }
       if (req.method === 'GET' && pathname === '/api/tasks') return json(res, 200, { tasks: await listTasks() });
       if (req.method === 'POST' && pathname === '/api/tasks') {
         const body = await readJson(req);
@@ -409,17 +480,36 @@ function readJson(req) {
   });
 }
 
-ensureData().then(() => {
-  const server = http.createServer(requestHandler);
-  server.on('error', (error) => {
-    if (error && error.code === 'EADDRINUSE') {
-      console.error(`Port ${PORT} already in use`);
-      process.exit(1);
+ensureData().then(async () => {
+  currentPort = await findAvailablePort(PORT);
+  if (currentPort !== PORT) {
+    console.log(`Port ${PORT} in use, auto-detected available port: ${currentPort}`);
+  }
+  
+  await writeRuntime('running');
+  console.log(`Runtime info written to ${RUNTIME_FILE}`);
+  
+  const cleanup = async (signal) => {
+    console.log(`Received ${signal}, updating runtime status...`);
+    await updateRuntimeStatus('stopped');
+    if (serverInstance) {
+      serverInstance.close(() => {
+        process.exit(0);
+      });
+    } else {
+      process.exit(0);
     }
+  };
+  
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  
+  serverInstance = http.createServer(requestHandler);
+  serverInstance.on('error', (error) => {
     console.error(error);
     process.exit(1);
   });
-  server.listen(PORT, () => {
-    console.log(`Agent Orchestra running at http://127.0.0.1:${PORT}`);
+  serverInstance.listen(currentPort, () => {
+    console.log(`Agent Orchestra running at http://127.0.0.1:${currentPort}`);
   });
 });

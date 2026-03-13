@@ -1,4 +1,4 @@
-const state = { overview: null, tasks: [], selectedTaskId: null };
+const state = { overview: null, tasks: [], selectedTaskId: null, runtime: null };
 
 const statsEl = document.getElementById('stats');
 const agentsGridEl = document.getElementById('agentsGrid');
@@ -24,12 +24,14 @@ async function fetchJson(url, options) {
 }
 
 async function refreshAll(force = false) {
-  const [overview, tasksRes] = await Promise.all([
+  const [overview, tasksRes, runtimeRes] = await Promise.all([
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
-    fetchJson('/api/tasks')
+    fetchJson('/api/tasks'),
+    fetchJson('/api/runtime').catch(() => null)
   ]);
   state.overview = overview;
   state.tasks = tasksRes.tasks;
+  state.runtime = runtimeRes;
   render();
   if (state.selectedTaskId) await loadTaskDetail(state.selectedTaskId);
 }
@@ -77,9 +79,16 @@ function renderAgents() {
 function renderSystemInfo() {
   const gateway = state.overview.gateway || {};
   const sec = state.overview.securityAudit || {};
+  const rt = state.runtime || {};
+  const startedAtLabel = rt.startedAt ? new Date(rt.startedAt).toLocaleString('zh-CN') : '—';
+  const statusLabel = rt.status === 'running' ? '运行中' : (rt.status === 'stopped' ? '已停止' : '未知');
   systemInfoEl.innerHTML = `
+    <div class="kv"><div class="muted">服务地址</div><div>${escapeHtml(rt.url || '—')}</div></div>
+    <div class="kv"><div class="muted">端口</div><div>${rt.port || '—'}</div></div>
+    <div class="kv"><div class="muted">PID</div><div>${rt.pid || '—'}</div></div>
+    <div class="kv"><div class="muted">启动时间</div><div>${startedAtLabel}</div></div>
+    <div class="kv"><div class="muted">运行状态</div><div>${statusLabel}</div></div>
     <div class="kv"><div class="muted">Gateway</div><div>${gateway.reachable ? '可达' : '不可达'}</div></div>
-    <div class="kv"><div class="muted">地址</div><div>${escapeHtml(gateway.url || '—')}</div></div>
     <div class="kv"><div class="muted">延迟</div><div>${gateway.connectLatencyMs ?? '—'} ms</div></div>
     <div class="kv"><div class="muted">高危告警</div><div>${sec.critical ?? 0}</div></div>
     <div class="kv"><div class="muted">警告</div><div>${sec.warn ?? 0}</div></div>
