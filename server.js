@@ -115,11 +115,54 @@ function runOpenClaw(args, timeout = 30000) {
 
 function cleanCliJson(text) {
   const cleaned = String(text || '').replace(/\u001b\[[0-9;]*m/g, '');
-  const firstBrace = cleaned.indexOf('{');
-  if (firstBrace !== -1) return cleaned.slice(firstBrace).trim();
-  const firstBracket = cleaned.indexOf('[');
-  if (firstBracket !== -1) return cleaned.slice(firstBracket).trim();
-  throw new Error('CLI 未返回可解析的 JSON');
+  const start = cleaned.search(/[\[{]/);
+  if (start === -1) throw new Error('CLI 未返回可解析的 JSON');
+
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') {
+      stack.push(ch);
+      continue;
+    }
+
+    if (ch === '}' || ch === ']') {
+      const expected = ch === '}' ? '{' : '[';
+      const actual = stack.pop();
+      if (actual !== expected) {
+        throw new Error('CLI 返回的 JSON 结构不完整');
+      }
+      if (stack.length === 0) {
+        return cleaned.slice(start, i + 1).trim();
+      }
+    }
+  }
+
+  throw new Error('CLI 返回的 JSON 结构不完整');
 }
 
 async function readTasks() {
