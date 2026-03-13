@@ -138,7 +138,9 @@ npm run status
 npm run restart
 ```
 
-该命令先执行 stop，再执行 start，实现服务重启。
+该命令先执行 stop，再以后台方式启动 server.js，并轮询 `runtime.json` / `pid` 文件确认服务已成功恢复后退出。
+
+若服务启动失败或超时未就绪，命令会以非零状态码退出并输出诊断信息。
 
 ### API
 
