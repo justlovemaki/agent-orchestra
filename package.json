@@ -5,6 +5,7 @@
   "description": "OpenClaw Agent 管理与调度面板 MVP",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "stop": "node stop.js"
   }
 }

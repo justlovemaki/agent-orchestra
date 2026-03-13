@@ -91,12 +91,29 @@ npm start
 服务启动后会生成运行时信息文件 `data/runtime.json`，包含以下字段：
 
 - `pid`：进程 PID
+- `pidFile`：PID 文件路径
 - `port`：实际监听端口
 - `startedAt`：启动时间（时间戳）
 - `url`：服务访问地址
 - `status`：运行状态（running/stopped）
 
-进程收到 `SIGTERM` 或 `SIGINT` 信号退出时，会自动将状态更新为 `stopped`。
+同时会写入独立 PID 文件：
+
+- `data/agent-orchestra.pid`
+
+进程收到 `SIGTERM` / `SIGINT`，或发生未捕获异常、未处理 Promise 拒绝时，会自动尝试：
+
+1. 将 `runtime.json` 的状态更新为 `stopped`
+2. 删除 PID 文件
+3. 关闭 HTTP 服务并退出
+
+### 停止服务
+
+```bash
+npm run stop
+```
+
+该命令会读取 `data/agent-orchestra.pid`，并向对应进程发送 `SIGTERM`。
 
 ### API
 
@@ -116,6 +133,8 @@ openclaw agent --agent <agentId> --message "..." --json
 
 - 任务日志：`data/task-logs/<taskId>.log`
 - 任务元数据：`data/tasks.json`
+
+这些文件都属于**本地运行时产物**，默认不再纳入 Git 版本控制。
 
 ---
 

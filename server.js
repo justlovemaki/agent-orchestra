@@ -12,6 +12,7 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
+const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
 
@@ -28,6 +29,18 @@ async function ensureData() {
   await fsp.mkdir(DATA_DIR, { recursive: true });
   await fsp.mkdir(LOG_DIR, { recursive: true });
   try { await fsp.access(TASKS_FILE); } catch { await fsp.writeFile(TASKS_FILE, '[]\n'); }
+}
+
+async function writePidFile(pid = process.pid) {
+  await fsp.writeFile(PID_FILE, `${pid}\n`);
+}
+
+async function removePidFile() {
+  try {
+    await fsp.unlink(PID_FILE);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
 }
 
 async function findAvailablePort(startPort, maxAttempts = 10) {
@@ -62,6 +75,7 @@ async function readRuntime() {
 async function writeRuntime(status) {
   const data = {
     pid: process.pid,
+    pidFile: path.relative(ROOT, PID_FILE),
     port: currentPort,
     startedAt: Date.now(),
     url: `http://127.0.0.1:${currentPort}`,
@@ -75,6 +89,7 @@ async function updateRuntimeStatus(status) {
   const runtime = await readRuntime();
   const data = {
     pid: runtime?.pid || process.pid,
+    pidFile: runtime?.pidFile || path.relative(ROOT, PID_FILE),
     port: runtime?.port || currentPort,
     startedAt: runtime?.startedAt || Date.now(),
     url: runtime?.url || `http://127.0.0.1:${currentPort}`,
@@ -415,6 +430,7 @@ async function requestHandler(req, res) {
         }
         return json(res, 200, {
           pid: process.pid,
+          pidFile: path.relative(ROOT, PID_FILE),
           port: currentPort,
           startedAt: null,
           url: `http://127.0.0.1:${currentPort}`,
@@ -485,31 +501,55 @@ ensureData().then(async () => {
   if (currentPort !== PORT) {
     console.log(`Port ${PORT} in use, auto-detected available port: ${currentPort}`);
   }
-  
+
+  await writePidFile();
   await writeRuntime('running');
+  console.log(`PID file written to ${PID_FILE}`);
   console.log(`Runtime info written to ${RUNTIME_FILE}`);
-  
-  const cleanup = async (signal) => {
+
+  let cleaningUp = false;
+  const cleanup = async (signal, exitCode = 0) => {
+    if (cleaningUp) return;
+    cleaningUp = true;
     console.log(`Received ${signal}, updating runtime status...`);
-    await updateRuntimeStatus('stopped');
-    if (serverInstance) {
-      serverInstance.close(() => {
-        process.exit(0);
-      });
-    } else {
-      process.exit(0);
+    try {
+      await updateRuntimeStatus('stopped');
+    } finally {
+      await removePidFile();
+      if (serverInstance) {
+        serverInstance.close(() => {
+          process.exit(exitCode);
+        });
+      } else {
+        process.exit(exitCode);
+      }
     }
   };
-  
+
   process.on('SIGTERM', () => cleanup('SIGTERM'));
   process.on('SIGINT', () => cleanup('SIGINT'));
-  
-  serverInstance = http.createServer(requestHandler);
-  serverInstance.on('error', (error) => {
+  process.on('uncaughtException', async (error) => {
     console.error(error);
-    process.exit(1);
+    await cleanup('uncaughtException', 1);
+  });
+  process.on('unhandledRejection', async (error) => {
+    console.error(error);
+    await cleanup('unhandledRejection', 1);
+  });
+
+  serverInstance = http.createServer(requestHandler);
+  serverInstance.on('error', async (error) => {
+    console.error(error);
+    await cleanup('server error', 1);
   });
   serverInstance.listen(currentPort, () => {
     console.log(`Agent Orchestra running at http://127.0.0.1:${currentPort}`);
   });
+}).catch(async (error) => {
+  console.error(error);
+  try {
+    await updateRuntimeStatus('stopped');
+    await removePidFile();
+  } catch {}
+  process.exit(1);
 });

@@ -1,1 +1,4 @@
 data/runtime.json
+data/agent-orchestra.pid
+data/tasks.json
+data/task-logs/
