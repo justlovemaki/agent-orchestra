@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
+const http = require('http');
 
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
@@ -9,6 +10,7 @@ const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 
 const MAX_POLL_ATTEMPTS = 30;
 const POLL_INTERVAL_MS = 500;
+const HEALTH_TIMEOUT_MS = 1500;
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -46,13 +48,52 @@ function isProcessRunning(pid) {
   }
 }
 
+async function probeHealth(url) {
+  if (!url) return { ok: false, error: 'missing url' };
+
+  return new Promise(resolve => {
+    const req = http.get(`${url}/api/health`, { timeout: HEALTH_TIMEOUT_MS }, res => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          resolve({
+            ok: res.statusCode === 200 && data?.ok === true,
+            statusCode: res.statusCode,
+            data
+          });
+        } catch (error) {
+          resolve({ ok: false, statusCode: res.statusCode, error: error.message, body });
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error('health check timeout'));
+    });
+
+    req.on('error', error => {
+      resolve({ ok: false, error: error.message });
+    });
+  });
+}
+
 async function waitForServiceReady() {
   for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
     const pid = await readPid();
     const runtime = await readRuntime();
+    const health = await probeHealth(runtime?.url);
 
-    if (pid && isProcessRunning(pid) && runtime?.status === 'running') {
-      return { success: true, pid, port: runtime.port, url: runtime.url };
+    if (pid && isProcessRunning(pid) && runtime?.status === 'running' && health.ok) {
+      return {
+        success: true,
+        pid,
+        port: runtime.port,
+        url: runtime.url,
+        health: health.data
+      };
     }
 
     if (attempt < MAX_POLL_ATTEMPTS) {
@@ -62,7 +103,8 @@ async function waitForServiceReady() {
 
   const pid = await readPid();
   const runtime = await readRuntime();
-  return { success: false, pid, runtime };
+  const health = await probeHealth(runtime?.url);
+  return { success: false, pid, runtime, health };
 }
 
 (async () => {
@@ -101,15 +143,17 @@ async function waitForServiceReady() {
   const result = await waitForServiceReady();
 
   if (result.success) {
-    console.log(`Agent Orchestra started successfully.`);
+    console.log('Agent Orchestra started successfully.');
     console.log(`PID: ${result.pid}`);
     console.log(`Port: ${result.port}`);
     console.log(`URL: ${result.url}`);
+    console.log('Health: ok');
     process.exit(0);
   } else {
     console.error('Failed to confirm service started.');
     if (result.pid) console.error(`PID file exists: ${result.pid}`);
     if (result.runtime) console.error(`Runtime: ${JSON.stringify(result.runtime)}`);
+    if (result.health) console.error(`Health probe: ${JSON.stringify(result.health)}`);
     process.exit(1);
   }
 })();

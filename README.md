@@ -124,13 +124,14 @@ npm run status
 ```
 
 该命令显示：
-- 当前运行状态（running/stopped）
+- 当前运行状态（healthy/degraded/stopped）
 - PID
 - 监听端口
 - 服务地址
 - 启动时间与运行时长
+- 健康检查接口是否可访问
 
-若检测到异常状态（如 PID 文件存在但进程已退出），会输出警告信息。
+若检测到异常状态（如 PID 文件存在但进程已退出，或 runtime 显示 running 但 `/api/health` 无法访问），会输出警告信息。
 
 ### 重启服务
 
@@ -138,13 +139,14 @@ npm run status
 npm run restart
 ```
 
-该命令先执行 stop，再以后台方式启动 server.js，并轮询 `runtime.json` / `pid` 文件确认服务已成功恢复后退出。
+该命令先执行 stop，再以后台方式启动 server.js，并优先通过 `/api/health` 探活确认服务已真正恢复；`runtime.json` / `pid` 文件仅作为辅助判断。
 
-若服务启动失败或超时未就绪，命令会以非零状态码退出并输出诊断信息。
+若服务启动失败、健康检查超时未通过，或仅有 PID / runtime 元数据但服务不可访问，命令会以非零状态码退出并输出诊断信息。
 
 ### API
 
 - `GET /api/runtime`：获取当前运行时信息
+- `GET /api/health`：轻量健康检查接口，返回 `ok`、`pid`、`port`、`startedAt`、`uptime`、`status`
 
 ---
 

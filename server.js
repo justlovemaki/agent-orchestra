@@ -559,6 +559,19 @@ async function requestHandler(req, res) {
           status: 'running'
         });
       }
+      if (req.method === 'GET' && pathname === '/api/health') {
+        const runtime = await readRuntime();
+        const startedAt = runtime?.startedAt || process.uptime() * 1000;
+        const uptime = Date.now() - startedAt;
+        return json(res, 200, {
+          ok: true,
+          pid: process.pid,
+          port: currentPort,
+          startedAt,
+          uptime,
+          status: 'healthy'
+        });
+      }
       if (req.method === 'GET' && pathname === '/api/tasks') return json(res, 200, { tasks: await listTasks() });
       if (req.method === 'POST' && pathname === '/api/tasks') {
         const body = await readJson(req);
