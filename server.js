@@ -43,6 +43,74 @@ async function removePidFile() {
   }
 }
 
+async function readPidFile() {
+  try {
+    const text = await fsp.readFile(PID_FILE, 'utf8');
+    const pid = Number.parseInt(text.trim(), 10);
+    return Number.isInteger(pid) ? pid : null;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function isPidRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'EPERM') return true;
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+async function markRuntimeStopped(reason, runtime = null) {
+  const current = runtime || await readRuntime();
+  const port = current?.port || currentPort;
+  const data = {
+    pid: current?.pid || null,
+    pidFile: current?.pidFile || path.relative(ROOT, PID_FILE),
+    port,
+    startedAt: current?.startedAt || null,
+    url: current?.url || `http://127.0.0.1:${port}`,
+    status: 'stopped',
+    stoppedAt: Date.now(),
+    stopReason: reason || 'unknown'
+  };
+  await fsp.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
+  return data;
+}
+
+async function cleanupStaleRuntime(reason) {
+  const runtime = await readRuntime();
+  await removePidFile();
+  return markRuntimeStopped(reason, runtime);
+}
+
+async function ensureSingleInstance() {
+  const pid = await readPidFile();
+  const runtime = await readRuntime();
+
+  if (pid && isPidRunning(pid)) {
+    const runningUrl = runtime?.url || `http://127.0.0.1:${runtime?.port || PORT}`;
+    throw new Error(`Agent Orchestra is already running (pid: ${pid}) at ${runningUrl}`);
+  }
+
+  if (pid || runtime?.status === 'running') {
+    const reasons = [];
+    if (pid && !isPidRunning(pid)) reasons.push(`stale pid ${pid}`);
+    if (runtime?.status === 'running') reasons.push('stale runtime status');
+    const reason = reasons.length ? reasons.join(', ') : 'stale runtime metadata';
+    const cleaned = await cleanupStaleRuntime(reason);
+    console.log(`Cleaned stale runtime metadata: ${reason}.`);
+    if (cleaned?.url) {
+      console.log(`Last known URL: ${cleaned.url}`);
+    }
+  }
+}
+
 async function findAvailablePort(startPort, maxAttempts = 10) {
   for (let i = 0; i < maxAttempts; i++) {
     const port = startPort + i;
@@ -73,28 +141,39 @@ async function readRuntime() {
 }
 
 async function writeRuntime(status) {
+  const now = Date.now();
   const data = {
     pid: process.pid,
     pidFile: path.relative(ROOT, PID_FILE),
     port: currentPort,
-    startedAt: Date.now(),
+    startedAt: now,
+    updatedAt: now,
     url: `http://127.0.0.1:${currentPort}`,
     status
   };
+  if (status === 'stopped') {
+    data.stoppedAt = now;
+  }
   await fsp.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
   return data;
 }
 
-async function updateRuntimeStatus(status) {
+async function updateRuntimeStatus(status, extra = {}) {
   const runtime = await readRuntime();
+  const now = Date.now();
   const data = {
     pid: runtime?.pid || process.pid,
     pidFile: runtime?.pidFile || path.relative(ROOT, PID_FILE),
     port: runtime?.port || currentPort,
-    startedAt: runtime?.startedAt || Date.now(),
+    startedAt: runtime?.startedAt || now,
+    updatedAt: now,
     url: runtime?.url || `http://127.0.0.1:${currentPort}`,
-    status
+    status,
+    ...extra
   };
+  if (status === 'stopped' && !data.stoppedAt) {
+    data.stoppedAt = now;
+  }
   await fsp.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
   return data;
 }
@@ -540,6 +619,8 @@ function readJson(req) {
 }
 
 ensureData().then(async () => {
+  await ensureSingleInstance();
+
   currentPort = await findAvailablePort(PORT);
   if (currentPort !== PORT) {
     console.log(`Port ${PORT} in use, auto-detected available port: ${currentPort}`);

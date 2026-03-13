@@ -6,6 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "stop": "node stop.js"
+    "stop": "node stop.js",
+    "status": "node status.js",
+    "restart": "node restart.js"
   }
 }

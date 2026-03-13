@@ -26,26 +26,77 @@ async function readRuntime() {
   }
 }
 
+function isProcessRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'EPERM') return true;
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+async function removePidFile() {
+  try {
+    await fs.unlink(PID_FILE);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+async function updateRuntimeStopped(runtime) {
+  const port = runtime?.port || 3210;
+  const data = {
+    pid: runtime?.pid || null,
+    pidFile: runtime?.pidFile || 'data/agent-orchestra.pid',
+    port,
+    startedAt: runtime?.startedAt || null,
+    url: runtime?.url || `http://127.0.0.1:${port}`,
+    status: 'stopped',
+    stoppedAt: Date.now(),
+    stopReason: 'manual stop'
+  };
+  await fs.writeFile(RUNTIME_FILE, JSON.stringify(data, null, 2) + '\n');
+}
+
 (async () => {
   const pid = await readPid();
   const runtime = await readRuntime();
 
-  if (!pid) {
-    console.log('Agent Orchestra is not running (no PID file found).');
+  if (!pid && !runtime) {
+    console.log('Agent Orchestra is not running (no PID file or runtime info found).');
     process.exit(0);
   }
 
-  try {
-    process.kill(pid, 'SIGTERM');
-    console.log(`Sent SIGTERM to Agent Orchestra (pid: ${pid}).`);
-    if (runtime?.url) {
-      console.log(`Last known URL: ${runtime.url}`);
+  if (pid && isProcessRunning(pid)) {
+    try {
+      process.kill(pid, 'SIGTERM');
+      console.log(`Sent SIGTERM to Agent Orchestra (pid: ${pid}).`);
+      if (runtime?.url) {
+        console.log(`Last known URL: ${runtime.url}`);
+      }
+    } catch (error) {
+      if (error.code === 'ESRCH') {
+        console.log(`Process ${pid} is not running; cleaning up stale PID...`);
+        await removePidFile();
+        if (runtime) {
+          await updateRuntimeStopped(runtime);
+          console.log('Runtime status updated to stopped.');
+        }
+        process.exit(0);
+      }
+      throw error;
     }
-  } catch (error) {
-    if (error.code === 'ESRCH') {
-      console.log(`Process ${pid} is not running; PID file is stale.`);
-      process.exit(0);
+  } else {
+    console.log(`PID ${pid || 'file'} is stale, cleaning up...`);
+    await removePidFile();
+    if (runtime) {
+      await updateRuntimeStopped(runtime);
+      console.log('Runtime status updated to stopped.');
     }
-    throw error;
+    console.log('Cleanup complete.');
+    process.exit(0);
   }
 })();

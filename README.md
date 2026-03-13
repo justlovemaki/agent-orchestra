@@ -115,6 +115,31 @@ npm run stop
 
 该命令会读取 `data/agent-orchestra.pid`，并向对应进程发送 `SIGTERM`。
 
+若检测到 stale PID（进程已退出但 PID 文件仍存在），会自动清理 PID 文件并同步 runtime 状态为 `stopped`。
+
+### 查看服务状态
+
+```bash
+npm run status
+```
+
+该命令显示：
+- 当前运行状态（running/stopped）
+- PID
+- 监听端口
+- 服务地址
+- 启动时间与运行时长
+
+若检测到异常状态（如 PID 文件存在但进程已退出），会输出警告信息。
+
+### 重启服务
+
+```bash
+npm run restart
+```
+
+该命令先执行 stop，再执行 start，实现服务重启。
+
 ### API
 
 - `GET /api/runtime`：获取当前运行时信息
