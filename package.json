@@ -1,0 +1,10 @@
+{
+  "name": "agent-orchestra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw Agent 管理与调度面板 MVP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

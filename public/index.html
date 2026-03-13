@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Orchestra</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="hero panel">
+      <div class="hero-copy">
+        <div class="eyebrow">OpenClaw · Agent Command</div>
+        <h1>Agent Orchestra</h1>
+        <p class="muted hero-text">用更清晰的方式查看 Agent 状态、派发任务、跟踪执行与回看日志。</p>
+      </div>
+      <div class="hero-actions actions">
+        <button id="refreshBtn" class="ghost">刷新数据</button>
+        <span id="lastUpdated" class="muted small"></span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="content-column">
+        <section id="stats" class="stats"></section>
+
+        <section class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Agents</div>
+              <h2>Agent 总览</h2>
+            </div>
+            <span class="muted small">快速查看可用性、模型与最近活跃情况</span>
+          </div>
+          <div id="agentsGrid" class="agents-grid"></div>
+        </section>
+
+        <section class="grid two">
+          <div class="panel section-panel">
+            <div class="panel-head panel-head-tight">
+              <div>
+                <div class="section-kicker">System</div>
+                <h2>系统状态</h2>
+              </div>
+            </div>
+            <div id="systemInfo" class="system-info"></div>
+          </div>
+
+          <div class="panel section-panel tone-soft">
+            <div class="panel-head panel-head-tight">
+              <div>
+                <div class="section-kicker">Guide</div>
+                <h2>使用建议</h2>
+              </div>
+            </div>
+            <ul class="tip-list muted">
+              <li>短任务优先单 Agent 派发，便于快速定位结果。</li>
+              <li>多 Agent 协作时，再选择并行执行或广播模式。</li>
+              <li>执行失败先看日志，再决定重试还是重写任务描述。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Board</div>
+              <h2>任务看板</h2>
+            </div>
+            <span class="muted small">点击任务卡片查看详情与执行日志</span>
+          </div>
+          <div id="taskBoard" class="task-board"></div>
+        </section>
+      </section>
+
+      <aside class="side-column">
+        <section class="panel side-card composer-card">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Create</div>
+              <h2>新建任务</h2>
+            </div>
+          </div>
+
+          <form id="taskForm" class="task-form">
+            <label>
+              <span class="field-label">任务标题</span>
+              <input name="title" placeholder="例如：整理今天的社媒选题" required />
+            </label>
+
+            <div class="split-fields">
+              <label>
+                <span class="field-label">优先级</span>
+                <select name="priority">
+                  <option value="low">低</option>
+                  <option value="medium" selected>中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
+
+              <label>
+                <span class="field-label">执行模式</span>
+                <select name="mode">
+                  <option value="broadcast" selected>串行广播</option>
+                  <option value="parallel">并行执行</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span class="field-label">任务内容</span>
+              <textarea name="prompt" rows="8" placeholder="写下你希望 Agent 执行的内容…" required></textarea>
+            </label>
+
+            <div class="field-group">
+              <div class="field-label">选择 Agent</div>
+              <div id="agentCheckboxes" class="checkbox-list"></div>
+            </div>
+
+            <button type="submit">派发任务</button>
+            <div id="formMsg" class="form-msg"></div>
+          </form>
+        </section>
+
+        <section class="panel side-card detail-card-shell">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Detail</div>
+              <h2>任务详情</h2>
+            </div>
+          </div>
+
+          <div id="logEmpty" class="empty-state muted">选择一个任务后，这里会显示详情、操作按钮与执行日志。</div>
+          <div id="detailBody" class="hidden">
+            <div id="taskMeta" class="task-meta"></div>
+            <div class="detail-actions">
+              <button id="retryBtn" class="ghost">重试任务</button>
+              <button id="cancelBtn" class="danger">取消任务</button>
+            </div>
+            <div class="panel-subtitle">执行日志</div>
+            <pre id="logBox" class="log-box"></pre>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
