@@ -8,6 +8,8 @@
     "start": "node server.js",
     "stop": "node stop.js",
     "status": "node status.js",
-    "restart": "node restart.js"
+    "restart": "node restart.js",
+    "verify": "node scripts/verify.js",
+    "test": "node scripts/verify.js"
   }
 }

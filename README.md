@@ -143,6 +143,18 @@ npm run restart
 
 若服务启动失败、健康检查超时未通过，或仅有 PID / runtime 元数据但服务不可访问，命令会以非零状态码退出并输出诊断信息。
 
+### 验证服务
+
+```bash
+npm run verify
+```
+
+该脚本执行以下自动化测试：
+- Runtime 状态读取（readRuntime / readPid / isPidRunning）
+- 健康接口 `/api/health` 可访问性
+- Runtime 接口 `/api/runtime` 结构验证
+- CLI JSON 提取逻辑 (cleanCliJson) 单元测试
+
 ### API
 
 - `GET /api/runtime`：获取当前运行时信息

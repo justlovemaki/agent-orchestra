@@ -1,83 +1,13 @@
 const { spawn } = require('child_process');
-const fs = require('fs').promises;
 const path = require('path');
-const http = require('http');
+const { readPid, readRuntime, isPidRunning, probeHealth } = require('./lib/runtime-utils');
 
-const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
-const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
-const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
-
+const ROOT = require('./lib/runtime-utils').ROOT;
 const MAX_POLL_ATTEMPTS = 30;
 const POLL_INTERVAL_MS = 500;
-const HEALTH_TIMEOUT_MS = 1500;
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function readPid() {
-  try {
-    const text = await fs.readFile(PID_FILE, 'utf8');
-    const pid = Number.parseInt(text.trim(), 10);
-    return Number.isInteger(pid) ? pid : null;
-  } catch (error) {
-    if (error.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function readRuntime() {
-  try {
-    const text = await fs.readFile(RUNTIME_FILE, 'utf8');
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-function isProcessRunning(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error.code === 'EPERM') return true;
-    if (error.code === 'ESRCH') return false;
-    throw error;
-  }
-}
-
-async function probeHealth(url) {
-  if (!url) return { ok: false, error: 'missing url' };
-
-  return new Promise(resolve => {
-    const req = http.get(`${url}/api/health`, { timeout: HEALTH_TIMEOUT_MS }, res => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          resolve({
-            ok: res.statusCode === 200 && data?.ok === true,
-            statusCode: res.statusCode,
-            data
-          });
-        } catch (error) {
-          resolve({ ok: false, statusCode: res.statusCode, error: error.message, body });
-        }
-      });
-    });
-
-    req.on('timeout', () => {
-      req.destroy(new Error('health check timeout'));
-    });
-
-    req.on('error', error => {
-      resolve({ ok: false, error: error.message });
-    });
-  });
 }
 
 async function waitForServiceReady() {
@@ -86,7 +16,7 @@ async function waitForServiceReady() {
     const runtime = await readRuntime();
     const health = await probeHealth(runtime?.url);
 
-    if (pid && isProcessRunning(pid) && runtime?.status === 'running' && health.ok) {
+    if (pid && isPidRunning(pid) && runtime?.status === 'running' && health.ok) {
       return {
         success: true,
         pid,
