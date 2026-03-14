@@ -115,6 +115,10 @@ npm run stop
 
 该命令会读取 `data/agent-orchestra.pid`，并向对应进程发送 `SIGTERM`。
 
+若进程在 5 秒内未退出，将升级为 `SIGKILL` 强制终止，并等待进程真正退出：
+- 若强制终止成功，返回成功并标记 `forced: true`
+- 若强制终止仍失败，返回失败并保留真实运行状态（`success: false`，`stillRunning: true`），不会伪造为已停止
+
 若检测到 stale PID（进程已退出但 PID 文件仍存在），会自动清理 PID 文件并同步 runtime 状态为 `stopped`。
 
 如需机器可读输出，可使用：
@@ -129,6 +133,9 @@ node stop.js --json
 - `pid`
 - `url`
 - `message`
+
+成功强制终止时额外包含：
+- `forced: true`
 
 ### 查看服务状态
 

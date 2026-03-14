@@ -56,13 +56,21 @@ async function waitForServiceReady() {
     output({ message: 'Stopping Agent Orchestra...' });
   }
 
-  const stopProcess = spawn(process.execPath, [path.join(ROOT, 'stop.js')], {
+  const stopArgs = [path.join(ROOT, 'stop.js'), '--json'];
+  const stopProcess = spawn(process.execPath, stopArgs, {
     cwd: ROOT,
-    stdio: jsonMode ? ['ignore', 'ignore', 'pipe'] : 'inherit'
+    stdio: ['ignore', 'pipe', 'pipe']
   });
 
+  let stopStdout = '';
   let stopStderr = '';
-  if (jsonMode && stopProcess.stderr) {
+  if (stopProcess.stdout) {
+    stopProcess.stdout.setEncoding('utf8');
+    stopProcess.stdout.on('data', chunk => {
+      stopStdout += chunk;
+    });
+  }
+  if (stopProcess.stderr) {
     stopProcess.stderr.setEncoding('utf8');
     stopProcess.stderr.on('data', chunk => {
       stopStderr += chunk;
@@ -71,11 +79,33 @@ async function waitForServiceReady() {
 
   await new Promise((resolve, reject) => {
     stopProcess.on('close', code => {
-      if (code === 0 || code === 1) {
-        resolve();
-      } else {
-        reject(new Error(`stop.js exited with code ${code}${stopStderr ? `: ${stopStderr.trim()}` : ''}`));
+      let parsed = null;
+      try {
+        parsed = stopStdout.trim() ? JSON.parse(stopStdout) : null;
+      } catch {}
+
+      if (code === 0) {
+        if (parsed && parsed.success === true && parsed.stopped === true) {
+          resolve();
+          return;
+        }
+        reject(new Error(`stop.js returned code 0 but invalid payload${stopStdout ? `: ${stopStdout.trim()}` : ''}`));
+        return;
       }
+
+      if (code === 1) {
+        if (parsed && (parsed.forceFailed === true || parsed.success === false)) {
+          const errorMsg = parsed.stillRunning === true
+            ? 'stop.js failed: process still running after SIGTERM+SIGKILL'
+            : (parsed.message || 'stop.js failed');
+          reject(new Error(errorMsg));
+          return;
+        }
+        reject(new Error(`stop.js exited with code ${code}${stopStdout ? `: ${stopStdout.trim()}` : stopStderr ? `: ${stopStderr.trim()}` : ''}`));
+        return;
+      }
+
+      reject(new Error(`stop.js exited with code ${code}${stopStdout ? `: ${stopStdout.trim()}` : stopStderr ? `: ${stopStderr.trim()}` : ''}`));
     });
     stopProcess.on('error', reject);
   });

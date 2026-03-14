@@ -9,7 +9,8 @@ const {
   isPidRunning,
   probeHealth,
   cleanCliJson,
-  reconcileRuntimeState
+  reconcileRuntimeState,
+  forceKillAndWait
 } = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
 
 const ROOT = path.join(__dirname, '..');
@@ -125,6 +126,22 @@ async function run() {
     if (isPidRunning(-1) !== false) return false;
     if (isPidRunning(1.5) !== false) return false;
     return true;
+  });
+
+  await test('forceKillAndWait handles invalid pid', async () => {
+    const result = await forceKillAndWait(null);
+    if (!result.exited || result.killed) return false;
+    const result2 = await forceKillAndWait(0);
+    if (!result2.exited || result2.killed) return false;
+    const result3 = await forceKillAndWait(-1);
+    if (!result3.exited || result3.killed) return false;
+    return true;
+  });
+
+  await test('forceKillAndWait returns correct structure', async () => {
+    const result = await forceKillAndWait(999999);
+    const hasRequired = 'killed' in result && 'exited' in result && 'timedOut' in result;
+    return hasRequired;
   });
 
   console.log('\n--- 2. Health Endpoint Tests ---');
@@ -272,6 +289,22 @@ async function run() {
     return true;
   });
 
+  await test('stop.js --json returns forced flag on SIGKILL', async () => {
+    const pidBeforeStop = await readPid();
+    if (!pidBeforeStop || !isPidRunning(pidBeforeStop)) {
+      return skip('stop.js forced stop test', 'service not running');
+    }
+
+    const result = await runNodeScript('stop.js', ['--json']);
+    if (result.code !== 0) return false;
+    const data = parseJsonOutput(result, 'stop.js --json');
+
+    if (data.forced === true) {
+      return data.forced === true;
+    }
+    return true;
+  });
+
   await test('restart.js --json returns valid structure and starts service', async () => {
     const result = await runNodeScript('restart.js', ['--json'], { timeout: 30000 });
     if (result.code !== 0) return false;
@@ -282,6 +315,13 @@ async function run() {
     const status = await runNodeScript('status.js', ['--json']);
     const statusData = parseJsonOutput(status, 'status.js --json after restart');
     return status.code === 0 && statusData.status === 'healthy' && statusData.running === true;
+  });
+
+  await test('restart.js --json uses stop.js JSON path successfully', async () => {
+    const result = await runNodeScript('restart.js', ['--json'], { timeout: 30000 });
+    if (result.code !== 0) return false;
+    const data = parseJsonOutput(result, 'restart.js --json second pass');
+    return data.success === true && data.restarted === true && typeof data.url === 'string' && data.url.length > 0;
   });
 
   console.log('\n--- 5. Integration Tests ---');

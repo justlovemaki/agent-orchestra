@@ -5,6 +5,7 @@ const {
   removePidFile,
   updateRuntimeStatus,
   waitForPidExit,
+  forceKillAndWait,
   STOP_WAIT_TIMEOUT_MS
 } = require('./lib/runtime-utils');
 
@@ -51,19 +52,42 @@ function output(result) {
         });
         process.exit(0);
       } else {
-        await removePidFile();
-        if (runtime) {
-          await updateRuntimeStatus('stopped', { stopReason: 'force stop after timeout' });
+        const killResult = await forceKillAndWait(pid);
+        
+        if (killResult.exited) {
+          await removePidFile();
+          if (runtime) {
+            await updateRuntimeStatus('stopped', { stopReason: 'force stop (SIGKILL)' });
+          }
+          output({
+            success: true,
+            stopped: true,
+            pid,
+            url: runtime?.url || null,
+            forced: true,
+            message: `Agent Orchestra stopped forcefully (SIGKILL after SIGTERM timeout) (pid: ${pid}).`
+          });
+          process.exit(0);
+        } else {
+          const stillRunning = isPidRunning(pid);
+          if (runtime) {
+            await updateRuntimeStatus(stillRunning ? 'running' : 'stopped', {
+              stopReason: 'force stop failed',
+              forceStopFailed: true,
+              stillRunning
+            });
+          }
+          output({
+            success: false,
+            stopped: false,
+            pid,
+            url: runtime?.url || null,
+            forceFailed: true,
+            stillRunning,
+            message: `Failed to stop Agent Orchestra (pid: ${pid}): SIGTERM timed out, then SIGKILL also failed to terminate the process.`
+          });
+          process.exit(1);
         }
-        output({
-          success: true,
-          stopped: true,
-          pid,
-          url: runtime?.url || null,
-          timedOut: true,
-          message: `Sent SIGTERM to Agent Orchestra (pid: ${pid}), but process did not exit after ${STOP_WAIT_TIMEOUT_MS}ms. PID file cleaned, runtime marked as stopped.`
-        });
-        process.exit(0);
       }
     } catch (error) {
       if (error.code === 'ESRCH') {
