@@ -72,6 +72,36 @@
             </div>
             <span class="muted small">点击任务卡片查看详情与执行日志</span>
           </div>
+          <div id="taskFilterBar" class="filter-bar">
+            <input type="text" id="filterKeyword" class="filter-input" placeholder="搜索关键词..." />
+            <select id="filterStatus" class="filter-select">
+              <option value="">全部状态</option>
+              <option value="queued">待执行</option>
+              <option value="running">执行中</option>
+              <option value="completed">已完成</option>
+              <option value="failed">失败</option>
+              <option value="canceled">已取消</option>
+            </select>
+            <select id="filterAgent" class="filter-select">
+              <option value="">全部 Agent</option>
+            </select>
+            <select id="filterPriority" class="filter-select">
+              <option value="">全部优先级</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+            <select id="filterMode" class="filter-select">
+              <option value="">全部模式</option>
+              <option value="broadcast">串行广播</option>
+              <option value="parallel">并行执行</option>
+            </select>
+            <input type="datetime-local" id="filterTimeFrom" class="filter-input filter-time" placeholder="从..." />
+            <input type="datetime-local" id="filterTimeTo" class="filter-input filter-time" placeholder="到..." />
+            <button id="applyFilterBtn" class="filter-btn">筛选</button>
+            <button id="clearFilterBtn" class="filter-btn filter-btn-ghost">清除</button>
+            <span id="filterResultCount" class="muted small"></span>
+          </div>
           <div id="taskBoard" class="task-board"></div>
         </section>
       </section>

@@ -5,6 +5,7 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const url = require('url');
 const crypto = require('crypto');
+const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -420,9 +421,11 @@ function summarizeTasks(tasks) {
   }, { total: 0, queued: 0, running: 0, completed: 0, failed: 0, canceled: 0 });
 }
 
-async function listTasks() {
+async function listTasks(filters = {}) {
   const tasks = await readTasks();
-  return tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(formatTaskForUi);
+  return filterTasks(tasks, filters)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .map(formatTaskForUi);
 }
 
 async function launchTaskRunner(task) {
@@ -572,7 +575,10 @@ async function requestHandler(req, res) {
           status: 'healthy'
         });
       }
-      if (req.method === 'GET' && pathname === '/api/tasks') return json(res, 200, { tasks: await listTasks() });
+      if (req.method === 'GET' && pathname === '/api/tasks') {
+        const filters = parseTaskFilters(parsed.query || {});
+        return json(res, 200, { tasks: await listTasks(filters) });
+      }
       if (req.method === 'POST' && pathname === '/api/tasks') {
         const body = await readJson(req);
         return json(res, 201, { task: await createTask(body) });

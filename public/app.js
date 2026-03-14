@@ -1,4 +1,10 @@
-const state = { overview: null, tasks: [], selectedTaskId: null, runtime: null };
+const state = {
+  overview: null,
+  tasks: [],
+  selectedTaskId: null,
+  runtime: null,
+  filters: {}
+};
 
 const statsEl = document.getElementById('stats');
 const agentsGridEl = document.getElementById('agentsGrid');
@@ -15,6 +21,16 @@ const taskMetaEl = document.getElementById('taskMeta');
 const logBoxEl = document.getElementById('logBox');
 const retryBtn = document.getElementById('retryBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+const filterKeywordEl = document.getElementById('filterKeyword');
+const filterStatusEl = document.getElementById('filterStatus');
+const filterAgentEl = document.getElementById('filterAgent');
+const filterPriorityEl = document.getElementById('filterPriority');
+const filterModeEl = document.getElementById('filterMode');
+const filterTimeFromEl = document.getElementById('filterTimeFrom');
+const filterTimeToEl = document.getElementById('filterTimeTo');
+const applyFilterBtn = document.getElementById('applyFilterBtn');
+const clearFilterBtn = document.getElementById('clearFilterBtn');
+const filterResultCountEl = document.getElementById('filterResultCount');
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -23,17 +39,63 @@ async function fetchJson(url, options) {
   return data;
 }
 
+function getFilters() {
+  const filters = {};
+  const keyword = filterKeywordEl.value.trim();
+  const status = filterStatusEl.value;
+  const agent = filterAgentEl.value;
+  const priority = filterPriorityEl.value;
+  const mode = filterModeEl.value;
+  const timeFrom = filterTimeFromEl.value;
+  const timeTo = filterTimeToEl.value;
+
+  if (keyword) filters.keyword = keyword;
+  if (status) filters.status = status;
+  if (agent) filters.agent = agent;
+  if (priority) filters.priority = priority;
+  if (mode) filters.mode = mode;
+  if (timeFrom) filters.timeFrom = new Date(timeFrom).toISOString();
+  if (timeTo) filters.timeTo = new Date(timeTo).toISOString();
+
+  return filters;
+}
+
+function hasActiveFilters(filters = {}) {
+  return Object.values(filters).some(value => value != null && value !== '');
+}
+
+function buildTaskQuery(filters = {}, force = false) {
+  const params = new URLSearchParams();
+  if (force) params.set('force', '1');
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value != null && value !== '') params.set(key, value);
+  });
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+async function loadTasks(force = false) {
+  const query = buildTaskQuery(state.filters, force);
+  const tasksRes = await fetchJson(`/api/tasks${query}`);
+  state.tasks = tasksRes.tasks;
+}
+
 async function refreshAll(force = false) {
-  const [overview, tasksRes, runtimeRes] = await Promise.all([
+  const [overview, runtimeRes] = await Promise.all([
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
-    fetchJson('/api/tasks'),
-    fetchJson('/api/runtime').catch(() => null)
+    fetchJson('/api/runtime').catch(() => null),
+    loadTasks(force)
   ]);
   state.overview = overview;
-  state.tasks = tasksRes.tasks;
   state.runtime = runtimeRes;
   render();
-  if (state.selectedTaskId) await loadTaskDetail(state.selectedTaskId);
+  if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
+    await loadTaskDetail(state.selectedTaskId);
+  } else if (state.selectedTaskId) {
+    state.selectedTaskId = null;
+    logEmptyEl.classList.remove('hidden');
+    detailBodyEl.classList.add('hidden');
+  }
 }
 
 function render() {
@@ -42,6 +104,8 @@ function render() {
   renderSystemInfo();
   renderTaskBoard();
   renderAgentCheckboxes();
+  renderFilterAgents();
+  renderFilterSummary();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -55,7 +119,7 @@ function renderStats() {
     ['运行中', t.taskRunning],
     ['完成/失败', `${t.taskDone}/${t.taskFailed}`]
   ];
-  statsEl.innerHTML = items.map(([k,v]) => `<div class="stat"><div class="muted">${k}</div><div class="v">${v}</div></div>`).join('');
+  statsEl.innerHTML = items.map(([k, v]) => `<div class="stat"><div class="muted">${k}</div><div class="v">${v}</div></div>`).join('');
 }
 
 function renderAgents() {
@@ -126,6 +190,7 @@ function renderTaskCard(task) {
       <div class="meta">
         <div>优先级：${priorityLabel(task.priority)} · 模式：${task.mode === 'parallel' ? '并行' : '串行'}</div>
         <div>状态：${statusLabel(task.status)}</div>
+        <div>Agent：${escapeHtml((task.agents || []).join('、') || '—')}</div>
         <div>执行：${escapeHtml(runs)}</div>
         <div>创建：${escapeHtml(task.createdAtLabel)}</div>
       </div>
@@ -141,6 +206,24 @@ function renderAgentCheckboxes() {
       <span><strong>${escapeHtml(agent.name)}</strong><br/><span class="muted small">${escapeHtml(agent.model)}</span></span>
     </label>
   `).join('');
+}
+
+function renderFilterAgents() {
+  const previousValue = filterAgentEl.dataset.currentValue || filterAgentEl.value || '';
+  const options = ['<option value="">全部 Agent</option>']
+    .concat(state.overview.agents.map(agent => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)} · ${escapeHtml(agent.id)}</option>`));
+  filterAgentEl.innerHTML = options.join('');
+  filterAgentEl.value = state.filters.agent || previousValue || '';
+  filterAgentEl.dataset.currentValue = filterAgentEl.value;
+}
+
+function renderFilterSummary() {
+  const total = state.tasks.length;
+  if (!hasActiveFilters(state.filters)) {
+    filterResultCountEl.textContent = `当前展示全部任务 · ${total} 条`;
+    return;
+  }
+  filterResultCountEl.textContent = `筛选结果：${total} 条`;
 }
 
 async function loadTaskDetail(taskId) {
@@ -160,7 +243,7 @@ async function loadTaskDetail(taskId) {
         <div><span class="muted">开始时间</span><strong>${escapeHtml(task.startedAtLabel || '—')}</strong></div>
         <div><span class="muted">完成时间</span><strong>${escapeHtml(task.finishedAtLabel || '—')}</strong></div>
       </div>
-      <div class="muted small prompt-box">${escapeHtml(task.prompt)}</div>
+      <div class="prompt-box"><span class="muted small">任务内容</span><br/>${escapeHtml(task.prompt)}</div>
       <div class="run-list">${task.runs.map(renderRunItem).join('')}</div>
     </div>
   `;
@@ -179,7 +262,36 @@ function renderRunItem(run) {
   `;
 }
 
-form.addEventListener('submit', async (e) => {
+async function applyFilters() {
+  state.filters = getFilters();
+  await loadTasks();
+  renderTaskBoard();
+  renderFilterSummary();
+  if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
+    await loadTaskDetail(state.selectedTaskId);
+  } else if (state.selectedTaskId) {
+    state.selectedTaskId = null;
+    logEmptyEl.classList.remove('hidden');
+    detailBodyEl.classList.add('hidden');
+  }
+}
+
+async function clearFilters() {
+  filterKeywordEl.value = '';
+  filterStatusEl.value = '';
+  filterAgentEl.value = '';
+  filterPriorityEl.value = '';
+  filterModeEl.value = '';
+  filterTimeFromEl.value = '';
+  filterTimeToEl.value = '';
+  state.filters = {};
+  await loadTasks();
+  renderTaskBoard();
+  renderFilterAgents();
+  renderFilterSummary();
+}
+
+form.addEventListener('submit', async e => {
   e.preventDefault();
   formMsg.textContent = '正在派发任务…';
   const fd = new FormData(form);
@@ -224,13 +336,24 @@ cancelBtn.addEventListener('click', async () => {
     alert(err.message);
   }
 });
+applyFilterBtn.addEventListener('click', () => applyFilters());
+clearFilterBtn.addEventListener('click', () => clearFilters());
+filterKeywordEl.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyFilters();
+  }
+});
+[filterStatusEl, filterAgentEl, filterPriorityEl, filterModeEl].forEach(el => {
+  el.addEventListener('change', () => applyFilters());
+});
 
 setInterval(refreshAll, 10000);
 refreshAll();
 
-function columnTitle(key) { return ({ queued:'待执行', running:'执行中', completed:'已完成', failed:'失败', canceled:'已取消' })[key] || key; }
-function priorityLabel(v) { return ({ low:'低', medium:'中', high:'高' })[v] || v; }
-function runStatusLabel(v) { return ({ queued:'待命', running:'执行中', completed:'完成', failed:'失败', canceled:'已取消' })[v] || v; }
-function labelStatus(v) { return ({ busy:'忙碌', idle:'空闲', offline:'离线' })[v] || v; }
-function statusLabel(v) { return ({ queued:'待执行', running:'执行中', completed:'已完成', failed:'失败', canceled:'已取消' })[v] || v; }
-function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+function columnTitle(key) { return ({ queued: '待执行', running: '执行中', completed: '已完成', failed: '失败', canceled: '已取消' })[key] || key; }
+function priorityLabel(v) { return ({ low: '低', medium: '中', high: '高' })[v] || v; }
+function runStatusLabel(v) { return ({ queued: '待命', running: '执行中', completed: '完成', failed: '失败', canceled: '已取消' })[v] || v; }
+function labelStatus(v) { return ({ busy: '忙碌', idle: '空闲', offline: '离线' })[v] || v; }
+function statusLabel(v) { return ({ queued: '待执行', running: '执行中', completed: '已完成', failed: '失败', canceled: '已取消' })[v] || v; }
+function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s])); }

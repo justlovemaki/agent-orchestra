@@ -12,6 +12,10 @@ const {
   reconcileRuntimeState,
   forceKillAndWait
 } = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
+const {
+  filterTasks,
+  parseTaskFilters
+} = require(path.join(__dirname, '..', 'lib', 'task-filters'));
 
 const ROOT = path.join(__dirname, '..');
 const HEALTH_TIMEOUT_MS = 3000;
@@ -250,7 +254,86 @@ async function run() {
     return parsed.message === 'test {nested} brace';
   });
 
-  console.log('\n--- 4. Lifecycle CLI JSON Tests ---');
+  console.log('\n--- 4. Task Filter Tests ---');
+
+  await test('parseTaskFilters normalizes comma-separated query params', () => {
+    const filters = parseTaskFilters({
+      keyword: '热点',
+      status: 'completed,failed',
+      agent: 'intel-scout,copy-polisher',
+      priority: 'high,medium',
+      mode: 'parallel',
+      timeFrom: '2026-03-01T00:00:00.000Z'
+    });
+
+    return filters.keyword === '热点'
+      && Array.isArray(filters.status) && filters.status.length === 2
+      && Array.isArray(filters.agent) && filters.agent[1] === 'copy-polisher'
+      && Array.isArray(filters.priority) && filters.priority[0] === 'high'
+      && Array.isArray(filters.mode) && filters.mode[0] === 'parallel';
+  });
+
+  await test('filterTasks supports keyword, status and agent filters', () => {
+    const sampleTasks = [
+      {
+        title: '查看热点新闻',
+        prompt: '整理今日热点新闻',
+        status: 'completed',
+        priority: 'medium',
+        mode: 'broadcast',
+        agents: ['intel-scout'],
+        createdAt: Date.parse('2026-03-10T10:00:00.000Z')
+      },
+      {
+        title: '撰写社媒文案',
+        prompt: '为新品发布写 3 条文案',
+        status: 'running',
+        priority: 'high',
+        mode: 'parallel',
+        agents: ['copy-polisher', 'copy-auditor'],
+        createdAt: Date.parse('2026-03-12T10:00:00.000Z')
+      }
+    ];
+
+    const filtered = filterTasks(sampleTasks, {
+      keyword: '文案',
+      status: ['running'],
+      agent: ['copy-auditor']
+    });
+
+    return filtered.length === 1 && filtered[0].title === '撰写社媒文案';
+  });
+
+  await test('filterTasks supports time range filtering', () => {
+    const sampleTasks = [
+      { title: '旧任务', createdAt: Date.parse('2026-03-01T00:00:00.000Z') },
+      { title: '新任务', createdAt: Date.parse('2026-03-14T00:00:00.000Z') }
+    ];
+
+    const filtered = filterTasks(sampleTasks, {
+      timeFrom: '2026-03-10T00:00:00.000Z',
+      timeTo: '2026-03-15T00:00:00.000Z'
+    });
+
+    return filtered.length === 1 && filtered[0].title === '新任务';
+  });
+
+  await test('GET /api/tasks accepts status filter query param', async () => {
+    const runtime = await readRuntime();
+    const pid = await readPid();
+    const running = pid ? isPidRunning(pid) : false;
+    if (!runtime?.url || !running || runtime?.status !== 'running') {
+      return skip('GET /api/tasks accepts status filter query param', 'service is not running');
+    }
+    const url = runtime.url.replace(/\/?$/, '') + '/api/tasks?status=completed';
+    const res = await httpGet(url);
+    if (res.statusCode !== 200) return false;
+    const data = JSON.parse(res.body);
+    if (!Array.isArray(data.tasks)) return false;
+    return data.tasks.every(t => t.status === 'completed');
+  });
+
+  console.log('\n--- 5. Lifecycle CLI JSON Tests ---');
 
   await test('status.js --json returns valid structure', async () => {
     const result = await runNodeScript('status.js', ['--json']);
@@ -324,7 +407,7 @@ async function run() {
     return data.success === true && data.restarted === true && typeof data.url === 'string' && data.url.length > 0;
   });
 
-  console.log('\n--- 5. Integration Tests ---');
+  console.log('\n--- 6. Integration Tests ---');
 
   await test('runtime status matches process state', async () => {
     const runtime = await readRuntime();

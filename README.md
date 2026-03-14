@@ -43,7 +43,18 @@
 - 失败
 - 已取消
 
-### 5. 任务详情与日志
+### 5. 任务筛选与搜索
+支持多维度筛选任务：
+- 关键词搜索（匹配任务标题和内容）
+- 状态筛选（待执行/执行中/已完成/失败/已取消）
+- Agent 筛选（按实际执行 Agent 缩小结果）
+- 优先级筛选（低/中/高）
+- 执行模式筛选（串行广播/并行执行）
+- 时间范围筛选（创建时间区间）
+
+前端提供可视化的筛选栏，一键应用筛选条件并显示筛选结果数量。
+
+### 6. 任务详情与日志
 支持查看：
 - 任务元信息
 - 每个 run 的执行状态
@@ -211,6 +222,15 @@ npm run verify
 
 - `GET /api/runtime`：获取当前运行时信息
 - `GET /api/health`：轻量健康检查接口，返回 `ok`、`pid`、`port`、`startedAt`、`uptime`、`status`
+- `GET /api/tasks`：获取任务列表，支持以下查询参数：
+  - `keyword`：关键词，匹配任务标题和内容
+  - `status`：状态筛选，支持多值逗号分隔（queued/running/completed/failed/canceled）
+  - `agent`：执行 Agent 筛选，支持多值逗号分隔
+  - `priority`：优先级筛选，支持多值逗号分隔（low/medium/high）
+  - `mode`：执行模式筛选，支持多值逗号分隔（broadcast/parallel）
+  - `timeFrom`：创建时间起始（ISO 8601 格式）
+  - `timeTo`：创建时间结束（ISO 8601 格式）
+- `POST /api/tasks`：创建新任务
 
 ---
 
