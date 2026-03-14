@@ -31,6 +31,9 @@ const filterTimeToEl = document.getElementById('filterTimeTo');
 const applyFilterBtn = document.getElementById('applyFilterBtn');
 const clearFilterBtn = document.getElementById('clearFilterBtn');
 const filterResultCountEl = document.getElementById('filterResultCount');
+const filterChipsEl = document.getElementById('filterChips');
+
+const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -62,6 +65,61 @@ function getFilters() {
 
 function hasActiveFilters(filters = {}) {
   return Object.values(filters).some(value => value != null && value !== '');
+}
+
+function parseFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const filters = {};
+  const keyword = params.get('keyword');
+  const status = params.get('status');
+  const agent = params.get('agent');
+  const priority = params.get('priority');
+  const mode = params.get('mode');
+  const timeFrom = params.get('timeFrom');
+  const timeTo = params.get('timeTo');
+
+  if (keyword) filters.keyword = keyword;
+  if (status) filters.status = status;
+  if (agent) filters.agent = agent;
+  if (priority) filters.priority = priority;
+  if (mode) filters.mode = mode;
+  if (timeFrom) filters.timeFrom = timeFrom;
+  if (timeTo) filters.timeTo = timeTo;
+
+  return filters;
+}
+
+function loadFiltersFromStorage() {
+  try {
+    const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFiltersToStorage(filters) {
+  try {
+    if (hasActiveFilters(filters)) {
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+    } else {
+      localStorage.removeItem(FILTER_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function syncFiltersToUrl(filters) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value != null && value !== '') params.set(key, value);
+  });
+  const query = params.toString();
+  const newUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+  window.history.replaceState({}, '', newUrl);
+}
+
+function clearFilterUrl() {
+  window.history.replaceState({}, '', window.location.pathname);
 }
 
 function buildTaskQuery(filters = {}, force = false) {
@@ -218,12 +276,91 @@ function renderFilterAgents() {
 }
 
 function renderFilterSummary() {
+  renderFilterChips();
   const total = state.tasks.length;
   if (!hasActiveFilters(state.filters)) {
     filterResultCountEl.textContent = `当前展示全部任务 · ${total} 条`;
     return;
   }
   filterResultCountEl.textContent = `筛选结果：${total} 条`;
+}
+
+function renderFilterChips() {
+  const filters = state.filters;
+  const labels = {
+    keyword: { label: '关键词', getValue: f => f.keyword },
+    status: { label: '状态', getValue: f => f.status ? statusLabel(f.status) : null },
+    agent: { label: 'Agent', getValue: f => f.agent ? f.agent : null },
+    priority: { label: '优先级', getValue: f => f.priority ? priorityLabel(f.priority) : null },
+    mode: { label: '模式', getValue: f => f.mode ? (f.mode === 'parallel' ? '并行' : '串行广播') : null },
+    timeFrom: { label: '开始时间', getValue: f => f.timeFrom ? new Date(f.timeFrom).toLocaleString('zh-CN') : null },
+    timeTo: { label: '结束时间', getValue: f => f.timeTo ? new Date(f.timeTo).toLocaleString('zh-CN') : null }
+  };
+
+  const chips = [];
+  Object.entries(labels).forEach(([key, { label, getValue }]) => {
+    const value = getValue(filters);
+    if (value) {
+      chips.push({ key, label, value });
+    }
+  });
+
+  if (chips.length === 0) {
+    filterChipsEl.innerHTML = '';
+    return;
+  }
+
+  filterChipsEl.innerHTML = chips.map(chip => `
+    <span class="filter-chip" data-key="${chip.key}">
+      ${chip.label}: ${escapeHtml(chip.value)}
+      <span class="filter-chip-remove">×</span>
+    </span>
+  `).join('');
+
+  filterChipsEl.querySelectorAll('.filter-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.key;
+      removeFilterChip(key);
+    });
+  });
+}
+
+async function removeFilterChip(key) {
+  const newFilters = { ...state.filters };
+  delete newFilters[key];
+  state.filters = newFilters;
+  populateFilterInputs(newFilters);
+  saveFiltersToStorage(newFilters);
+  syncFiltersToUrl(newFilters);
+  await loadTasks();
+  renderTaskBoard();
+  renderFilterSummary();
+  if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
+    await loadTaskDetail(state.selectedTaskId);
+  } else if (state.selectedTaskId) {
+    state.selectedTaskId = null;
+    logEmptyEl.classList.remove('hidden');
+    detailBodyEl.classList.add('hidden');
+  }
+}
+
+function formatDateTimeLocalValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60 * 1000);
+  return local.toISOString().slice(0, 16);
+}
+
+function populateFilterInputs(filters) {
+  filterKeywordEl.value = filters.keyword || '';
+  filterStatusEl.value = filters.status || '';
+  filterAgentEl.value = filters.agent || '';
+  filterPriorityEl.value = filters.priority || '';
+  filterModeEl.value = filters.mode || '';
+  filterTimeFromEl.value = formatDateTimeLocalValue(filters.timeFrom);
+  filterTimeToEl.value = formatDateTimeLocalValue(filters.timeTo);
 }
 
 async function loadTaskDetail(taskId) {
@@ -264,6 +401,8 @@ function renderRunItem(run) {
 
 async function applyFilters() {
   state.filters = getFilters();
+  saveFiltersToStorage(state.filters);
+  syncFiltersToUrl(state.filters);
   await loadTasks();
   renderTaskBoard();
   renderFilterSummary();
@@ -285,6 +424,8 @@ async function clearFilters() {
   filterTimeFromEl.value = '';
   filterTimeToEl.value = '';
   state.filters = {};
+  saveFiltersToStorage({});
+  clearFilterUrl();
   await loadTasks();
   renderTaskBoard();
   renderFilterAgents();
@@ -348,7 +489,23 @@ filterKeywordEl.addEventListener('keydown', event => {
   el.addEventListener('change', () => applyFilters());
 });
 
+function initFilters() {
+  const urlFilters = parseFiltersFromUrl();
+  if (hasActiveFilters(urlFilters)) {
+    state.filters = urlFilters;
+    populateFilterInputs(urlFilters);
+    return;
+  }
+  const storedFilters = loadFiltersFromStorage();
+  if (hasActiveFilters(storedFilters)) {
+    state.filters = storedFilters;
+    populateFilterInputs(storedFilters);
+    syncFiltersToUrl(storedFilters);
+  }
+}
+
 setInterval(refreshAll, 10000);
+initFilters();
 refreshAll();
 
 function columnTitle(key) { return ({ queued: '待执行', running: '执行中', completed: '已完成', failed: '失败', canceled: '已取消' })[key] || key; }

@@ -54,6 +54,12 @@
 
 前端提供可视化的筛选栏，一键应用筛选条件并显示筛选结果数量。
 
+#### 筛选条件持久化与分享
+- **URL 同步**：筛选条件会自动同步到浏览器 URL，支持复制链接分享当前筛选视图
+- **localStorage 持久化**：页面刷新后自动恢复上次的筛选条件（URL 参数优先于 localStorage）
+- **筛选标签**：已启用的筛选条件以标签形式显示，点击标签可快速移除对应筛选条件
+- **清除筛选**：点击"清除"按钮会同时清空 URL 参数和 localStorage 存储
+
 ### 6. 任务详情与日志
 支持查看：
 - 任务元信息
@@ -222,7 +228,7 @@ npm run verify
 
 - `GET /api/runtime`：获取当前运行时信息
 - `GET /api/health`：轻量健康检查接口，返回 `ok`、`pid`、`port`、`startedAt`、`uptime`、`status`
-- `GET /api/tasks`：获取任务列表，支持以下查询参数：
+- `GET /api/tasks`：获取任务列表，支持以下查询参数（前端筛选功能基于此 API）：
   - `keyword`：关键词，匹配任务标题和内容
   - `status`：状态筛选，支持多值逗号分隔（queued/running/completed/failed/canceled）
   - `agent`：执行 Agent 筛选，支持多值逗号分隔
@@ -298,6 +304,7 @@ openclaw agent --agent <agentId> --message "..." --json
 - 模板与常用 Agent 组合
 - 历史任务检索与审计
 - 截图 / 分享链路
+- 筛选条件收藏与预设
 
 更完整的演进规划，请看：
 
