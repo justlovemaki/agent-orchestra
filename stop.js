@@ -3,7 +3,9 @@ const {
   readRuntime,
   isPidRunning,
   removePidFile,
-  updateRuntimeStatus
+  updateRuntimeStatus,
+  waitForPidExit,
+  STOP_WAIT_TIMEOUT_MS
 } = require('./lib/runtime-utils');
 
 const args = process.argv.slice(2);
@@ -32,14 +34,37 @@ function output(result) {
   if (pid && isPidRunning(pid)) {
     try {
       process.kill(pid, 'SIGTERM');
-      output({
-        success: true,
-        stopped: true,
-        pid,
-        url: runtime?.url || null,
-        message: `Sent SIGTERM to Agent Orchestra (pid: ${pid}).`
-      });
-      process.exit(0);
+      
+      const waitResult = await waitForPidExit(pid, STOP_WAIT_TIMEOUT_MS);
+      
+      if (waitResult.exited) {
+        await removePidFile();
+        if (runtime) {
+          await updateRuntimeStatus('stopped', { stopReason: 'normal stop' });
+        }
+        output({
+          success: true,
+          stopped: true,
+          pid,
+          url: runtime?.url || null,
+          message: `Agent Orchestra stopped gracefully (pid: ${pid}).`
+        });
+        process.exit(0);
+      } else {
+        await removePidFile();
+        if (runtime) {
+          await updateRuntimeStatus('stopped', { stopReason: 'force stop after timeout' });
+        }
+        output({
+          success: true,
+          stopped: true,
+          pid,
+          url: runtime?.url || null,
+          timedOut: true,
+          message: `Sent SIGTERM to Agent Orchestra (pid: ${pid}), but process did not exit after ${STOP_WAIT_TIMEOUT_MS}ms. PID file cleaned, runtime marked as stopped.`
+        });
+        process.exit(0);
+      }
     } catch (error) {
       if (error.code === 'ESRCH') {
         await removePidFile();

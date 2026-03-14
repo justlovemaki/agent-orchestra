@@ -245,6 +245,8 @@ async function run() {
 
   await test('stop.js --json returns valid structure', async () => {
     const initiallyRunning = await isServiceRunning();
+    const pidBeforeStop = await readPid();
+    
     const result = await runNodeScript('stop.js', ['--json']);
     if (result.code !== 0) return false;
     const data = parseJsonOutput(result, 'stop.js --json');
@@ -252,9 +254,19 @@ async function run() {
     if (!hasRequired || data.success !== true || data.stopped !== true) return false;
 
     if (initiallyRunning) {
-      const after = await runNodeScript('status.js', ['--json']);
-      const afterData = parseJsonOutput(after, 'status.js --json after stop');
-      return ['stopped', 'degraded'].includes(afterData.status) || after.code === 1;
+      const pidAfterStop = await readPid();
+      const processExited = !isPidRunning(pidBeforeStop);
+      const statusResult = await runNodeScript('status.js', ['--json']);
+      const statusData = parseJsonOutput(statusResult, 'status.js --json after stop');
+      const statusCorrect = ['stopped', 'degraded'].includes(statusData.status) || statusResult.code === 1;
+      
+      if (!processExited) {
+        console.log(`  (warning: process ${pidBeforeStop} still running after stop)`);
+      }
+      if (!statusCorrect) {
+        console.log(`  (warning: status shows '${statusData.status}' after stop)`);
+      }
+      return processExited && statusCorrect;
     }
 
     return true;
