@@ -2,9 +2,19 @@
 
 const path = require('path');
 const http = require('http');
-const { readRuntime, readPid, isPidRunning, probeHealth, cleanCliJson, reconcileRuntimeState } = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
+const { execFile } = require('child_process');
+const {
+  readRuntime,
+  readPid,
+  isPidRunning,
+  probeHealth,
+  cleanCliJson,
+  reconcileRuntimeState
+} = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
 
+const ROOT = path.join(__dirname, '..');
 const HEALTH_TIMEOUT_MS = 3000;
+const PROCESS_TIMEOUT_MS = 20000;
 
 let passed = 0;
 let failed = 0;
@@ -50,6 +60,43 @@ async function httpGet(url, timeout = HEALTH_TIMEOUT_MS) {
       reject(new Error('timeout'));
     });
   });
+}
+
+async function runNodeScript(scriptName, args = [], options = {}) {
+  return new Promise(resolve => {
+    execFile(process.execPath, [path.join(ROOT, scriptName), ...args], {
+      cwd: ROOT,
+      timeout: options.timeout || PROCESS_TIMEOUT_MS,
+      env: process.env,
+      maxBuffer: 2 * 1024 * 1024
+    }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error && typeof error.code === 'number' ? error.code : 0,
+        stdout,
+        stderr,
+        error
+      });
+    });
+  });
+}
+
+function parseJsonOutput(result, name) {
+  if (!result.stdout || !result.stdout.trim()) {
+    throw new Error(`${name} did not produce JSON output`);
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(`${name} returned invalid JSON: ${error.message}`);
+  }
+}
+
+async function isServiceRunning() {
+  const runtime = await readRuntime();
+  const pid = await readPid();
+  const running = pid ? isPidRunning(pid) : false;
+  return Boolean(runtime?.url && running && runtime?.status === 'running');
 }
 
 async function run() {
@@ -186,13 +233,52 @@ async function run() {
     return parsed.message === 'test {nested} brace';
   });
 
-  console.log('\n--- 4. Integration Tests ---');
+  console.log('\n--- 4. Lifecycle CLI JSON Tests ---');
+
+  await test('status.js --json returns valid structure', async () => {
+    const result = await runNodeScript('status.js', ['--json']);
+    if (![0, 1].includes(result.code)) return false;
+    const data = parseJsonOutput(result, 'status.js --json');
+    const hasRequired = ['status', 'running', 'pid', 'port', 'url'].every(k => k in data);
+    return hasRequired && Array.isArray(data.warnings || []);
+  });
+
+  await test('stop.js --json returns valid structure', async () => {
+    const initiallyRunning = await isServiceRunning();
+    const result = await runNodeScript('stop.js', ['--json']);
+    if (result.code !== 0) return false;
+    const data = parseJsonOutput(result, 'stop.js --json');
+    const hasRequired = ['success', 'stopped', 'message'].every(k => k in data);
+    if (!hasRequired || data.success !== true || data.stopped !== true) return false;
+
+    if (initiallyRunning) {
+      const after = await runNodeScript('status.js', ['--json']);
+      const afterData = parseJsonOutput(after, 'status.js --json after stop');
+      return ['stopped', 'degraded'].includes(afterData.status) || after.code === 1;
+    }
+
+    return true;
+  });
+
+  await test('restart.js --json returns valid structure and starts service', async () => {
+    const result = await runNodeScript('restart.js', ['--json'], { timeout: 30000 });
+    if (result.code !== 0) return false;
+    const data = parseJsonOutput(result, 'restart.js --json');
+    const hasRequired = ['success', 'restarted', 'pid', 'port', 'url', 'message'].every(k => k in data);
+    if (!hasRequired || data.success !== true || data.restarted !== true) return false;
+
+    const status = await runNodeScript('status.js', ['--json']);
+    const statusData = parseJsonOutput(status, 'status.js --json after restart');
+    return status.code === 0 && statusData.status === 'healthy' && statusData.running === true;
+  });
+
+  console.log('\n--- 5. Integration Tests ---');
 
   await test('runtime status matches process state', async () => {
     const runtime = await readRuntime();
     const pid = await readPid();
     const processAlive = pid ? isPidRunning(pid) : false;
-    
+
     if (runtime?.status === 'running' && !processAlive) {
       console.log('  (warning: runtime says running but process is dead)');
     }

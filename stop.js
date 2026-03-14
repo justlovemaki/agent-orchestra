@@ -3,48 +3,72 @@ const {
   readRuntime,
   isPidRunning,
   removePidFile,
-  updateRuntimeStatus,
-  RUNTIME_FILE
+  updateRuntimeStatus
 } = require('./lib/runtime-utils');
 
-const fs = require('fs').promises;
+const args = process.argv.slice(2);
+const jsonMode = args.includes('--json');
+
+function output(result) {
+  if (jsonMode) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    if (result.message) console.log(result.message);
+    if (result.messages) {
+      result.messages.forEach(m => console.log(m));
+    }
+  }
+}
 
 (async () => {
   const pid = await readPid();
   const runtime = await readRuntime();
 
   if (!pid && !runtime) {
-    console.log('Agent Orchestra is not running (no PID file or runtime info found).');
+    output({ success: true, stopped: true, pid: null, url: null, message: 'Agent Orchestra is not running (no PID file or runtime info found).' });
     process.exit(0);
   }
 
   if (pid && isPidRunning(pid)) {
     try {
       process.kill(pid, 'SIGTERM');
-      console.log(`Sent SIGTERM to Agent Orchestra (pid: ${pid}).`);
-      if (runtime?.url) {
-        console.log(`Last known URL: ${runtime.url}`);
-      }
+      output({
+        success: true,
+        stopped: true,
+        pid,
+        url: runtime?.url || null,
+        message: `Sent SIGTERM to Agent Orchestra (pid: ${pid}).`
+      });
+      process.exit(0);
     } catch (error) {
       if (error.code === 'ESRCH') {
-        console.log(`Process ${pid} is not running; cleaning up stale PID...`);
         await removePidFile();
         if (runtime) {
           await updateRuntimeStatus('stopped', { stopReason: 'stale pid' });
-          console.log('Runtime status updated to stopped.');
         }
+        output({
+          success: true,
+          stopped: true,
+          pid,
+          url: runtime?.url || null,
+          message: `Process ${pid} is not running; cleaned stale PID and marked runtime stopped.`
+        });
         process.exit(0);
       }
       throw error;
     }
-  } else {
-    console.log(`PID ${pid || 'file'} is stale, cleaning up...`);
-    await removePidFile();
-    if (runtime) {
-      await updateRuntimeStatus('stopped', { stopReason: 'manual stop' });
-      console.log('Runtime status updated to stopped.');
-    }
-    console.log('Cleanup complete.');
-    process.exit(0);
   }
+
+  await removePidFile();
+  if (runtime) {
+    await updateRuntimeStatus('stopped', { stopReason: 'manual stop' });
+  }
+  output({
+    success: true,
+    stopped: true,
+    pid: pid || null,
+    url: runtime?.url || null,
+    message: `PID ${pid || 'file'} is stale; cleaned runtime metadata.`
+  });
+  process.exit(0);
 })();

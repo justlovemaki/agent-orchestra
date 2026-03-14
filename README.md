@@ -117,6 +117,19 @@ npm run stop
 
 若检测到 stale PID（进程已退出但 PID 文件仍存在），会自动清理 PID 文件并同步 runtime 状态为 `stopped`。
 
+如需机器可读输出，可使用：
+
+```bash
+node stop.js --json
+```
+
+返回 JSON 结构，至少包含：
+- `success`
+- `stopped`
+- `pid`
+- `url`
+- `message`
+
 ### 查看服务状态
 
 ```bash
@@ -133,6 +146,19 @@ npm run status
 
 若检测到异常状态（如 PID 文件存在但进程已退出，或 runtime 显示 running 但 `/api/health` 无法访问），会输出警告信息。
 
+如需给脚本、自动化任务或上层调度器消费机器可读结果，可使用：
+
+```bash
+node status.js --json
+```
+
+返回 JSON 结构，至少包含：
+- `status`：`healthy` / `degraded` / `stopped`
+- `running`：是否健康运行
+- `pid` / `port` / `url`
+- `processAlive` / `healthOk`
+- `warnings`：异常警告数组
+
 ### 重启服务
 
 ```bash
@@ -142,6 +168,20 @@ npm run restart
 该命令先执行 stop，再以后台方式启动 server.js，并优先通过 `/api/health` 探活确认服务已真正恢复；`runtime.json` / `pid` 文件仅作为辅助判断。
 
 若服务启动失败、健康检查超时未通过，或仅有 PID / runtime 元数据但服务不可访问，命令会以非零状态码退出并输出诊断信息。
+
+如需机器可读输出，可使用：
+
+```bash
+node restart.js --json
+```
+
+返回 JSON 结构，至少包含：
+- `success`
+- `restarted`
+- `pid`
+- `port`
+- `url`
+- `message`
 
 ### 验证服务
 
@@ -155,8 +195,10 @@ npm run verify
 - 健康接口 `/api/health` 可访问性
 - Runtime 接口 `/api/runtime` 结构验证
 - CLI JSON 提取逻辑 (cleanCliJson) 单元测试
+- 生命周期脚本 `status.js --json` / `stop.js --json` / `restart.js --json` 输出结构验证
+- stop → restart 之后的服务恢复验证
 
-若服务当前未运行，在线接口相关测试会标记为 skip，而不是误报为失败；若发现 `runtime.json` 仍残留为 `running`、但进程和健康检查都已失效，验证脚本会先自动修正为 `stopped`。
+若服务当前未运行，在线接口相关测试会标记为 skip，而不是误报为失败；若发现 `runtime.json` 仍残留为 `running`、但进程和健康检查都已失效，验证脚本会先自动修正为 `stopped`。此外，生命周期脚本验证会兼顾“当前正在运行”和“当前未运行”两种起始状态，避免把可恢复场景误判为失败。
 
 ### API
 
