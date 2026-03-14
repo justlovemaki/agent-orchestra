@@ -1,6 +1,8 @@
-const { readPid, readRuntime, isPidRunning, probeHealth, formatUptime } = require('./lib/runtime-utils');
+const { readPid, readRuntime, isPidRunning, probeHealth, formatUptime, reconcileRuntimeState } = require('./lib/runtime-utils');
 
 (async () => {
+  await reconcileRuntimeState({ stopReason: 'status detected stale runtime' });
+
   const pid = await readPid();
   const runtime = await readRuntime();
 

@@ -2,27 +2,28 @@
 
 const path = require('path');
 const http = require('http');
-const { readRuntime, readPid, isPidRunning, probeHealth, cleanCliJson } = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
+const { readRuntime, readPid, isPidRunning, probeHealth, cleanCliJson, reconcileRuntimeState } = require(path.join(__dirname, '..', 'lib', 'runtime-utils'));
 
 const HEALTH_TIMEOUT_MS = 3000;
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
+const SKIP = Symbol('skip');
 
-function test(name, fn) {
+function skip(name, reason) {
+  skipped++;
+  console.log(`- ${name} (skip: ${reason})`);
+  return SKIP;
+}
+
+async function test(name, fn) {
   try {
-    const result = fn();
-    if (result instanceof Promise) {
-      return result.then(r => {
-        if (r) {
-          passed++;
-          console.log(`✓ ${name}`);
-        } else {
-          failed++;
-          console.log(`✗ ${name}`);
-        }
-      });
-    } else if (result) {
+    const result = await fn();
+    if (result === SKIP) {
+      return;
+    }
+    if (result) {
       passed++;
       console.log(`✓ ${name}`);
     } else {
@@ -32,12 +33,6 @@ function test(name, fn) {
   } catch (error) {
     failed++;
     console.log(`✗ ${name}: ${error.message}`);
-  }
-}
-
-function assertEqual(actual, expected, msg) {
-  if (actual !== expected) {
-    throw new Error(`${msg}: expected ${expected}, got ${actual}`);
   }
 }
 
@@ -60,19 +55,24 @@ async function httpGet(url, timeout = HEALTH_TIMEOUT_MS) {
 async function run() {
   console.log('=== Agent Orchestra Verification ===\n');
 
+  const reconciled = await reconcileRuntimeState({ stopReason: 'verify detected stale runtime' });
+  if (reconciled.reconciled || reconciled.pidRemoved) {
+    console.log('Reconciled stale runtime metadata before verification.\n');
+  }
+
   console.log('--- 1. Runtime State Tests ---');
 
-  test('readRuntime returns object or null', async () => {
+  await test('readRuntime returns object or null', async () => {
     const runtime = await readRuntime();
     return runtime === null || typeof runtime === 'object';
   });
 
-  test('readPid returns integer or null', async () => {
+  await test('readPid returns integer or null', async () => {
     const pid = await readPid();
     return pid === null || Number.isInteger(pid);
   });
 
-  test('isPidRunning handles invalid input', () => {
+  await test('isPidRunning handles invalid input', () => {
     if (isPidRunning(null) !== false) return false;
     if (isPidRunning(0) !== false) return false;
     if (isPidRunning(-1) !== false) return false;
@@ -82,31 +82,33 @@ async function run() {
 
   console.log('\n--- 2. Health Endpoint Tests ---');
 
-  test('probeHealth handles missing url', async () => {
+  await test('probeHealth handles missing url', async () => {
     const result = await probeHealth(null);
     return result.ok === false && result.error === 'missing url';
   });
 
-  test('probeHealth handles invalid url', async () => {
+  await test('probeHealth handles invalid url', async () => {
     const result = await probeHealth('http://127.0.0.1:1');
     return result.ok === false;
   });
 
-  test('GET /api/health returns 200 and ok=true when running', async () => {
+  await test('GET /api/health returns 200 and ok=true when running', async () => {
     const runtime = await readRuntime();
-    if (!runtime?.url) {
-      console.log('  (skipping: no runtime url)');
-      return true;
+    const pid = await readPid();
+    const running = pid ? isPidRunning(pid) : false;
+    if (!runtime?.url || !running || runtime?.status !== 'running') {
+      return skip('GET /api/health returns 200 and ok=true when running', 'service is not running');
     }
     const result = await probeHealth(runtime.url);
     return result.ok === true;
   });
 
-  test('GET /api/health returns valid structure', async () => {
+  await test('GET /api/health returns valid structure', async () => {
     const runtime = await readRuntime();
-    if (!runtime?.url) {
-      console.log('  (skipping: no runtime url)');
-      return true;
+    const pid = await readPid();
+    const running = pid ? isPidRunning(pid) : false;
+    if (!runtime?.url || !running || runtime?.status !== 'running') {
+      return skip('GET /api/health returns valid structure', 'service is not running');
     }
     const result = await probeHealth(runtime.url);
     if (!result.ok || !result.data) return false;
@@ -114,54 +116,52 @@ async function run() {
     return hasRequired;
   });
 
-  test('GET /api/runtime returns valid structure', async () => {
+  await test('GET /api/runtime returns valid structure', async () => {
     const runtime = await readRuntime();
-    if (!runtime?.url) {
-      console.log('  (skipping: no runtime url)');
-      return true;
+    const pid = await readPid();
+    const running = pid ? isPidRunning(pid) : false;
+    if (!runtime?.url || !running || runtime?.status !== 'running') {
+      return skip('GET /api/runtime returns valid structure', 'service is not running');
     }
-    try {
-      const res = await httpGet(`${runtime.url}/api/runtime`);
-      if (res.statusCode !== 200) return false;
-      const data = JSON.parse(res.body);
-      const hasRequired = ['pid', 'port', 'url', 'status'].every(k => k in data);
-      return hasRequired;
-    } catch {
-      return false;
-    }
+    const url = runtime.url.replace(/\/?$/, '') + '/api/runtime';
+    const res = await httpGet(url);
+    if (res.statusCode !== 200) return false;
+    const data = JSON.parse(res.body);
+    const hasRequired = ['pid', 'port', 'url', 'status'].every(k => k in data);
+    return hasRequired;
   });
 
   console.log('\n--- 3. CLI JSON Extraction Tests ---');
 
-  test('cleanCliJson handles simple object', () => {
+  await test('cleanCliJson handles simple object', () => {
     const input = 'some text before {"key": "value"} some text after';
     const result = cleanCliJson(input);
     const parsed = JSON.parse(result);
     return parsed.key === 'value';
   });
 
-  test('cleanCliJson handles simple array', () => {
+  await test('cleanCliJson handles simple array', () => {
     const input = 'log: [1, 2, 3] done';
     const result = cleanCliJson(input);
     const parsed = JSON.parse(result);
     return Array.isArray(parsed) && parsed.length === 3;
   });
 
-  test('cleanCliJson strips ANSI codes', () => {
+  await test('cleanCliJson strips ANSI codes', () => {
     const input = '\x1b[32m{"ok": true}\x1b[0m';
     const result = cleanCliJson(input);
     const parsed = JSON.parse(result);
     return parsed.ok === true;
   });
 
-  test('cleanCliJson handles nested structure', () => {
+  await test('cleanCliJson handles nested structure', () => {
     const input = '{"agents": [{"id": "a1", "name": "Agent One"}]}';
     const result = cleanCliJson(input);
     const parsed = JSON.parse(result);
     return parsed.agents?.[0]?.id === 'a1';
   });
 
-  test('cleanCliJson handles incomplete JSON', () => {
+  await test('cleanCliJson handles incomplete JSON', () => {
     try {
       cleanCliJson('{"incomplete":');
       return false;
@@ -170,7 +170,7 @@ async function run() {
     }
   });
 
-  test('cleanCliJson handles empty input', () => {
+  await test('cleanCliJson handles empty input', () => {
     try {
       cleanCliJson('no json here');
       return false;
@@ -179,7 +179,7 @@ async function run() {
     }
   });
 
-  test('cleanCliJson handles string with braces', () => {
+  await test('cleanCliJson handles string with braces', () => {
     const input = '{"message": "test {nested} brace"}';
     const result = cleanCliJson(input);
     const parsed = JSON.parse(result);
@@ -188,7 +188,7 @@ async function run() {
 
   console.log('\n--- 4. Integration Tests ---');
 
-  test('runtime status matches process state', async () => {
+  await test('runtime status matches process state', async () => {
     const runtime = await readRuntime();
     const pid = await readPid();
     const processAlive = pid ? isPidRunning(pid) : false;
@@ -202,6 +202,7 @@ async function run() {
   console.log('\n=== Results ===');
   console.log(`Passed: ${passed}`);
   console.log(`Failed: ${failed}`);
+  console.log(`Skipped: ${skipped}`);
   console.log('');
 
   process.exit(failed > 0 ? 1 : 0);

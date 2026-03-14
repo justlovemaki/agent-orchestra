@@ -151,9 +151,12 @@ npm run verify
 
 该脚本执行以下自动化测试：
 - Runtime 状态读取（readRuntime / readPid / isPidRunning）
+- 启动前自动收敛 stale runtime / stale pid 元数据
 - 健康接口 `/api/health` 可访问性
 - Runtime 接口 `/api/runtime` 结构验证
 - CLI JSON 提取逻辑 (cleanCliJson) 单元测试
+
+若服务当前未运行，在线接口相关测试会标记为 skip，而不是误报为失败；若发现 `runtime.json` 仍残留为 `running`、但进程和健康检查都已失效，验证脚本会先自动修正为 `stopped`。
 
 ### API
 
