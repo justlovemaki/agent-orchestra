@@ -33,9 +33,45 @@
               <div class="section-kicker">Agents</div>
               <h2>Agent 总览</h2>
             </div>
-            <span class="muted small">快速查看可用性、模型与最近活跃情况</span>
+            <div class="agent-filter-row">
+              <select id="filterGroup" class="filter-select">
+                <option value="">全部分组</option>
+              </select>
+              <button id="showGroupFormBtn" class="ghost small">管理分组</button>
+            </div>
           </div>
           <div id="agentsGrid" class="agents-grid"></div>
+        </section>
+
+        <section id="groupPanel" class="panel section-panel hidden">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Groups</div>
+              <h2>分组管理</h2>
+            </div>
+            <button id="hideGroupPanelBtn" class="ghost small">关闭</button>
+          </div>
+          <div id="groupForm" class="group-form">
+            <div class="group-form-fields">
+              <label>
+                <span class="field-label">分组名称</span>
+                <input id="groupNameInput" placeholder="例如：内容组" required />
+              </label>
+              <label>
+                <span class="field-label">颜色</span>
+                <input type="color" id="groupColorInput" value="#6b7280" />
+              </label>
+              <label>
+                <span class="field-label">描述</span>
+                <input id="groupDescInput" placeholder="简要描述用途" />
+              </label>
+            </div>
+            <div class="group-form-actions">
+              <button id="saveGroupBtn" class="primary">保存分组</button>
+              <button id="cancelGroupBtn" class="ghost">取消</button>
+            </div>
+          </div>
+          <div id="groupList" class="group-list"></div>
         </section>
 
         <section class="grid two">

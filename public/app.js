@@ -6,7 +6,11 @@ const state = {
   filters: {},
   savedPresets: [],
   templates: [],
-  editingTemplateId: null
+  editingTemplateId: null,
+  groups: [],
+  editingGroupId: null,
+  selectedAgentId: null,
+  groupFilter: ''
 };
 
 const statsEl = document.getElementById('stats');
@@ -52,6 +56,18 @@ const saveTemplateBtn = document.getElementById('saveTemplateBtn');
 const cancelTemplateBtn = document.getElementById('cancelTemplateBtn');
 const templateListEl = document.getElementById('templateList');
 const templateSelectEl = document.getElementById('templateSelect');
+
+const showGroupFormBtn = document.getElementById('showGroupFormBtn');
+const groupPanel = document.getElementById('groupPanel');
+const hideGroupPanelBtn = document.getElementById('hideGroupPanelBtn');
+const groupForm = document.getElementById('groupForm');
+const groupNameInput = document.getElementById('groupNameInput');
+const groupColorInput = document.getElementById('groupColorInput');
+const groupDescInput = document.getElementById('groupDescInput');
+const saveGroupBtn = document.getElementById('saveGroupBtn');
+const cancelGroupBtn = document.getElementById('cancelGroupBtn');
+const groupListEl = document.getElementById('groupList');
+const filterGroupEl = document.getElementById('filterGroup');
 
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
@@ -228,7 +244,8 @@ async function refreshAll(force = false) {
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
     fetchJson('/api/runtime').catch(() => null),
     loadTasks(force),
-    loadTemplates()
+    loadTemplates(),
+    loadGroups()
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
@@ -253,6 +270,8 @@ function render() {
   renderFilterSummary();
   renderTemplates();
   renderTemplateSelect();
+  renderGroupFilter();
+  renderGroupList();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -270,21 +289,49 @@ function renderStats() {
 }
 
 function renderAgents() {
-  agentsGridEl.innerHTML = state.overview.agents.map(agent => `
-    <div class="agent-card">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start;">
-        <div>
-          <div style="font-weight:700">${escapeHtml(agent.name)}</div>
-          <div class="muted small">${escapeHtml(agent.id)}</div>
+  let agentsToShow = state.overview.agents;
+  if (state.groupFilter) {
+    const group = state.groups.find(g => g.id === state.groupFilter);
+    if (group) {
+      agentsToShow = agentsToShow.filter(agent => group.agentIds.includes(agent.id));
+    }
+  }
+  agentsGridEl.innerHTML = agentsToShow.map(agent => {
+    const agentGroups = state.groups.filter(g => g.agentIds.includes(agent.id));
+    const groupTags = agentGroups.map(g => `
+      <span class="group-tag" style="background:${hexToRgba(g.color, 0.2)};color:${g.color};border:1px solid ${hexToRgba(g.color, 0.4)}">
+        <span class="group-tag-dot" style="background:${g.color}"></span>
+        ${escapeHtml(g.name)}
+      </span>
+    `).join('');
+    return `
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-info">
+            <div style="font-weight:700">${escapeHtml(agent.name)}</div>
+            <div class="muted small">${escapeHtml(agent.id)}</div>
+          </div>
+          <div class="agent-actions">
+            <button class="agent-assign-group-btn" data-agent-id="${agent.id}">分组</button>
+          </div>
         </div>
-        <span class="badge ${agent.status}">${labelStatus(agent.status)}</span>
+        ${groupTags ? `<div class="agent-groups">${groupTags}</div>` : ''}
+        <span class="badge ${agent.status}" style="margin-top:8px">${labelStatus(agent.status)}</span>
+        <div class="row"><span class="muted">模型</span><span>${escapeHtml(agent.model)}</span></div>
+        <div class="row"><span class="muted">会话</span><span>${agent.sessionsCount}</span></div>
+        <div class="row"><span class="muted">最近活跃</span><span>${escapeHtml(agent.lastActiveLabel)}</span></div>
+        <div class="row"><span class="muted">最新会话</span><span class="small">${agent.latestSession ? escapeHtml(agent.latestSession.ageLabel) : '—'}</span></div>
       </div>
-      <div class="row"><span class="muted">模型</span><span>${escapeHtml(agent.model)}</span></div>
-      <div class="row"><span class="muted">会话</span><span>${agent.sessionsCount}</span></div>
-      <div class="row"><span class="muted">最近活跃</span><span>${escapeHtml(agent.lastActiveLabel)}</span></div>
-      <div class="row"><span class="muted">最新会话</span><span class="small">${agent.latestSession ? escapeHtml(agent.latestSession.ageLabel) : '—'}</span></div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+
+  agentsGridEl.querySelectorAll('.agent-assign-group-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const agentId = btn.dataset.agentId;
+      showGroupDropdown(btn, agentId);
+    });
+  });
 }
 
 function renderSystemInfo() {
@@ -663,6 +710,11 @@ async function loadTemplates() {
   state.templates = res.templates;
 }
 
+async function loadGroups() {
+  const res = await fetchJson('/api/agent-groups');
+  state.groups = res.groups;
+}
+
 function renderTemplateAgentCheckboxes(selectedAgents = []) {
   const prev = new Set([...templateAgentCheckboxesEl.querySelectorAll('input:checked')].map(x => x.value));
   const selected = new Set(selectedAgents);
@@ -937,3 +989,194 @@ function runStatusLabel(v) { return ({ queued: '待命', running: '执行中', c
 function labelStatus(v) { return ({ busy: '忙碌', idle: '空闲', offline: '离线' })[v] || v; }
 function statusLabel(v) { return ({ queued: '待执行', running: '执行中', completed: '已完成', failed: '失败', canceled: '已取消' })[v] || v; }
 function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s])); }
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function renderGroupFilter() {
+  const previousValue = filterGroupEl.value;
+  const options = ['<option value="">全部分组</option>']
+    .concat(state.groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`));
+  filterGroupEl.innerHTML = options.join('');
+  filterGroupEl.value = state.groupFilter || previousValue || '';
+}
+
+function renderGroupList() {
+  if (!state.groups || state.groups.length === 0) {
+    groupListEl.innerHTML = '<div class="muted small">还没有创建任何分组</div>';
+    return;
+  }
+  groupListEl.innerHTML = state.groups.map(group => `
+    <div class="group-item" data-group-id="${group.id}">
+      <div class="group-color" style="background:${group.color}"></div>
+      <div class="group-info">
+        <div class="group-name">${escapeHtml(group.name)}</div>
+        <div class="group-desc">${escapeHtml(group.description || '暂无描述')}</div>
+        <div class="group-agents-count">包含 ${group.agentIds.length} 个 Agent</div>
+      </div>
+      <div class="group-actions">
+        <button class="ghost tiny edit-group-btn" data-group-id="${group.id}" title="编辑分组">编辑</button>
+        <button class="ghost tiny danger delete-group-btn" data-group-id="${group.id}" title="删除分组">删除</button>
+      </div>
+    </div>
+  `).join('');
+
+  groupListEl.querySelectorAll('.edit-group-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const groupId = btn.dataset.groupId;
+      const group = state.groups.find(g => g.id === groupId);
+      if (group) {
+        state.editingGroupId = groupId;
+        showGroupForm(group);
+      }
+    });
+  });
+
+  groupListEl.querySelectorAll('.delete-group-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('确定要删除此分组吗？')) return;
+      const groupId = btn.dataset.groupId;
+      try {
+        await fetchJson(`/api/agent-groups/${groupId}`, { method: 'DELETE' });
+        await loadGroups();
+        renderGroupList();
+        renderGroupFilter();
+        renderAgents();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+function showGroupForm(group = null) {
+  groupForm.classList.remove('hidden');
+  if (group) {
+    groupNameInput.value = group.name;
+    groupColorInput.value = group.color;
+    groupDescInput.value = group.description || '';
+  } else {
+    groupNameInput.value = '';
+    groupColorInput.value = '#6b7280';
+    groupDescInput.value = '';
+  }
+  groupNameInput.focus();
+}
+
+function hideGroupForm() {
+  groupForm.classList.add('hidden');
+  state.editingGroupId = null;
+}
+
+async function saveGroup() {
+  const name = groupNameInput.value.trim();
+  if (!name) {
+    alert('请输入分组名称');
+    groupNameInput.focus();
+    return;
+  }
+  const payload = {
+    name,
+    color: groupColorInput.value,
+    description: groupDescInput.value.trim()
+  };
+
+  try {
+    if (state.editingGroupId) {
+      await fetchJson(`/api/agent-groups/${state.editingGroupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      await fetchJson('/api/agent-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    hideGroupForm();
+    await loadGroups();
+    renderGroupList();
+    renderGroupFilter();
+    renderAgents();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function showGroupDropdown(btn, agentId) {
+  document.querySelectorAll('.group-dropdown').forEach(d => d.remove());
+  state.selectedAgentId = agentId;
+  
+  const agentGroups = state.groups.filter(g => g.agentIds.includes(agentId));
+  const dropdown = document.createElement('div');
+  dropdown.className = 'group-dropdown';
+  
+  dropdown.innerHTML = state.groups.map(group => {
+    const isInGroup = agentGroups.some(g => g.id === group.id);
+    return `
+      <label class="group-dropdown-item">
+        <input type="checkbox" data-group-id="${group.id}" ${isInGroup ? 'checked' : ''} />
+        <span class="group-color" style="background:${group.color}"></span>
+        <span>${escapeHtml(group.name)}</span>
+      </label>
+    `;
+  }).join('');
+  
+  if (state.groups.length === 0) {
+    dropdown.innerHTML = '<div class="group-dropdown-item muted">暂无分组</div>';
+  }
+  
+  btn.parentElement.appendChild(dropdown);
+  
+  dropdown.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const groupId = cb.dataset.groupId;
+      const allGroupIds = [...dropdown.querySelectorAll('input[type="checkbox"]:checked')].map(c => c.dataset.groupId);
+      try {
+        await fetchJson(`/api/agents/${agentId}/groups`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupIds: allGroupIds })
+        });
+        await loadGroups();
+        renderAgents();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  
+  document.addEventListener('click', function closeDropdown(e) {
+    if (!dropdown.contains(e.target) && e.target !== btn) {
+      dropdown.remove();
+      document.removeEventListener('click', closeDropdown);
+    }
+  });
+}
+
+showGroupFormBtn.addEventListener('click', () => {
+  groupPanel.classList.remove('hidden');
+  state.editingGroupId = null;
+  showGroupForm();
+});
+
+hideGroupPanelBtn.addEventListener('click', () => {
+  groupPanel.classList.add('hidden');
+  hideGroupForm();
+});
+
+saveGroupBtn.addEventListener('click', () => saveGroup());
+cancelGroupBtn.addEventListener('click', () => hideGroupForm());
+
+filterGroupEl.addEventListener('change', () => {
+  state.groupFilter = filterGroupEl.value;
+  renderAgents();
+});

@@ -23,6 +23,14 @@
 - 最近活跃情况
 - 模型与基础状态
 
+#### 1.1 Agent 分组管理
+支持按用途组织 Agent：
+- 创建分组（名称、颜色、描述）
+- 编辑 / 删除分组
+- 为 Agent 分配分组（通过下拉菜单选择）
+- 按分组筛选 Agent 列表
+- Agent 卡片显示所属分组标签
+
 ### 2. 系统状态
 查看：
 - Gateway 基础信息
@@ -82,7 +90,10 @@
 ```text
 agent-orchestra/
 ├── data/
-│   └── tasks.json              # 任务元数据
+│   ├── tasks.json              # 任务元数据
+│   ├── templates.json           # 任务模板
+│   ├── agent-groups.json       # Agent 分组
+│   └── runtime.json            # 运行时信息
 ├── public/
 │   ├── index.html              # 前端页面
 │   ├── styles.css              # 前端样式
@@ -236,6 +247,11 @@ npm run verify
 
 - `GET /api/runtime`：获取当前运行时信息
 - `GET /api/health`：轻量健康检查接口，返回 `ok`、`pid`、`port`、`startedAt`、`uptime`、`status`
+- `GET /api/agent-groups`：获取所有 Agent 分组
+- `POST /api/agent-groups`：创建新分组，请求体：`{ name, color, description }`
+- `PUT /api/agent-groups/:id`：更新分组，请求体：`{ name, color, description }`
+- `DELETE /api/agent-groups/:id`：删除分组
+- `PUT /api/agents/:id/groups`：为 Agent 分配分组，请求体：`{ groupIds: [] }`
 - `GET /api/tasks`：获取任务列表，支持以下查询参数（前端筛选功能基于此 API）：
   - `keyword`：关键词，匹配任务标题和内容
   - `status`：状态筛选，支持多值逗号分隔（queued/running/completed/failed/canceled）
@@ -302,7 +318,7 @@ openclaw agent --agent <agentId> --message "..." --json
 - 实时日志流
 
 ### P2：调度能力增强
-- Agent 分组 / 标签
+- ~~Agent 分组 / 标签~~ ✅ 已实现
 - 工作流编排
 - 单个 run 重试 / 改派 / 暂停 / 恢复
 - sessions / subagents / ACP 管理

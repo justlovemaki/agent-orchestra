@@ -14,6 +14,7 @@ const DATA_DIR = path.join(ROOT, 'data');
 const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
 const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
+const AGENT_GROUPS_FILE = path.join(DATA_DIR, 'agent-groups.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
@@ -32,6 +33,7 @@ async function ensureData() {
   await fsp.mkdir(LOG_DIR, { recursive: true });
   try { await fsp.access(TASKS_FILE); } catch { await fsp.writeFile(TASKS_FILE, '[]\n'); }
   try { await fsp.access(TEMPLATES_FILE); } catch { await fsp.writeFile(TEMPLATES_FILE, '[]\n'); }
+  try { await fsp.access(AGENT_GROUPS_FILE); } catch { await fsp.writeFile(AGENT_GROUPS_FILE, '[]\n'); }
 }
 
 async function writePidFile(pid = process.pid) {
@@ -276,6 +278,21 @@ async function writeTemplates(templates) {
 async function getTemplate(templateId) {
   const templates = await readTemplates();
   return templates.find(t => t.id === templateId) || null;
+}
+
+async function readAgentGroups() {
+  await ensureData();
+  return JSON.parse(await fsp.readFile(AGENT_GROUPS_FILE, 'utf8'));
+}
+
+async function writeAgentGroups(groups) {
+  await ensureData();
+  await fsp.writeFile(AGENT_GROUPS_FILE, JSON.stringify(groups, null, 2) + '\n');
+}
+
+async function getAgentGroup(groupId) {
+  const groups = await readAgentGroups();
+  return groups.find(g => g.id === groupId) || null;
 }
 
 async function updateTask(taskId, mutator) {
@@ -671,6 +688,65 @@ async function requestHandler(req, res) {
             mode: body.mode || template.defaultMode
           })
         });
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-groups') {
+        return json(res, 200, { groups: await readAgentGroups() });
+      }
+      if (req.method === 'POST' && pathname === '/api/agent-groups') {
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('分组名称不能为空');
+        const groups = await readAgentGroups();
+        const newGroup = {
+          id: crypto.randomUUID(),
+          name: body.name.trim(),
+          color: body.color || '#6b7280',
+          description: body.description?.trim() || '',
+          agentIds: [],
+          createdAt: Date.now()
+        };
+        groups.push(newGroup);
+        await writeAgentGroups(groups);
+        return json(res, 201, { group: newGroup });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/agent-groups/')) {
+        const groupId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const groups = await readAgentGroups();
+        const idx = groups.findIndex(g => g.id === groupId);
+        if (idx === -1) throw new Error('分组不存在');
+        if (body.name != null) groups[idx].name = body.name.trim();
+        if (body.color != null) groups[idx].color = body.color;
+        if (body.description != null) groups[idx].description = body.description.trim();
+        await writeAgentGroups(groups);
+        return json(res, 200, { group: groups[idx] });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/agent-groups/')) {
+        const groupId = pathname.split('/')[3];
+        const groups = await readAgentGroups();
+        const idx = groups.findIndex(g => g.id === groupId);
+        if (idx === -1) throw new Error('分组不存在');
+        groups.splice(idx, 1);
+        await writeAgentGroups(groups);
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/agents/') && pathname.endsWith('/groups')) {
+        const agentId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const groupIds = normalizeAgents(body.groupIds);
+        const groups = await readAgentGroups();
+        for (const group of groups) {
+          if (group.agentIds.includes(agentId)) {
+            group.agentIds = group.agentIds.filter(id => id !== agentId);
+          }
+        }
+        for (const groupId of groupIds) {
+          const group = groups.find(g => g.id === groupId);
+          if (group && !group.agentIds.includes(agentId)) {
+            group.agentIds.push(agentId);
+          }
+        }
+        await writeAgentGroups(groups);
+        return json(res, 200, { success: true });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
