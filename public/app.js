@@ -372,10 +372,17 @@ function renderFilterPresets() {
   } else {
     savedPresetListEl.innerHTML = state.savedPresets.map((preset, index) => {
       const active = areFiltersEqual(state.filters, preset.filters);
+      const disableMoveUp = index === 0;
+      const disableMoveDown = index === state.savedPresets.length - 1;
       return `
-        <span class="preset-chip ${active ? 'is-active' : ''}" data-saved-preset-index="${index}">
-          <button type="button" data-action="apply" data-saved-preset-index="${index}">${escapeHtml(preset.name)}</button>
-          <button type="button" data-action="delete" data-saved-preset-index="${index}" title="删除该预设">删除</button>
+        <span class="preset-chip preset-chip-saved ${active ? 'is-active' : ''}" data-saved-preset-index="${index}">
+          <button type="button" class="preset-chip-name" data-action="apply" data-saved-preset-index="${index}">${escapeHtml(preset.name)}</button>
+          <span class="preset-chip-actions">
+            <button type="button" data-action="rename" data-saved-preset-index="${index}" title="重命名该预设">重命名</button>
+            <button type="button" data-action="move-up" data-saved-preset-index="${index}" ${disableMoveUp ? 'disabled' : ''} title="上移">↑</button>
+            <button type="button" data-action="move-down" data-saved-preset-index="${index}" ${disableMoveDown ? 'disabled' : ''} title="下移">↓</button>
+            <button type="button" data-action="delete" data-saved-preset-index="${index}" title="删除该预设">删除</button>
+          </span>
         </span>
       `;
     }).join('');
@@ -398,6 +405,18 @@ function renderFilterPresets() {
       if (!Number.isInteger(index) || !state.savedPresets[index]) return;
       if (action === 'delete') {
         deletePreset(index);
+        return;
+      }
+      if (action === 'rename') {
+        renamePreset(index);
+        return;
+      }
+      if (action === 'move-up') {
+        movePreset(index, -1);
+        return;
+      }
+      if (action === 'move-down') {
+        movePreset(index, 1);
         return;
       }
       await applyPreset(state.savedPresets[index].filters);
@@ -544,6 +563,34 @@ async function applyPreset(filters) {
   state.filters = { ...(filters || {}) };
   populateFilterInputs(state.filters);
   await syncFilterStateAfterChange();
+}
+
+function movePreset(index, direction) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= state.savedPresets.length) return;
+  const presets = [...state.savedPresets];
+  const [preset] = presets.splice(index, 1);
+  presets.splice(targetIndex, 0, preset);
+  state.savedPresets = presets;
+  savePresetsToStorage(state.savedPresets);
+  renderFilterPresets();
+}
+
+function renamePreset(index) {
+  const preset = state.savedPresets[index];
+  if (!preset) return;
+  const nextName = normalizePresetName(window.prompt('请输入新的预设名称', preset.name));
+  if (!nextName) return;
+
+  const existingIndex = state.savedPresets.findIndex((item, itemIndex) => itemIndex !== index && item.name === nextName);
+  if (existingIndex >= 0) {
+    alert('已存在同名预设，请换一个名称');
+    return;
+  }
+
+  state.savedPresets[index] = { ...preset, name: nextName };
+  savePresetsToStorage(state.savedPresets);
+  renderFilterPresets();
 }
 
 function deletePreset(index) {
