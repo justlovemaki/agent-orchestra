@@ -101,6 +101,24 @@
             <button id="applyFilterBtn" class="filter-btn">筛选</button>
             <button id="clearFilterBtn" class="filter-btn filter-btn-ghost">清除</button>
           </div>
+          <div class="filter-presets-shell">
+            <div class="filter-presets-row">
+              <div class="filter-presets-head">
+                <span class="muted small">快速预设</span>
+                <div id="defaultPresetChips" class="filter-presets-list"></div>
+              </div>
+            </div>
+            <div class="filter-presets-row filter-presets-row-saved">
+              <div class="filter-presets-head">
+                <span class="muted small">已保存视图</span>
+                <div id="savedPresetList" class="filter-presets-list"></div>
+              </div>
+              <div class="filter-presets-actions">
+                <input type="text" id="presetNameInput" class="filter-input preset-name-input" placeholder="输入名称后保存当前筛选" maxlength="40" />
+                <button id="savePresetBtn" class="filter-btn">保存为预设</button>
+              </div>
+            </div>
+          </div>
           <div id="filterChips" class="filter-chips"></div>
           <div id="taskBoard" class="task-board"></div>
           <div id="filterResultCount" class="filter-result-count muted small"></div>

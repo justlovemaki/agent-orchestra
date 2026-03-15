@@ -3,7 +3,8 @@ const state = {
   tasks: [],
   selectedTaskId: null,
   runtime: null,
-  filters: {}
+  filters: {},
+  savedPresets: []
 };
 
 const statsEl = document.getElementById('stats');
@@ -32,8 +33,18 @@ const applyFilterBtn = document.getElementById('applyFilterBtn');
 const clearFilterBtn = document.getElementById('clearFilterBtn');
 const filterResultCountEl = document.getElementById('filterResultCount');
 const filterChipsEl = document.getElementById('filterChips');
+const defaultPresetChipsEl = document.getElementById('defaultPresetChips');
+const savedPresetListEl = document.getElementById('savedPresetList');
+const presetNameInputEl = document.getElementById('presetNameInput');
+const savePresetBtn = document.getElementById('savePresetBtn');
 
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
+const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
+const DEFAULT_PRESETS = [
+  { key: 'running', name: '运行中任务', filters: { status: 'running' } },
+  { key: 'high-failed', name: '高优先级失败任务', filters: { status: 'failed', priority: 'high' } },
+  { key: 'today', name: '今天创建的任务', filters: { timeFrom: 'dynamic:todayStart', timeTo: 'dynamic:todayEnd' } }
+];
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -98,12 +109,32 @@ function loadFiltersFromStorage() {
   }
 }
 
+function loadPresetsFromStorage() {
+  try {
+    const stored = localStorage.getItem(FILTER_PRESET_STORAGE_KEY);
+    const presets = stored ? JSON.parse(stored) : [];
+    return Array.isArray(presets) ? presets.filter(isValidPreset) : [];
+  } catch {
+    return [];
+  }
+}
+
 function saveFiltersToStorage(filters) {
   try {
     if (hasActiveFilters(filters)) {
       localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
     } else {
       localStorage.removeItem(FILTER_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function savePresetsToStorage(presets) {
+  try {
+    if (Array.isArray(presets) && presets.length > 0) {
+      localStorage.setItem(FILTER_PRESET_STORAGE_KEY, JSON.stringify(presets));
+    } else {
+      localStorage.removeItem(FILTER_PRESET_STORAGE_KEY);
     }
   } catch {}
 }
@@ -120,6 +151,45 @@ function syncFiltersToUrl(filters) {
 
 function clearFilterUrl() {
   window.history.replaceState({}, '', window.location.pathname);
+}
+
+function normalizePresetName(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+}
+
+function isValidPreset(preset) {
+  return Boolean(preset && typeof preset.name === 'string' && preset.name.trim() && preset.filters && typeof preset.filters === 'object');
+}
+
+function getTodayBounds() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  return {
+    start: start.toISOString(),
+    end: end.toISOString()
+  };
+}
+
+function resolveDynamicPresetFilters(filters = {}) {
+  const next = { ...filters };
+  const today = getTodayBounds();
+  if (next.timeFrom === 'dynamic:todayStart') next.timeFrom = today.start;
+  if (next.timeTo === 'dynamic:todayEnd') next.timeTo = today.end;
+  return next;
+}
+
+function areFiltersEqual(a = {}, b = {}) {
+  return JSON.stringify(a || {}) === JSON.stringify(b || {});
+}
+
+function getResolvedDefaultPresets() {
+  return DEFAULT_PRESETS.map(preset => ({
+    ...preset,
+    filters: resolveDynamicPresetFilters(preset.filters)
+  }));
 }
 
 function buildTaskQuery(filters = {}, force = false) {
@@ -163,6 +233,7 @@ function render() {
   renderTaskBoard();
   renderAgentCheckboxes();
   renderFilterAgents();
+  renderFilterPresets();
   renderFilterSummary();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
@@ -285,6 +356,55 @@ function renderFilterSummary() {
   filterResultCountEl.textContent = `筛选结果：${total} 条`;
 }
 
+function renderFilterPresets() {
+  const defaultPresets = getResolvedDefaultPresets();
+  defaultPresetChipsEl.innerHTML = defaultPresets.map(preset => {
+    const active = areFiltersEqual(state.filters, preset.filters);
+    return `
+      <span class="preset-chip preset-chip-default ${active ? 'is-active' : ''}" data-default-preset-key="${preset.key}">
+        <button type="button" data-default-preset-key="${preset.key}">${escapeHtml(preset.name)}</button>
+      </span>
+    `;
+  }).join('');
+
+  if (state.savedPresets.length === 0) {
+    savedPresetListEl.innerHTML = '<span class="preset-chip preset-chip-empty">还没有保存的视图</span>';
+  } else {
+    savedPresetListEl.innerHTML = state.savedPresets.map((preset, index) => {
+      const active = areFiltersEqual(state.filters, preset.filters);
+      return `
+        <span class="preset-chip ${active ? 'is-active' : ''}" data-saved-preset-index="${index}">
+          <button type="button" data-action="apply" data-saved-preset-index="${index}">${escapeHtml(preset.name)}</button>
+          <button type="button" data-action="delete" data-saved-preset-index="${index}" title="删除该预设">删除</button>
+        </span>
+      `;
+    }).join('');
+  }
+
+  defaultPresetChipsEl.querySelectorAll('[data-default-preset-key]').forEach(el => {
+    el.addEventListener('click', async event => {
+      event.preventDefault();
+      const key = el.dataset.defaultPresetKey || event.target.dataset.defaultPresetKey;
+      const preset = defaultPresets.find(item => item.key === key);
+      if (preset) await applyPreset(preset.filters);
+    });
+  });
+
+  savedPresetListEl.querySelectorAll('[data-saved-preset-index]').forEach(el => {
+    el.addEventListener('click', async event => {
+      event.preventDefault();
+      const index = Number(event.target.dataset.savedPresetIndex || el.dataset.savedPresetIndex);
+      const action = event.target.dataset.action || 'apply';
+      if (!Number.isInteger(index) || !state.savedPresets[index]) return;
+      if (action === 'delete') {
+        deletePreset(index);
+        return;
+      }
+      await applyPreset(state.savedPresets[index].filters);
+    });
+  });
+}
+
 function renderFilterChips() {
   const filters = state.filters;
   const labels = {
@@ -399,12 +519,12 @@ function renderRunItem(run) {
   `;
 }
 
-async function applyFilters() {
-  state.filters = getFilters();
+async function syncFilterStateAfterChange() {
   saveFiltersToStorage(state.filters);
   syncFiltersToUrl(state.filters);
   await loadTasks();
   renderTaskBoard();
+  renderFilterPresets();
   renderFilterSummary();
   if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
     await loadTaskDetail(state.selectedTaskId);
@@ -413,6 +533,51 @@ async function applyFilters() {
     logEmptyEl.classList.remove('hidden');
     detailBodyEl.classList.add('hidden');
   }
+}
+
+async function applyFilters() {
+  state.filters = getFilters();
+  await syncFilterStateAfterChange();
+}
+
+async function applyPreset(filters) {
+  state.filters = { ...(filters || {}) };
+  populateFilterInputs(state.filters);
+  await syncFilterStateAfterChange();
+}
+
+function deletePreset(index) {
+  state.savedPresets.splice(index, 1);
+  savePresetsToStorage(state.savedPresets);
+  renderFilterPresets();
+}
+
+function saveCurrentPreset() {
+  const name = normalizePresetName(presetNameInputEl.value);
+  const filters = getFilters();
+
+  if (!name) {
+    alert('请先输入预设名称');
+    presetNameInputEl.focus();
+    return;
+  }
+
+  if (!hasActiveFilters(filters)) {
+    alert('当前没有可保存的筛选条件');
+    return;
+  }
+
+  const existingIndex = state.savedPresets.findIndex(preset => preset.name === name);
+  const nextPreset = { name, filters };
+  if (existingIndex >= 0) {
+    state.savedPresets.splice(existingIndex, 1, nextPreset);
+  } else {
+    state.savedPresets.unshift(nextPreset);
+  }
+  state.savedPresets = state.savedPresets.slice(0, 8);
+  savePresetsToStorage(state.savedPresets);
+  presetNameInputEl.value = '';
+  renderFilterPresets();
 }
 
 async function clearFilters() {
@@ -424,12 +589,8 @@ async function clearFilters() {
   filterTimeFromEl.value = '';
   filterTimeToEl.value = '';
   state.filters = {};
-  saveFiltersToStorage({});
-  clearFilterUrl();
-  await loadTasks();
-  renderTaskBoard();
+  await syncFilterStateAfterChange();
   renderFilterAgents();
-  renderFilterSummary();
 }
 
 form.addEventListener('submit', async e => {
@@ -479,6 +640,13 @@ cancelBtn.addEventListener('click', async () => {
 });
 applyFilterBtn.addEventListener('click', () => applyFilters());
 clearFilterBtn.addEventListener('click', () => clearFilters());
+savePresetBtn.addEventListener('click', () => saveCurrentPreset());
+presetNameInputEl.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    saveCurrentPreset();
+  }
+});
 filterKeywordEl.addEventListener('keydown', event => {
   if (event.key === 'Enter') {
     event.preventDefault();
@@ -490,6 +658,7 @@ filterKeywordEl.addEventListener('keydown', event => {
 });
 
 function initFilters() {
+  state.savedPresets = loadPresetsFromStorage();
   const urlFilters = parseFiltersFromUrl();
   if (hasActiveFilters(urlFilters)) {
     state.filters = urlFilters;
