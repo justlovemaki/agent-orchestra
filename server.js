@@ -12,6 +12,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
+const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
@@ -30,6 +31,7 @@ async function ensureData() {
   await fsp.mkdir(DATA_DIR, { recursive: true });
   await fsp.mkdir(LOG_DIR, { recursive: true });
   try { await fsp.access(TASKS_FILE); } catch { await fsp.writeFile(TASKS_FILE, '[]\n'); }
+  try { await fsp.access(TEMPLATES_FILE); } catch { await fsp.writeFile(TEMPLATES_FILE, '[]\n'); }
 }
 
 async function writePidFile(pid = process.pid) {
@@ -259,6 +261,21 @@ async function writeTasks(tasks) {
 async function getTask(taskId) {
   const tasks = await readTasks();
   return tasks.find(t => t.id === taskId) || null;
+}
+
+async function readTemplates() {
+  await ensureData();
+  return JSON.parse(await fsp.readFile(TEMPLATES_FILE, 'utf8'));
+}
+
+async function writeTemplates(templates) {
+  await ensureData();
+  await fsp.writeFile(TEMPLATES_FILE, JSON.stringify(templates, null, 2) + '\n');
+}
+
+async function getTemplate(templateId) {
+  const templates = await readTemplates();
+  return templates.find(t => t.id === templateId) || null;
 }
 
 async function updateTask(taskId, mutator) {
@@ -594,6 +611,66 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/retry')) {
         const taskId = pathname.split('/')[3];
         return json(res, 201, { task: await createRetryTask(taskId) });
+      }
+      if (req.method === 'GET' && pathname === '/api/templates') {
+        return json(res, 200, { templates: await readTemplates() });
+      }
+      if (req.method === 'POST' && pathname === '/api/templates') {
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('模板名称不能为空');
+        const templates = await readTemplates();
+        const newTemplate = {
+          id: crypto.randomUUID(),
+          name: body.name.trim(),
+          description: body.description?.trim() || '',
+          defaultAgents: normalizeAgents(body.defaultAgents),
+          defaultPriority: body.defaultPriority || 'medium',
+          defaultMode: body.defaultMode || 'broadcast',
+          defaultContent: body.defaultContent?.trim() || '',
+          createdAt: Date.now()
+        };
+        templates.push(newTemplate);
+        await writeTemplates(templates);
+        return json(res, 201, { template: newTemplate });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/templates/')) {
+        const templateId = pathname.split('/')[3];
+        const templates = await readTemplates();
+        const idx = templates.findIndex(t => t.id === templateId);
+        if (idx === -1) throw new Error('模板不存在');
+        templates.splice(idx, 1);
+        await writeTemplates(templates);
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/templates/')) {
+        const templateId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const templates = await readTemplates();
+        const idx = templates.findIndex(t => t.id === templateId);
+        if (idx === -1) throw new Error('模板不存在');
+        if (body.name != null) templates[idx].name = body.name.trim();
+        if (body.description != null) templates[idx].description = body.description.trim();
+        if (body.defaultAgents != null) templates[idx].defaultAgents = normalizeAgents(body.defaultAgents);
+        if (body.defaultPriority != null) templates[idx].defaultPriority = body.defaultPriority;
+        if (body.defaultMode != null) templates[idx].defaultMode = body.defaultMode;
+        if (body.defaultContent != null) templates[idx].defaultContent = body.defaultContent.trim();
+        await writeTemplates(templates);
+        return json(res, 200, { template: templates[idx] });
+      }
+      if (req.method === 'POST' && pathname.startsWith('/api/tasks/from-template/')) {
+        const templateId = pathname.split('/')[4];
+        const template = await getTemplate(templateId);
+        if (!template) throw new Error('模板不存在');
+        const body = await readJson(req);
+        return json(res, 201, {
+          task: await createTask({
+            title: body.title || template.name,
+            prompt: body.prompt || template.defaultContent,
+            agents: body.agents || template.defaultAgents,
+            priority: body.priority || template.defaultPriority,
+            mode: body.mode || template.defaultMode
+          })
+        });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {

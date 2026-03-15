@@ -4,7 +4,9 @@ const state = {
   selectedTaskId: null,
   runtime: null,
   filters: {},
-  savedPresets: []
+  savedPresets: [],
+  templates: [],
+  editingTemplateId: null
 };
 
 const statsEl = document.getElementById('stats');
@@ -37,6 +39,19 @@ const defaultPresetChipsEl = document.getElementById('defaultPresetChips');
 const savedPresetListEl = document.getElementById('savedPresetList');
 const presetNameInputEl = document.getElementById('presetNameInput');
 const savePresetBtn = document.getElementById('savePresetBtn');
+
+const showTemplateFormBtn = document.getElementById('showTemplateFormBtn');
+const templateForm = document.getElementById('templateForm');
+const templateNameInput = document.getElementById('templateNameInput');
+const templateDescInput = document.getElementById('templateDescInput');
+const templateAgentCheckboxesEl = document.getElementById('templateAgentCheckboxes');
+const templatePriorityInput = document.getElementById('templatePriorityInput');
+const templateModeInput = document.getElementById('templateModeInput');
+const templateContentInput = document.getElementById('templateContentInput');
+const saveTemplateBtn = document.getElementById('saveTemplateBtn');
+const cancelTemplateBtn = document.getElementById('cancelTemplateBtn');
+const templateListEl = document.getElementById('templateList');
+const templateSelectEl = document.getElementById('templateSelect');
 
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
@@ -212,7 +227,8 @@ async function refreshAll(force = false) {
   const [overview, runtimeRes] = await Promise.all([
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
     fetchJson('/api/runtime').catch(() => null),
-    loadTasks(force)
+    loadTasks(force),
+    loadTemplates()
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
@@ -235,6 +251,8 @@ function render() {
   renderFilterAgents();
   renderFilterPresets();
   renderFilterSummary();
+  renderTemplates();
+  renderTemplateSelect();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -639,6 +657,195 @@ async function clearFilters() {
   await syncFilterStateAfterChange();
   renderFilterAgents();
 }
+
+async function loadTemplates() {
+  const res = await fetchJson('/api/templates');
+  state.templates = res.templates;
+}
+
+function renderTemplateAgentCheckboxes(selectedAgents = []) {
+  const prev = new Set([...templateAgentCheckboxesEl.querySelectorAll('input:checked')].map(x => x.value));
+  const selected = new Set(selectedAgents);
+  if (!templateAgentCheckboxesEl.querySelector('input') && state.overview?.agents?.length > 0) {
+    templateAgentCheckboxesEl.innerHTML = state.overview.agents.map(agent => `
+      <label class="checkbox-item compact">
+        <input type="checkbox" name="templateAgents" value="${agent.id}" ${selected.has(agent.id) ? 'checked' : ''} />
+        <span>${escapeHtml(agent.name)}</span>
+      </label>
+    `).join('');
+  }
+}
+
+function renderTemplates() {
+  if (!state.templates || state.templates.length === 0) {
+    templateListEl.innerHTML = '<div class="muted small">还没有创建任何模板</div>';
+    return;
+  }
+  templateListEl.innerHTML = state.templates.map(template => `
+    <div class="template-item" data-template-id="${template.id}">
+      <div class="template-header">
+        <div class="template-name">${escapeHtml(template.name)}</div>
+        <div class="template-actions">
+          <button class="ghost tiny use-template-btn" data-template-id="${template.id}" title="使用此模板创建任务">使用</button>
+          <button class="ghost tiny edit-template-btn" data-template-id="${template.id}" title="编辑模板">编辑</button>
+          <button class="ghost tiny danger delete-template-btn" data-template-id="${template.id}" title="删除模板">删除</button>
+        </div>
+      </div>
+      <div class="template-desc muted small">${escapeHtml(template.description || '暂无描述')}</div>
+      <div class="template-meta muted tiny">
+        <span>默认 Agent: ${(template.defaultAgents || []).join(', ') || '未设置'}</span>
+        <span>优先级: ${priorityLabel(template.defaultPriority)}</span>
+        <span>模式: ${template.defaultMode === 'parallel' ? '并行' : '串行'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  templateListEl.querySelectorAll('.use-template-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const templateId = btn.dataset.templateId;
+      const template = state.templates.find(t => t.id === templateId);
+      if (template) {
+        templateSelectEl.value = templateId;
+        applyTemplateToForm(template);
+      }
+    });
+  });
+
+  templateListEl.querySelectorAll('.edit-template-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const templateId = btn.dataset.templateId;
+      const template = state.templates.find(t => t.id === templateId);
+      if (template) {
+        state.editingTemplateId = templateId;
+        showTemplateForm(template);
+      }
+    });
+  });
+
+  templateListEl.querySelectorAll('.delete-template-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('确定要删除此模板吗？')) return;
+      const templateId = btn.dataset.templateId;
+      try {
+        await fetchJson(`/api/templates/${templateId}`, { method: 'DELETE' });
+        await loadTemplates();
+        renderTemplates();
+        renderTemplateSelect();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+function renderTemplateSelect() {
+  const currentValue = templateSelectEl.value;
+  templateSelectEl.innerHTML = '<option value="">不使用模板</option>' +
+    state.templates.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+  templateSelectEl.value = currentValue;
+}
+
+function showTemplateForm(template = null) {
+  templateForm.classList.remove('hidden');
+  if (template) {
+    templateNameInput.value = template.name;
+    templateDescInput.value = template.description || '';
+    templatePriorityInput.value = template.defaultPriority || 'medium';
+    templateModeInput.value = template.defaultMode || 'broadcast';
+    templateContentInput.value = template.defaultContent || '';
+    renderTemplateAgentCheckboxes(template.defaultAgents || []);
+  } else {
+    templateNameInput.value = '';
+    templateDescInput.value = '';
+    templatePriorityInput.value = 'medium';
+    templateModeInput.value = 'broadcast';
+    templateContentInput.value = '';
+    renderTemplateAgentCheckboxes([]);
+  }
+  templateNameInput.focus();
+}
+
+function hideTemplateForm() {
+  templateForm.classList.add('hidden');
+  state.editingTemplateId = null;
+}
+
+async function saveTemplate() {
+  const name = templateNameInput.value.trim();
+  if (!name) {
+    alert('请输入模板名称');
+    templateNameInput.focus();
+    return;
+  }
+  const agents = [...templateAgentCheckboxesEl.querySelectorAll('input:checked')].map(x => x.value);
+  const payload = {
+    name,
+    description: templateDescInput.value.trim(),
+    defaultAgents: agents,
+    defaultPriority: templatePriorityInput.value,
+    defaultMode: templateModeInput.value,
+    defaultContent: templateContentInput.value.trim()
+  };
+
+  try {
+    if (state.editingTemplateId) {
+      await fetchJson(`/api/templates/${state.editingTemplateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      await fetchJson('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    hideTemplateForm();
+    await loadTemplates();
+    renderTemplates();
+    renderTemplateSelect();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function applyTemplateToForm(template) {
+  const titleInput = form.querySelector('input[name="title"]');
+  const promptInput = form.querySelector('textarea[name="prompt"]');
+  const prioritySelect = form.querySelector('select[name="priority"]');
+  const modeSelect = form.querySelector('select[name="mode"]');
+
+  if (template.defaultContent) {
+    promptInput.value = template.defaultContent;
+  }
+  if (template.defaultPriority) {
+    prioritySelect.value = template.defaultPriority;
+  }
+  if (template.defaultMode) {
+    modeSelect.value = template.defaultMode;
+  }
+  if (template.defaultAgents && template.defaultAgents.length > 0) {
+    agentCheckboxesEl.querySelectorAll('input').forEach(cb => {
+      cb.checked = template.defaultAgents.includes(cb.value);
+    });
+  }
+}
+
+showTemplateFormBtn.addEventListener('click', () => showTemplateForm());
+saveTemplateBtn.addEventListener('click', () => saveTemplate());
+cancelTemplateBtn.addEventListener('click', () => hideTemplateForm());
+templateSelectEl.addEventListener('change', () => {
+  const templateId = templateSelectEl.value;
+  if (!templateId) return;
+  const template = state.templates.find(t => t.id === templateId);
+  if (template) {
+    applyTemplateToForm(template);
+  }
+});
 
 form.addEventListener('submit', async e => {
   e.preventDefault();

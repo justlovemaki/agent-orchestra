@@ -123,6 +123,58 @@
           <div id="taskBoard" class="task-board"></div>
           <div id="filterResultCount" class="filter-result-count muted small"></div>
         </section>
+
+        <section class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Templates</div>
+              <h2>任务模板</h2>
+            </div>
+            <button id="showTemplateFormBtn" class="ghost small">新建模板</button>
+          </div>
+          <div id="templateForm" class="template-form hidden">
+            <div class="template-form-grid">
+              <label>
+                <span class="field-label">模板名称</span>
+                <input id="templateNameInput" placeholder="例如：代码审查" required />
+              </label>
+              <label>
+                <span class="field-label">描述</span>
+                <input id="templateDescInput" placeholder="简要描述用途" />
+              </label>
+              <label>
+                <span class="field-label">默认 Agent</span>
+                <div id="templateAgentCheckboxes" class="checkbox-list compact"></div>
+              </label>
+              <div class="split-fields">
+                <label>
+                  <span class="field-label">默认优先级</span>
+                  <select id="templatePriorityInput">
+                    <option value="low">低</option>
+                    <option value="medium" selected>中</option>
+                    <option value="high">高</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="field-label">默认模式</span>
+                  <select id="templateModeInput">
+                    <option value="broadcast" selected>串行广播</option>
+                    <option value="parallel">并行执行</option>
+                  </select>
+                </label>
+              </div>
+              <label class="full-width">
+                <span class="field-label">默认任务内容</span>
+                <textarea id="templateContentInput" rows="4" placeholder="输入默认的任务内容模板..."></textarea>
+              </label>
+            </div>
+            <div class="template-form-actions">
+              <button id="saveTemplateBtn" class="primary">保存模板</button>
+              <button id="cancelTemplateBtn" class="ghost">取消</button>
+            </div>
+          </div>
+          <div id="templateList" class="template-list"></div>
+        </section>
       </section>
 
       <aside class="side-column">
@@ -135,6 +187,13 @@
           </div>
 
           <form id="taskForm" class="task-form">
+            <label>
+              <span class="field-label">使用模板（可选）</span>
+              <select id="templateSelect" class="template-select">
+                <option value="">不使用模板</option>
+              </select>
+            </label>
+
             <label>
               <span class="field-label">任务标题</span>
               <input name="title" placeholder="例如：整理今天的社媒选题" required />
