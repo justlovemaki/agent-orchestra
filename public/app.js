@@ -37,6 +37,8 @@ const taskMetaEl = document.getElementById('taskMeta');
 const logBoxEl = document.getElementById('logBox');
 const retryBtn = document.getElementById('retryBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const resumeBtn = document.getElementById('resumeBtn');
 const filterKeywordEl = document.getElementById('filterKeyword');
 const filterStatusEl = document.getElementById('filterStatus');
 const filterAgentEl = document.getElementById('filterAgent');
@@ -748,7 +750,18 @@ async function loadTaskDetail(taskId) {
   `;
   logBoxEl.textContent = log || '暂无日志';
   retryBtn.disabled = false;
-  cancelBtn.disabled = ['completed', 'failed', 'canceled'].includes(task.status);
+  cancelBtn.disabled = ['completed', 'failed', 'canceled', 'paused'].includes(task.status);
+
+  if (task.status === 'running') {
+    pauseBtn.classList.remove('hidden');
+    resumeBtn.classList.add('hidden');
+  } else if (task.status === 'paused') {
+    pauseBtn.classList.add('hidden');
+    resumeBtn.classList.remove('hidden');
+  } else {
+    pauseBtn.classList.add('hidden');
+    resumeBtn.classList.add('hidden');
+  }
   
   if (['running', 'queued'].includes(task.status)) {
     startLogStream(taskId, log);
@@ -1165,6 +1178,24 @@ cancelBtn.addEventListener('click', async () => {
     alert(err.message);
   }
 });
+pauseBtn.addEventListener('click', async () => {
+  if (!state.selectedTaskId) return;
+  try {
+    await fetchJson(`/api/tasks/${state.selectedTaskId}/pause`, { method: 'POST' });
+    await refreshAll();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+resumeBtn.addEventListener('click', async () => {
+  if (!state.selectedTaskId) return;
+  try {
+    await fetchJson(`/api/tasks/${state.selectedTaskId}/resume`, { method: 'POST' });
+    await refreshAll();
+  } catch (err) {
+    alert(err.message);
+  }
+});
 applyFilterBtn.addEventListener('click', () => applyFilters());
 clearFilterBtn.addEventListener('click', () => clearFilters());
 savePresetBtn.addEventListener('click', () => saveCurrentPreset());
@@ -1213,7 +1244,7 @@ function columnTitle(key) { return ({ queued: '待执行', running: '执行中',
 function priorityLabel(v) { return ({ low: '低', medium: '中', high: '高' })[v] || v; }
 function runStatusLabel(v) { return ({ queued: '待命', running: '执行中', completed: '完成', failed: '失败', canceled: '已取消' })[v] || v; }
 function labelStatus(v) { return ({ busy: '忙碌', idle: '空闲', offline: '离线' })[v] || v; }
-function statusLabel(v) { return ({ queued: '待执行', running: '执行中', completed: '已完成', failed: '失败', canceled: '已取消' })[v] || v; }
+function statusLabel(v) { return ({ queued: '待执行', running: '执行中', paused: '已暂停', completed: '已完成', failed: '失败', canceled: '已取消' })[v] || v; }
 function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s])); }
 
 function hexToRgba(hex, alpha) {

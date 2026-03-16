@@ -11,6 +11,31 @@ if (!taskId) {
   process.exit(1);
 }
 
+let paused = false;
+let pauseResolve = null;
+
+process.on('SIGUSR1', async () => {
+  console.log(`[task:${taskId}] received pause signal`);
+  paused = true;
+  await updateTask(async t => ({ ...t, paused: true, pausedAt: Date.now(), status: 'paused' }));
+});
+
+process.on('SIGUSR2', async () => {
+  console.log(`[task:${taskId}] received resume signal`);
+  paused = false;
+  await updateTask(async t => ({ ...t, paused: false, pausedAt: null, status: 'running' }));
+  if (pauseResolve) {
+    pauseResolve();
+    pauseResolve = null;
+  }
+});
+
+function waitWhilePaused() {
+  return new Promise(resolve => {
+    pauseResolve = resolve;
+  });
+}
+
 function runOpenClaw(args, timeout = 600000) {
   return new Promise((resolve, reject) => {
     execFile('openclaw', ['--no-color', ...args], { timeout, maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => {
@@ -156,11 +181,23 @@ async function runSingle(task, run) {
     failed = results.some(r => r?.failed);
   } else {
     for (const run of task.runs) {
+      while (paused) {
+        console.log(`[task:${taskId}] paused, waiting to resume...`);
+        await waitWhilePaused();
+        task = await getTask();
+        if (!task || task.status === 'canceled' || task.cancelRequested) break;
+      }
       const result = await runSingle(task, run);
       if (result?.canceled) break;
       if (result?.failed) failed = true;
       task = await getTask();
       if (!task || task.cancelRequested || task.status === 'canceled') break;
+      while (task.paused) {
+        console.log(`[task:${taskId}] paused, waiting to resume...`);
+        await waitWhilePaused();
+        task = await getTask();
+        if (!task || task.status === 'canceled' || task.cancelRequested) break;
+      }
     }
   }
 
@@ -169,6 +206,8 @@ async function runSingle(task, run) {
   if (latest.status === 'canceled' || latest.cancelRequested) {
     await updateTask(async t => ({ ...t, status: 'canceled', finishedAt: t.finishedAt || Date.now() }));
     console.log(`[task:${taskId}] runner canceled`);
+  } else if (latest.paused) {
+    console.log(`[task:${taskId}] runner paused`);
   } else {
     await updateTask(async t => ({ ...t, status: failed ? 'failed' : 'completed', finishedAt: Date.now() }));
     console.log(`[task:${taskId}] runner finished`);

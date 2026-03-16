@@ -567,6 +567,44 @@ async function cancelTask(taskId) {
   return formatTaskForUi(await getTask(taskId));
 }
 
+async function pauseTask(taskId) {
+  const task = await getTask(taskId);
+  if (!task) throw new Error('任务不存在');
+  if (task.status !== 'running') throw new Error('只有运行中的任务才能暂停');
+
+  await updateTask(taskId, async t => ({
+    ...t,
+    paused: true,
+    pausedAt: Date.now(),
+    status: 'paused'
+  }));
+
+  if (task.runnerPid) {
+    try { process.kill(task.runnerPid, 'SIGUSR1'); } catch {}
+  }
+
+  return formatTaskForUi(await getTask(taskId));
+}
+
+async function resumeTask(taskId) {
+  const task = await getTask(taskId);
+  if (!task) throw new Error('任务不存在');
+  if (!task.paused) throw new Error('任务未暂停');
+
+  await updateTask(taskId, async t => ({
+    ...t,
+    paused: false,
+    pausedAt: null,
+    status: 'running'
+  }));
+
+  if (task.runnerPid) {
+    try { process.kill(task.runnerPid, 'SIGUSR2'); } catch {}
+  }
+
+  return formatTaskForUi(await getTask(taskId));
+}
+
 async function batchCancelTasks(taskIds) {
   const results = { success: [], failed: [] };
   for (const taskId of taskIds) {
@@ -759,6 +797,14 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/cancel')) {
         const taskId = pathname.split('/')[3];
         return json(res, 200, { task: await cancelTask(taskId) });
+      }
+      if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/pause')) {
+        const taskId = pathname.split('/')[3];
+        return json(res, 200, { task: await pauseTask(taskId) });
+      }
+      if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/resume')) {
+        const taskId = pathname.split('/')[3];
+        return json(res, 200, { task: await resumeTask(taskId) });
       }
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/retry')) {
         const taskId = pathname.split('/')[3];
