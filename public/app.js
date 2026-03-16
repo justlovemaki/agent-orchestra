@@ -14,7 +14,9 @@ const state = {
   workflows: [],
   editingWorkflowId: null,
   selectedWorkflowRunId: null,
-  runningWorkflowId: null
+  runningWorkflowId: null,
+  logEventSource: null,
+  logStreamActive: false
 };
 
 const statsEl = document.getElementById('stats');
@@ -573,7 +575,16 @@ function populateFilterInputs(filters) {
   filterTimeToEl.value = formatDateTimeLocalValue(filters.timeTo);
 }
 
+function closeLogStream() {
+  if (state.logEventSource) {
+    state.logEventSource.close();
+    state.logEventSource = null;
+  }
+  state.logStreamActive = false;
+}
+
 async function loadTaskDetail(taskId) {
+  closeLogStream();
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
   const { log } = await fetchJson(`/api/tasks/${taskId}/log`);
@@ -597,6 +608,55 @@ async function loadTaskDetail(taskId) {
   logBoxEl.textContent = log || '暂无日志';
   retryBtn.disabled = false;
   cancelBtn.disabled = ['completed', 'failed', 'canceled'].includes(task.status);
+  
+  if (['running', 'queued'].includes(task.status)) {
+    startLogStream(taskId, log);
+  }
+}
+
+function startLogStream(taskId, initialLog) {
+  const eventSource = new EventSource(`/api/tasks/${taskId}/logs/stream`);
+  state.logEventSource = eventSource;
+  state.logStreamActive = true;
+  let currentLog = initialLog || '';
+  
+  eventSource.addEventListener('log-new', (e) => {
+    try {
+      const { content } = JSON.parse(e.data);
+      currentLog += content;
+      logBoxEl.textContent = currentLog;
+      logBoxEl.scrollTop = logBoxEl.scrollHeight;
+    } catch {}
+  });
+  
+  eventSource.addEventListener('task-complete', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      updateTaskStatusInList(data.taskId, 'completed');
+      state.logStreamActive = false;
+    } catch {}
+  });
+  
+  eventSource.addEventListener('task-error', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      updateTaskStatusInList(data.taskId, data.status);
+      state.logStreamActive = false;
+    } catch {}
+  });
+  
+  eventSource.addEventListener('heartbeat', () => {});
+  
+  eventSource.onerror = () => {
+    state.logStreamActive = false;
+  };
+}
+
+function updateTaskStatusInList(taskId, status) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (task) {
+    task.status = status;
+  }
 }
 
 function renderRunItem(run) {

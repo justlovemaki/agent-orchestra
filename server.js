@@ -21,6 +21,9 @@ const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
 
+const sseClients = new Map();
+let taskWatcherInterval = null;
+
 let overviewCache = {
   value: null,
   expiresAt: 0,
@@ -574,6 +577,93 @@ async function readLog(taskId) {
   }
 }
 
+function handleSse(taskId, req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+
+  const clientId = crypto.randomUUID();
+  const client = { id: clientId, res, taskId, lastLogSize: 0 };
+  
+  if (!sseClients.has(taskId)) {
+    sseClients.set(taskId, new Set());
+  }
+  sseClients.get(taskId).add(client);
+
+  res.write(`event: task-start\ndata: ${JSON.stringify({ taskId })}\n\n`);
+
+  res.on('close', () => {
+    const clients = sseClients.get(taskId);
+    if (clients) {
+      clients.delete(client);
+      if (clients.size === 0) {
+        sseClients.delete(taskId);
+      }
+    }
+  });
+
+  if (!taskWatcherInterval) {
+    startTaskWatcher();
+  }
+
+  res.write(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: Date.now() })}\n\n`);
+}
+
+function startTaskWatcher() {
+  if (taskWatcherInterval) return;
+  
+  taskWatcherInterval = setInterval(async () => {
+    for (const [taskId, clients] of sseClients) {
+      if (clients.size === 0) continue;
+      
+      const task = await getTask(taskId);
+      const logPath = path.join(LOG_DIR, `${taskId}.log`);
+      
+      try {
+        const stats = await fsp.stat(logPath);
+        const currentSize = stats.size;
+        
+        for (const client of clients) {
+          if (currentSize > client.lastLogSize) {
+            const fd = await fsp.open(logPath, 'r');
+            const buffer = Buffer.alloc(currentSize - client.lastLogSize);
+            await fd.read(buffer, 0, buffer.length, client.lastLogSize);
+            await fd.close();
+            
+            const newContent = buffer.toString('utf8');
+            client.lastLogSize = currentSize;
+            
+            if (newContent) {
+              client.res.write(`event: log-new\ndata: ${JSON.stringify({ content: newContent })}\n\n`);
+            }
+          }
+          
+          if (task && task.status !== 'running' && task.status !== 'queued') {
+            if (task.status === 'completed') {
+              client.res.write(`event: task-complete\ndata: ${JSON.stringify({ taskId, status: task.status })}\n\n`);
+            } else if (task.status === 'failed' || task.status === 'canceled') {
+              client.res.write(`event: task-error\ndata: ${JSON.stringify({ taskId, status: task.status, error: task.error || task.runs?.[0]?.error })}\n\n`);
+            }
+            clients.delete(client);
+          }
+        }
+        
+        for (const client of clients) {
+          client.res.write(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: Date.now() })}\n\n`);
+        }
+      } catch {
+      }
+    }
+    
+    if (sseClients.size === 0 && taskWatcherInterval) {
+      clearInterval(taskWatcherInterval);
+      taskWatcherInterval = null;
+    }
+  }, 2000);
+}
+
 async function requestHandler(req, res) {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
@@ -622,6 +712,10 @@ async function requestHandler(req, res) {
       if (req.method === 'GET' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/log')) {
         const taskId = pathname.split('/')[3];
         return json(res, 200, { taskId, log: await readLog(taskId) });
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/tasks\/[^/]+\/logs\/stream$/)) {
+        const taskId = pathname.split('/')[3];
+        return handleSse(taskId, req, res);
       }
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/cancel')) {
         const taskId = pathname.split('/')[3];
