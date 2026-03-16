@@ -10,7 +10,11 @@ const state = {
   groups: [],
   editingGroupId: null,
   selectedAgentId: null,
-  groupFilter: ''
+  groupFilter: '',
+  workflows: [],
+  editingWorkflowId: null,
+  selectedWorkflowRunId: null,
+  runningWorkflowId: null
 };
 
 const statsEl = document.getElementById('stats');
@@ -245,7 +249,8 @@ async function refreshAll(force = false) {
     fetchJson('/api/runtime').catch(() => null),
     loadTasks(force),
     loadTemplates(),
-    loadGroups()
+    loadGroups(),
+    loadWorkflows()
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
@@ -272,6 +277,7 @@ function render() {
   renderTemplateSelect();
   renderGroupFilter();
   renderGroupList();
+  renderWorkflows();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -713,6 +719,11 @@ async function loadTemplates() {
 async function loadGroups() {
   const res = await fetchJson('/api/agent-groups');
   state.groups = res.groups;
+}
+
+async function loadWorkflows() {
+  const res = await fetchJson('/api/workflows');
+  state.workflows = res.workflows;
 }
 
 function renderTemplateAgentCheckboxes(selectedAgents = []) {
@@ -1180,3 +1191,354 @@ filterGroupEl.addEventListener('change', () => {
   state.groupFilter = filterGroupEl.value;
   renderAgents();
 });
+
+function renderWorkflows() {
+  if (!state.workflows || state.workflows.length === 0) {
+    workflowListEl.innerHTML = '<div class="muted small">还没有创建任何工作流</div>';
+    return;
+  }
+  workflowListEl.innerHTML = state.workflows.map(workflow => `
+    <div class="workflow-item" data-workflow-id="${workflow.id}">
+      <div class="workflow-header">
+        <div>
+          <div class="workflow-name">${escapeHtml(workflow.name)}</div>
+          <div class="workflow-desc">${escapeHtml(workflow.description || '暂无描述')}</div>
+          <div class="workflow-meta">
+            <span>步骤: ${workflow.steps?.length || 0}</span>
+            <span>创建于: ${new Date(workflow.createdAt).toLocaleDateString('zh-CN')}</span>
+          </div>
+        </div>
+        <div class="workflow-actions">
+          <button class="ghost tiny run-workflow-btn" data-workflow-id="${workflow.id}" title="执行工作流">执行</button>
+          <button class="ghost tiny view-runs-btn" data-workflow-id="${workflow.id}" title="查看执行记录">记录</button>
+          <button class="ghost tiny edit-workflow-btn" data-workflow-id="${workflow.id}" title="编辑工作流">编辑</button>
+          <button class="ghost tiny danger delete-workflow-btn" data-workflow-id="${workflow.id}" title="删除工作流">删除</button>
+        </div>
+      </div>
+      <div class="workflow-steps-summary">
+        ${(workflow.steps || []).map((step, i) => `
+          <span class="workflow-step-tag">${i + 1}. ${escapeHtml(step.agentId || '未设置Agent')}</span>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  workflowListEl.querySelectorAll('.run-workflow-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const workflowId = btn.dataset.workflowId;
+      showRunWorkflowModal(workflowId);
+    });
+  });
+
+  workflowListEl.querySelectorAll('.view-runs-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const workflowId = btn.dataset.workflowId;
+      showWorkflowRunModal(workflowId);
+    });
+  });
+
+  workflowListEl.querySelectorAll('.edit-workflow-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const workflowId = btn.dataset.workflowId;
+      const workflow = state.workflows.find(w => w.id === workflowId);
+      if (workflow) {
+        state.editingWorkflowId = workflowId;
+        showWorkflowForm(workflow);
+      }
+    });
+  });
+
+  workflowListEl.querySelectorAll('.delete-workflow-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('确定要删除此工作流吗？')) return;
+      const workflowId = btn.dataset.workflowId;
+      try {
+        await fetchJson(`/api/workflows/${workflowId}`, { method: 'DELETE' });
+        await loadWorkflows();
+        renderWorkflows();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+function showWorkflowForm(workflow = null) {
+  workflowForm.classList.remove('hidden');
+  if (workflow) {
+    workflowNameInput.value = workflow.name;
+    workflowDescInput.value = workflow.description || '';
+    renderWorkflowSteps(workflow.steps || []);
+  } else {
+    workflowNameInput.value = '';
+    workflowDescInput.value = '';
+    renderWorkflowSteps([]);
+  }
+  workflowNameInput.focus();
+}
+
+function hideWorkflowForm() {
+  workflowForm.classList.add('hidden');
+  state.editingWorkflowId = null;
+}
+
+function renderWorkflowSteps(steps = []) {
+  workflowStepsList.innerHTML = steps.map((step, index) => `
+    <div class="workflow-step-item" data-step-index="${index}">
+      <div class="workflow-step-header">
+        <span class="workflow-step-number">步骤 ${index + 1}</span>
+        <button type="button" class="workflow-step-remove" data-step-index="${index}">删除</button>
+      </div>
+      <label>
+        <span class="field-label">Agent</span>
+        <select class="step-agent-select" data-step-index="${index}">
+          <option value="">选择 Agent</option>
+          ${(state.overview?.agents || []).map(agent => `
+            <option value="${agent.id}" ${step.agentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}</option>
+          `).join('')}
+        </select>
+      </label>
+      <label>
+        <span class="field-label">任务描述</span>
+        <textarea class="step-prompt-input" data-step-index="${index}" rows="3" placeholder="描述此步骤要执行的任务">${escapeHtml(step.prompt || '')}</textarea>
+      </label>
+    </div>
+  `).join('');
+
+  workflowStepsList.querySelectorAll('.workflow-step-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number(btn.dataset.stepIndex);
+      const items = workflowStepsList.querySelectorAll('.workflow-step-item');
+      if (items[index]) {
+        items[index].remove();
+        reindexWorkflowSteps();
+      }
+    });
+  });
+}
+
+function reindexWorkflowSteps() {
+  workflowStepsList.querySelectorAll('.workflow-step-item').forEach((item, index) => {
+    item.dataset.stepIndex = index;
+    item.querySelector('.workflow-step-number').textContent = `步骤 ${index + 1}`;
+    item.querySelector('.workflow-step-remove').dataset.stepIndex = index;
+    item.querySelector('.step-agent-select').dataset.stepIndex = index;
+    item.querySelector('.step-prompt-input').dataset.stepIndex = index;
+  });
+}
+
+function addWorkflowStep() {
+  const steps = getWorkflowStepsFromForm();
+  steps.push({ agentId: '', prompt: '' });
+  renderWorkflowSteps(steps);
+}
+
+function getWorkflowStepsFromForm() {
+  const steps = [];
+  workflowStepsList.querySelectorAll('.workflow-step-item').forEach(item => {
+    const index = item.dataset.stepIndex;
+    const agentId = item.querySelector('.step-agent-select')?.value || '';
+    const prompt = item.querySelector('.step-prompt-input')?.value || '';
+    if (agentId || prompt) {
+      steps.push({ agentId, prompt });
+    }
+  });
+  return steps;
+}
+
+async function saveWorkflow() {
+  const name = workflowNameInput.value.trim();
+  if (!name) {
+    alert('请输入工作流名称');
+    workflowNameInput.focus();
+    return;
+  }
+  const steps = getWorkflowStepsFromForm();
+  if (steps.length === 0) {
+    alert('请至少添加一个步骤');
+    return;
+  }
+  const payload = {
+    name,
+    description: workflowDescInput.value.trim(),
+    steps
+  };
+
+  try {
+    if (state.editingWorkflowId) {
+      await fetchJson(`/api/workflows/${state.editingWorkflowId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      await fetchJson('/api/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    hideWorkflowForm();
+    await loadWorkflows();
+    renderWorkflows();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function showRunWorkflowModal(workflowId) {
+  const workflow = state.workflows.find(w => w.id === workflowId);
+  if (!workflow) return;
+  state.runningWorkflowId = workflowId;
+  runWorkflowNameEl.textContent = workflow.name;
+  stopOnFailureInput.checked = true;
+  runWorkflowMsg.textContent = '';
+  runWorkflowModal.classList.remove('hidden');
+}
+
+function hideRunWorkflowModal() {
+  runWorkflowModal.classList.add('hidden');
+  state.runningWorkflowId = null;
+}
+
+async function runWorkflow() {
+  if (!state.runningWorkflowId) return;
+  runWorkflowMsg.textContent = '正在执行工作流...';
+  confirmRunWorkflowBtn.disabled = true;
+
+  try {
+    const { run } = await fetchJson(`/api/workflows/${state.runningWorkflowId}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stopOnFailure: stopOnFailureInput.checked })
+    });
+    runWorkflowMsg.textContent = `工作流已开始执行 (ID: ${run.id})`;
+    setTimeout(() => {
+      hideRunWorkflowModal();
+      showWorkflowRunModal(state.runningWorkflowId);
+    }, 500);
+  } catch (err) {
+    runWorkflowMsg.textContent = err.message;
+    confirmRunWorkflowBtn.disabled = false;
+  }
+}
+
+async function showWorkflowRunModal(workflowId) {
+  try {
+    const { runs } = await fetchJson(`/api/workflows/${workflowId}/runs`);
+    workflowRunModalBody.innerHTML = renderWorkflowRunsList(runs);
+    workflowRunModal.classList.remove('hidden');
+
+    workflowRunModalBody.querySelectorAll('.workflow-run-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const runId = item.dataset.runId;
+        loadWorkflowRunDetail(runId);
+      });
+    });
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function renderWorkflowRunsList(runs) {
+  if (!runs || runs.length === 0) {
+    return '<div class="workflow-run-empty">暂无执行记录</div>';
+  }
+  return `
+    <div class="workflow-run-list">
+      ${runs.map(run => `
+        <div class="workflow-run-item" data-run-id="${run.id}">
+          <div class="workflow-run-header">
+            <span class="workflow-run-id">${run.id.slice(0, 8)}...</span>
+            <span class="workflow-run-status ${run.status}">${run.status === 'completed' ? '完成' : run.status === 'failed' ? '失败' : '运行中'}</span>
+          </div>
+          <div class="workflow-run-meta">
+            <span>开始: ${run.startedAt ? new Date(run.startedAt).toLocaleString('zh-CN') : '—'}</span>
+            <span>结束: ${run.finishedAt ? new Date(run.finishedAt).toLocaleString('zh-CN') : '—'}</span>
+          </div>
+          <div class="workflow-run-steps">
+            ${(run.steps || []).map(step => `
+              <span class="workflow-run-step-tag ${step.status}">${step.status === 'completed' ? '✓' : step.status === 'failed' ? '✗' : step.status === 'running' ? '⟳' : '○'} ${escapeHtml(step.agentId || '')}</span>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function loadWorkflowRunDetail(runId) {
+  try {
+    const { run } = await fetchJson(`/api/workflow-runs/${runId}`);
+    workflowRunModalBody.innerHTML = renderWorkflowRunDetail(run);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function renderWorkflowRunDetail(run) {
+  const statusText = run.status === 'completed' ? '完成' : run.status === 'failed' ? '失败' : '运行中';
+  return `
+    <button class="ghost small" id="backToRunListBtn" style="margin-bottom: 16px;">← 返回列表</button>
+    <div class="workflow-run-detail">
+      <div class="workflow-run-detail-header">
+        <div class="workflow-run-detail-status ${run.status}">${statusText}</div>
+        <div class="workflow-run-meta">
+          <span>ID: ${run.id}</span>
+          <span>开始: ${run.startedAt ? new Date(run.startedAt).toLocaleString('zh-CN') : '—'}</span>
+          <span>结束: ${run.finishedAt ? new Date(run.finishedAt).toLocaleString('zh-CN') : '—'}</span>
+        </div>
+        ${run.error ? `<div class="workflow-run-detail-error">${escapeHtml(run.error)}</div>` : ''}
+      </div>
+      <div class="workflow-run-detail-steps">
+        ${(run.steps || []).map((step, index) => `
+          <div class="workflow-run-detail-step">
+            <div class="workflow-run-detail-step-header">
+              <span class="workflow-run-detail-step-title">步骤 ${index + 1}</span>
+              <span class="workflow-run-step-tag ${step.status}">${step.status === 'completed' ? '完成' : step.status === 'failed' ? '失败' : step.status === 'running' ? '运行中' : '待执行'}</span>
+            </div>
+            <div class="workflow-run-detail-step-agent">Agent: ${escapeHtml(step.agentId || '—')}</div>
+            ${step.prompt ? `<div class="workflow-run-detail-step-prompt">${escapeHtml(step.prompt)}</div>` : ''}
+            ${step.error ? `<div class="workflow-run-detail-step-error">${escapeHtml(step.error)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('backToRunListBtn').addEventListener('click', async () => {
+    const workflowId = run.workflowId;
+    const { runs } = await fetchJson(`/api/workflows/${workflowId}/runs`);
+    workflowRunModalBody.innerHTML = renderWorkflowRunsList(runs);
+    workflowRunModalBody.querySelectorAll('.workflow-run-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const runId = item.dataset.runId;
+        loadWorkflowRunDetail(runId);
+      });
+    });
+  });
+}
+
+function hideWorkflowRunModal() {
+  workflowRunModal.classList.add('hidden');
+}
+
+showWorkflowFormBtn.addEventListener('click', () => {
+  state.editingWorkflowId = null;
+  showWorkflowForm();
+});
+saveWorkflowBtn.addEventListener('click', () => saveWorkflow());
+cancelWorkflowBtn.addEventListener('click', () => hideWorkflowForm());
+addStepBtn.addEventListener('click', () => addWorkflowStep());
+
+closeRunWorkflowModal.addEventListener('click', () => hideRunWorkflowModal());
+cancelRunWorkflowBtn.addEventListener('click', () => hideRunWorkflowModal());
+confirmRunWorkflowBtn.addEventListener('click', () => runWorkflow());
+runWorkflowModal.querySelector('.modal-backdrop').addEventListener('click', () => hideRunWorkflowModal());
+
+closeWorkflowRunModal.addEventListener('click', () => hideWorkflowRunModal());
+workflowRunModal.querySelector('.modal-backdrop').addEventListener('click', () => hideWorkflowRunModal());

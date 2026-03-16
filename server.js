@@ -6,6 +6,8 @@ const { execFile, spawn } = require('child_process');
 const url = require('url');
 const crypto = require('crypto');
 const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
+const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
+const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -728,6 +730,45 @@ async function requestHandler(req, res) {
         groups.splice(idx, 1);
         await writeAgentGroups(groups);
         return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/workflows') {
+        return json(res, 200, { workflows: await loadWorkflows() });
+      }
+      if (req.method === 'POST' && pathname === '/api/workflows') {
+        const body = await readJson(req);
+        return json(res, 201, { workflow: await createWorkflow(body) });
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/workflows/')) {
+        const workflowId = pathname.split('/')[3];
+        const workflow = await getWorkflow(workflowId);
+        if (!workflow) throw new Error('工作流不存在');
+        return json(res, 200, { workflow });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/workflows/')) {
+        const workflowId = pathname.split('/')[3];
+        const body = await readJson(req);
+        return json(res, 200, { workflow: await updateWorkflow(workflowId, body) });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/workflows/')) {
+        const workflowId = pathname.split('/')[3];
+        return json(res, 200, await deleteWorkflow(workflowId));
+      }
+      if (req.method === 'POST' && pathname.startsWith('/api/workflows/') && pathname.endsWith('/run')) {
+        const workflowId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const run = await runWorkflow(workflowId, { stopOnFailure: body.stopOnFailure });
+        return json(res, 201, { run });
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/workflow-runs/')) {
+        const runId = pathname.split('/')[3];
+        const run = await getWorkflowRun(runId);
+        if (!run) throw new Error('执行记录不存在');
+        return json(res, 200, { run });
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/workflows/') && pathname.endsWith('/runs')) {
+        const workflowId = pathname.split('/')[3];
+        const runs = await getWorkflowRuns(workflowId);
+        return json(res, 200, { runs });
       }
       if (req.method === 'PUT' && pathname.startsWith('/api/agents/') && pathname.endsWith('/groups')) {
         const agentId = pathname.split('/')[3];

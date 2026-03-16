@@ -211,6 +211,38 @@
           </div>
           <div id="templateList" class="template-list"></div>
         </section>
+
+        <section class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Workflows</div>
+              <h2>工作流</h2>
+            </div>
+            <button id="showWorkflowFormBtn" class="ghost small">新建工作流</button>
+          </div>
+          <div id="workflowForm" class="workflow-form hidden">
+            <div class="workflow-form-grid">
+              <label class="full-width">
+                <span class="field-label">工作流名称</span>
+                <input id="workflowNameInput" placeholder="例如：内容采集工作流" required />
+              </label>
+              <label class="full-width">
+                <span class="field-label">描述</span>
+                <input id="workflowDescInput" placeholder="简要描述工作流用途" />
+              </label>
+              <label class="full-width">
+                <span class="field-label">步骤</span>
+                <div id="workflowStepsList" class="workflow-steps-list"></div>
+                <button type="button" id="addStepBtn" class="ghost small add-step-btn">+ 添加步骤</button>
+              </label>
+            </div>
+            <div class="workflow-form-actions">
+              <button id="saveWorkflowBtn" class="primary">保存工作流</button>
+              <button id="cancelWorkflowBtn" class="ghost">取消</button>
+            </div>
+          </div>
+          <div id="workflowList" class="workflow-list"></div>
+        </section>
       </section>
 
       <aside class="side-column">
@@ -290,6 +322,44 @@
         </section>
       </aside>
     </main>
+  </div>
+
+  <div id="workflowRunModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>执行记录</h3>
+        <button class="modal-close" id="closeWorkflowRunModal">&times;</button>
+      </div>
+      <div id="workflowRunModalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="runWorkflowModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>执行工作流</h3>
+        <button class="modal-close" id="closeRunWorkflowModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="runWorkflowForm">
+          <label>
+            <span class="field-label">工作流</span>
+            <span id="runWorkflowName" class="run-workflow-name"></span>
+          </label>
+          <label>
+            <input type="checkbox" id="stopOnFailureInput" checked />
+            <span>失败时停止执行</span>
+          </label>
+        </div>
+        <div id="runWorkflowMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="confirmRunWorkflowBtn" class="primary">执行</button>
+          <button id="cancelRunWorkflowBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js"></script>
