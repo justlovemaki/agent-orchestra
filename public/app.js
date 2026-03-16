@@ -16,7 +16,9 @@ const state = {
   selectedWorkflowRunId: null,
   runningWorkflowId: null,
   logEventSource: null,
-  logStreamActive: false
+  logStreamActive: false,
+  sessions: [],
+  selectedSessionKey: null
 };
 
 const statsEl = document.getElementById('stats');
@@ -74,6 +76,23 @@ const saveGroupBtn = document.getElementById('saveGroupBtn');
 const cancelGroupBtn = document.getElementById('cancelGroupBtn');
 const groupListEl = document.getElementById('groupList');
 const filterGroupEl = document.getElementById('filterGroup');
+
+const showSpawnFormBtn = document.getElementById('showSpawnFormBtn');
+const spawnForm = document.getElementById('spawnForm');
+const spawnAgentSelect = document.getElementById('spawnAgentSelect');
+const spawnTaskInput = document.getElementById('spawnTaskInput');
+const confirmSpawnBtn = document.getElementById('confirmSpawnBtn');
+const cancelSpawnBtn = document.getElementById('cancelSpawnBtn');
+const spawnMsg = document.getElementById('spawnMsg');
+const sessionListEl = document.getElementById('sessionList');
+
+const sessionMessagesModal = document.getElementById('sessionMessagesModal');
+const closeSessionMessagesModal = document.getElementById('closeSessionMessagesModal');
+const sessionMessagesInfo = document.getElementById('sessionMessagesInfo');
+const sessionMessagesList = document.getElementById('sessionMessagesList');
+const sessionMessageInput = document.getElementById('sessionMessageInput');
+const sendSessionMessageBtn = document.getElementById('sendSessionMessageBtn');
+const sessionMessageMsg = document.getElementById('sessionMessageMsg');
 
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
@@ -252,7 +271,8 @@ async function refreshAll(force = false) {
     loadTasks(force),
     loadTemplates(),
     loadGroups(),
-    loadWorkflows()
+    loadWorkflows(),
+    loadSessions()
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
@@ -280,6 +300,8 @@ function render() {
   renderGroupFilter();
   renderGroupList();
   renderWorkflows();
+  renderSessionList();
+  renderSpawnAgentSelect();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -784,6 +806,15 @@ async function loadGroups() {
 async function loadWorkflows() {
   const res = await fetchJson('/api/workflows');
   state.workflows = res.workflows;
+}
+
+async function loadSessions() {
+  try {
+    const res = await fetchJson('/api/sessions');
+    state.sessions = res.sessions || [];
+  } catch (err) {
+    state.sessions = [];
+  }
 }
 
 function renderTemplateAgentCheckboxes(selectedAgents = []) {
@@ -1602,3 +1633,171 @@ runWorkflowModal.querySelector('.modal-backdrop').addEventListener('click', () =
 
 closeWorkflowRunModal.addEventListener('click', () => hideWorkflowRunModal());
 workflowRunModal.querySelector('.modal-backdrop').addEventListener('click', () => hideWorkflowRunModal());
+
+function renderSessionList() {
+  if (!state.sessions || state.sessions.length === 0) {
+    sessionListEl.innerHTML = '<div class="muted small">暂无活跃会话</div>';
+    return;
+  }
+  sessionListEl.innerHTML = state.sessions.map(session => `
+    <div class="session-item" data-session-key="${escapeHtml(session.key)}">
+      <div class="session-item-info">
+        <div class="session-item-key">${escapeHtml(session.key)}</div>
+        <div class="session-item-meta">
+          <span>${escapeHtml(session.label || session.kind || '—')}</span>
+          <span>${escapeHtml(session.kind || '')}</span>
+          <span class="session-item-badge ${session.active ? 'active' : 'idle'}">${session.active ? '活跃' : '空闲'}</span>
+        </div>
+      </div>
+      <div class="session-item-actions">
+        <button class="ghost tiny view-messages-btn" data-session-key="${escapeHtml(session.key)}">查看消息</button>
+      </div>
+    </div>
+  `).join('');
+
+  sessionListEl.querySelectorAll('.view-messages-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sessionKey = btn.dataset.sessionKey;
+      showSessionMessagesModal(sessionKey);
+    });
+  });
+}
+
+function renderSpawnAgentSelect() {
+  const agents = state.overview?.agents || [];
+  const currentValue = spawnAgentSelect.value;
+  spawnAgentSelect.innerHTML = '<option value="">选择 Agent</option>' +
+    agents.map(agent => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}</option>`).join('');
+  spawnAgentSelect.value = currentValue;
+}
+
+async function showSessionMessagesModal(sessionKey) {
+  state.selectedSessionKey = sessionKey;
+  const session = state.sessions.find(s => s.key === sessionKey);
+  sessionMessagesInfo.innerHTML = `
+    <div><span class="muted">会话 Key:</span> <strong>${escapeHtml(sessionKey)}</strong></div>
+    <div><span class="muted">标签:</span> ${escapeHtml(session?.label || '—')}</div>
+    <div><span class="muted">类型:</span> ${escapeHtml(session?.kind || '—')}</div>
+    <div><span class="muted">状态:</span> <span class="session-item-badge ${session?.active ? 'active' : 'idle'}">${session?.active ? '活跃' : '空闲'}</span></div>
+  `;
+  sessionMessageMsg.textContent = '';
+  sessionMessageInput.value = '';
+  await loadSessionMessages();
+  sessionMessagesModal.classList.remove('hidden');
+}
+
+async function loadSessionMessages() {
+  if (!state.selectedSessionKey) return;
+  try {
+    const res = await fetchJson(`/api/sessions/${state.selectedSessionKey}/messages`);
+    if (res.error) {
+      sessionMessagesList.innerHTML = `<div class="muted small">${escapeHtml(res.error)}</div>`;
+    } else {
+      renderSessionMessages(res.messages || []);
+    }
+  } catch (err) {
+    sessionMessagesList.innerHTML = `<div class="muted small">加载消息失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderSessionMessages(messages) {
+  if (!messages || messages.length === 0) {
+    sessionMessagesList.innerHTML = '<div class="muted small">暂无消息</div>';
+    return;
+  }
+  sessionMessagesList.innerHTML = messages.map(msg => `
+    <div class="session-message ${msg.role === 'user' ? 'user' : 'agent'}">
+      <div class="session-message-role">${msg.role === 'user' ? '用户' : 'Agent'}</div>
+      <div class="session-message-content">${escapeHtml(msg.content || msg.message || '')}</div>
+      ${msg.timestamp ? `<div class="session-message-time">${new Date(msg.timestamp).toLocaleString('zh-CN')}</div>` : ''}
+    </div>
+  `).join('');
+  sessionMessagesList.scrollTop = sessionMessagesList.scrollHeight;
+}
+
+function hideSessionMessagesModal() {
+  sessionMessagesModal.classList.add('hidden');
+  state.selectedSessionKey = null;
+}
+
+async function sendSessionMessage() {
+  const message = sessionMessageInput.value.trim();
+  if (!message) {
+    sessionMessageMsg.textContent = '请输入消息内容';
+    return;
+  }
+  if (!state.selectedSessionKey) {
+    sessionMessageMsg.textContent = '未选择会话';
+    return;
+  }
+  sessionMessageMsg.textContent = '发送中...';
+  sendSessionMessageBtn.disabled = true;
+  try {
+    await fetchJson(`/api/sessions/${state.selectedSessionKey}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+    sessionMessageInput.value = '';
+    sessionMessageMsg.textContent = '消息已发送';
+    await loadSessionMessages();
+  } catch (err) {
+    sessionMessageMsg.textContent = err.message;
+  } finally {
+    sendSessionMessageBtn.disabled = false;
+  }
+}
+
+function showSpawnForm() {
+  spawnForm.classList.remove('hidden');
+  spawnTaskInput.value = '';
+  spawnMsg.textContent = '';
+}
+
+function hideSpawnForm() {
+  spawnForm.classList.add('hidden');
+}
+
+async function spawnSubagent() {
+  const agentId = spawnAgentSelect.value;
+  const task = spawnTaskInput.value.trim();
+  if (!agentId) {
+    spawnMsg.textContent = '请选择 Agent';
+    return;
+  }
+  if (!task) {
+    spawnMsg.textContent = '请输入任务描述';
+    return;
+  }
+  spawnMsg.textContent = '正在启动...';
+  confirmSpawnBtn.disabled = true;
+  try {
+    const result = await fetchJson('/api/sessions/spawn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, task })
+    });
+    spawnMsg.textContent = `Subagent 已启动 (Key: ${escapeHtml(result.sessionKey || result.key || '成功')})`;
+    hideSpawnForm();
+    await refreshAll(true);
+  } catch (err) {
+    spawnMsg.textContent = err.message;
+  } finally {
+    confirmSpawnBtn.disabled = false;
+  }
+}
+
+showSpawnFormBtn.addEventListener('click', () => showSpawnForm());
+cancelSpawnBtn.addEventListener('click', () => hideSpawnForm());
+confirmSpawnBtn.addEventListener('click', () => spawnSubagent());
+
+closeSessionMessagesModal.addEventListener('click', () => hideSessionMessagesModal());
+sessionMessagesModal.querySelector('.modal-backdrop').addEventListener('click', () => hideSessionMessagesModal());
+sendSessionMessageBtn.addEventListener('click', () => sendSessionMessage());
+sessionMessageInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.ctrlKey) {
+    e.preventDefault();
+    sendSessionMessage();
+  }
+});

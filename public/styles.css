@@ -1860,3 +1860,172 @@ button.ghost.tiny {
   font-size: 12px;
   margin-top: 6px;
 }
+
+.spawn-form {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.spawn-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spawn-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.session-item:hover {
+  border-color: var(--accent);
+}
+
+.session-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-item-key {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.session-item-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.session-item-badge.active {
+  background: var(--good-bg);
+  color: var(--good);
+  border: 1px solid var(--good-border);
+}
+
+.session-item-badge.idle {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn-border);
+}
+
+.session-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-wide {
+  max-width: 800px;
+}
+
+.session-messages-info {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+}
+
+.session-messages-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.session-message {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+}
+
+.session-message.user {
+  background: rgba(122, 162, 255, 0.08);
+  border-color: rgba(122, 162, 255, 0.2);
+}
+
+.session-message.agent {
+  background: rgba(68, 209, 159, 0.08);
+  border-color: rgba(68, 209, 159, 0.2);
+}
+
+.session-message-role {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.session-message.user .session-message-role {
+  color: var(--accent);
+}
+
+.session-message.agent .session-message-role {
+  color: var(--good);
+}
+
+.session-message-content {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.session-message-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.session-send-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.session-send-form textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 60px;
+}

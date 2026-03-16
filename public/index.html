@@ -243,6 +243,36 @@
           </div>
           <div id="workflowList" class="workflow-list"></div>
         </section>
+
+        <section class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Sessions</div>
+              <h2>会话管理</h2>
+            </div>
+            <button id="showSpawnFormBtn" class="ghost small">启动 Subagent</button>
+          </div>
+          <div id="spawnForm" class="spawn-form hidden">
+            <div class="spawn-form-grid">
+              <label class="full-width">
+                <span class="field-label">选择 Agent</span>
+                <select id="spawnAgentSelect" required>
+                  <option value="">选择 Agent</option>
+                </select>
+              </label>
+              <label class="full-width">
+                <span class="field-label">任务描述</span>
+                <textarea id="spawnTaskInput" rows="4" placeholder="描述要执行的任务..."></textarea>
+              </label>
+            </div>
+            <div class="spawn-form-actions">
+              <button id="confirmSpawnBtn" class="primary">启动</button>
+              <button id="cancelSpawnBtn" class="ghost">取消</button>
+            </div>
+            <div id="spawnMsg" class="form-msg"></div>
+          </div>
+          <div id="sessionList" class="session-list"></div>
+        </section>
       </section>
 
       <aside class="side-column">
@@ -358,6 +388,25 @@
           <button id="confirmRunWorkflowBtn" class="primary">执行</button>
           <button id="cancelRunWorkflowBtn" class="ghost">取消</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sessionMessagesModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>会话消息</h3>
+        <button class="modal-close" id="closeSessionMessagesModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="sessionMessagesInfo" class="session-messages-info"></div>
+        <div id="sessionMessagesList" class="session-messages-list"></div>
+        <div class="session-send-form">
+          <textarea id="sessionMessageInput" rows="3" placeholder="输入消息..."></textarea>
+          <button id="sendSessionMessageBtn" class="primary">发送</button>
+        </div>
+        <div id="sessionMessageMsg" class="form-msg"></div>
       </div>
     </div>
   </div>

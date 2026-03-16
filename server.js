@@ -883,7 +883,46 @@ async function requestHandler(req, res) {
         await writeAgentGroups(groups);
         return json(res, 200, { success: true });
       }
-      return json(res, 404, { error: 'Not found' });
+      if (req.method === 'GET' && pathname === '/api/sessions') {
+        const sessionsResult = await runOpenClaw(['sessions', '--all-agents', '--json'], 30000);
+        const sessions = JSON.parse(cleanCliJson(sessionsResult.stdout));
+        return json(res, 200, sessions);
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/sessions\/[^/]+\/messages$/)) {
+        const sessionKey = pathname.split('/')[3];
+        // Get session info from sessions store
+        const sessionsResult = await runOpenClaw(['sessions', '--all-agents', '--json'], 30000);
+        const sessionsData = JSON.parse(cleanCliJson(sessionsResult.stdout));
+        const session = sessionsData.sessions?.find(s => s.key === sessionKey);
+        if (!session) {
+          return json(res, 404, { error: 'Session not found' });
+        }
+        // Read messages from session transcript file
+        const sessionId = session.sessionId;
+        const agentId = session.agentId;
+        const transcriptPath = path.join(HOME_DIR, '.openclaw', 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+        try {
+          const content = await fsp.readFile(transcriptPath, 'utf-8');
+          const lines = content.trim().split('\n').filter(line => line.trim());
+          const messages = lines.map(line => {
+            try {
+              const msg = JSON.parse(line);
+              return {
+                role: msg.role || (msg.user ? 'user' : 'assistant'),
+                content: msg.content || msg.text || '',
+                timestamp: msg.timestamp || msg.createdAt
+              };
+            } catch {
+              return null;
+            }
+          }).filter(m => m);
+          return json(res, 200, { session, messages });
+        } catch (err) {
+          return json(res, 200, { session, messages: [], error: 'Transcript file not found' });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/sessions/spawn') {
+        const body = await readBody(req);\n        const { agentId, task } = body;\n        if (!agentId || !task) {\n          return json(res, 400, { error: 'Missing agentId or task' });\n        }\n        // Spawn a subagent session\n        const result = await runOpenClaw([\n          'sessions', 'spawn',\n          '--agent', agentId,\n          '--task', task,\n          '--json'\n        ], 60000);\n        const spawnResult = JSON.parse(cleanCliJson(result.stdout));\n        return json(res, 200, spawnResult);\n      }\n      if (req.method === 'POST' && pathname.match(/^\/api\/sessions\/[^/]+\/messages$/)) {\n        const sessionKey = pathname.split('/')[3];\n        const body = await readBody(req);\n        const { message } = body;\n        if (!message) {\n          return json(res, 400, { error: 'Missing message' });\n        }\n        // Send message to session\n        const result = await runOpenClaw([\n          'sessions', 'send',\n          '--session', sessionKey,\n          '--message', message,\n          '--json'\n        ], 30000);\n        const sendResult = JSON.parse(cleanCliJson(result.stdout));\n        return json(res, 200, sendResult);\n      }\n      return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
     }
