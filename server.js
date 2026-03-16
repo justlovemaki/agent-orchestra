@@ -567,6 +567,45 @@ async function cancelTask(taskId) {
   return formatTaskForUi(await getTask(taskId));
 }
 
+async function batchCancelTasks(taskIds) {
+  const results = { success: [], failed: [] };
+  for (const taskId of taskIds) {
+    try {
+      await cancelTask(taskId);
+      results.success.push(taskId);
+    } catch (err) {
+      results.failed.push({ taskId, error: err.message });
+    }
+  }
+  return results;
+}
+
+async function batchRetryTasks(taskIds) {
+  const results = { success: [], failed: [] };
+  for (const taskId of taskIds) {
+    try {
+      const newTask = await createRetryTask(taskId);
+      results.success.push({ originalTaskId: taskId, newTaskId: newTask.id });
+    } catch (err) {
+      results.failed.push({ taskId, error: err.message });
+    }
+  }
+  return results;
+}
+
+async function batchUpdatePriority(taskIds, priority) {
+  const results = { success: [], failed: [] };
+  for (const taskId of taskIds) {
+    try {
+      await updateTask(taskId, t => ({ ...t, priority }));
+      results.success.push(taskId);
+    } catch (err) {
+      results.failed.push({ taskId, error: err.message });
+    }
+  }
+  return results;
+}
+
 async function readLog(taskId) {
   const logPath = path.join(LOG_DIR, `${taskId}.log`);
   try {
@@ -724,6 +763,33 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/retry')) {
         const taskId = pathname.split('/')[3];
         return json(res, 201, { task: await createRetryTask(taskId) });
+      }
+      if (req.method === 'POST' && pathname === '/api/tasks/batch-cancel') {
+        const body = await readJson(req);
+        if (!Array.isArray(body.taskIds) || body.taskIds.length === 0) {
+          throw new Error('请提供有效的任务 ID 数组');
+        }
+        const results = await batchCancelTasks(body.taskIds);
+        return json(res, 200, { results });
+      }
+      if (req.method === 'POST' && pathname === '/api/tasks/batch-retry') {
+        const body = await readJson(req);
+        if (!Array.isArray(body.taskIds) || body.taskIds.length === 0) {
+          throw new Error('请提供有效的任务 ID 数组');
+        }
+        const results = await batchRetryTasks(body.taskIds);
+        return json(res, 200, { results });
+      }
+      if (req.method === 'PATCH' && pathname === '/api/tasks/batch-priority') {
+        const body = await readJson(req);
+        if (!Array.isArray(body.taskIds) || body.taskIds.length === 0) {
+          throw new Error('请提供有效的任务 ID 数组');
+        }
+        if (!['low', 'medium', 'high'].includes(body.priority)) {
+          throw new Error('无效的优先级值');
+        }
+        const results = await batchUpdatePriority(body.taskIds, body.priority);
+        return json(res, 200, { results });
       }
       if (req.method === 'GET' && pathname === '/api/templates') {
         return json(res, 200, { templates: await readTemplates() });
@@ -922,7 +988,39 @@ async function requestHandler(req, res) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/sessions/spawn') {
-        const body = await readBody(req);\n        const { agentId, task } = body;\n        if (!agentId || !task) {\n          return json(res, 400, { error: 'Missing agentId or task' });\n        }\n        // Spawn a subagent session\n        const result = await runOpenClaw([\n          'sessions', 'spawn',\n          '--agent', agentId,\n          '--task', task,\n          '--json'\n        ], 60000);\n        const spawnResult = JSON.parse(cleanCliJson(result.stdout));\n        return json(res, 200, spawnResult);\n      }\n      if (req.method === 'POST' && pathname.match(/^\/api\/sessions\/[^/]+\/messages$/)) {\n        const sessionKey = pathname.split('/')[3];\n        const body = await readBody(req);\n        const { message } = body;\n        if (!message) {\n          return json(res, 400, { error: 'Missing message' });\n        }\n        // Send message to session\n        const result = await runOpenClaw([\n          'sessions', 'send',\n          '--session', sessionKey,\n          '--message', message,\n          '--json'\n        ], 30000);\n        const sendResult = JSON.parse(cleanCliJson(result.stdout));\n        return json(res, 200, sendResult);\n      }\n      return json(res, 404, { error: 'Not found' });
+        const body = await readBody(req);
+        const { agentId, task } = body;
+        if (!agentId || !task) {
+          return json(res, 400, { error: 'Missing agentId or task' });
+        }
+        // Spawn a subagent session
+        const result = await runOpenClaw([
+          'sessions', 'spawn',
+          '--agent', agentId,
+          '--task', task,
+          '--json'
+        ], 60000);
+        const spawnResult = JSON.parse(cleanCliJson(result.stdout));
+        return json(res, 200, spawnResult);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/sessions\/[^/]+\/messages$/)) {
+        const sessionKey = pathname.split('/')[3];
+        const body = await readBody(req);
+        const { message } = body;
+        if (!message) {
+          return json(res, 400, { error: 'Missing message' });
+        }
+        // Send message to session
+        const result = await runOpenClaw([
+          'sessions', 'send',
+          '--session', sessionKey,
+          '--message', message,
+          '--json'
+        ], 30000);
+        const sendResult = JSON.parse(cleanCliJson(result.stdout));
+        return json(res, 200, sendResult);
+      }
+      return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
     }

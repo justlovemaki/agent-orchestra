@@ -2,6 +2,7 @@ const state = {
   overview: null,
   tasks: [],
   selectedTaskId: null,
+  selectedTaskIds: new Set(),
   runtime: null,
   filters: {},
   savedPresets: [],
@@ -51,6 +52,12 @@ const defaultPresetChipsEl = document.getElementById('defaultPresetChips');
 const savedPresetListEl = document.getElementById('savedPresetList');
 const presetNameInputEl = document.getElementById('presetNameInput');
 const savePresetBtn = document.getElementById('savePresetBtn');
+const batchToolbarEl = document.getElementById('batchToolbar');
+const selectedCountEl = document.getElementById('selectedCount');
+const batchPrioritySelect = document.getElementById('batchPrioritySelect');
+const batchRetryBtn = document.getElementById('batchRetryBtn');
+const batchCancelBtn = document.getElementById('batchCancelBtn');
+const batchClearBtn = document.getElementById('batchClearBtn');
 
 const showTemplateFormBtn = document.getElementById('showTemplateFormBtn');
 const templateForm = document.getElementById('templateForm');
@@ -399,24 +406,44 @@ function renderTaskBoard() {
     </div>
   `).join('');
   taskBoardEl.querySelectorAll('.task-card').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('task-checkbox')) return;
       state.selectedTaskId = el.dataset.taskId;
       loadTaskDetail(state.selectedTaskId);
+    });
+  });
+  taskBoardEl.querySelectorAll('.task-checkbox').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = el.dataset.taskId;
+      if (el.checked) {
+        state.selectedTaskIds.add(taskId);
+      } else {
+        state.selectedTaskIds.delete(taskId);
+      }
+      renderBatchToolbar();
+      renderTaskBoard();
     });
   });
 }
 
 function renderTaskCard(task) {
   const runs = task.runs.map(r => `${r.agentId}:${runStatusLabel(r.status)}`).join(' · ');
+  const isSelected = state.selectedTaskIds.has(task.id);
   return `
-    <div class="task-card ${state.selectedTaskId === task.id ? 'selected' : ''}" data-task-id="${task.id}">
-      <div class="title">${escapeHtml(task.title)}</div>
-      <div class="meta">
-        <div>优先级：${priorityLabel(task.priority)} · 模式：${task.mode === 'parallel' ? '并行' : '串行'}</div>
-        <div>状态：${statusLabel(task.status)}</div>
-        <div>Agent：${escapeHtml((task.agents || []).join('、') || '—')}</div>
-        <div>执行：${escapeHtml(runs)}</div>
-        <div>创建：${escapeHtml(task.createdAtLabel)}</div>
+    <div class="task-card ${state.selectedTaskId === task.id ? 'selected' : ''} ${isSelected ? 'batch-selected' : ''}" data-task-id="${task.id}">
+      <div class="task-card-checkbox">
+        <input type="checkbox" class="task-checkbox" data-task-id="${task.id}" ${isSelected ? 'checked' : ''} />
+      </div>
+      <div class="task-card-content">
+        <div class="title">${escapeHtml(task.title)}</div>
+        <div class="meta">
+          <div>优先级：${priorityLabel(task.priority)} · 模式：${task.mode === 'parallel' ? '并行' : '串行'}</div>
+          <div>状态：${statusLabel(task.status)}</div>
+          <div>Agent：${escapeHtml((task.agents || []).join('、') || '—')}</div>
+          <div>执行：${escapeHtml(runs)}</div>
+          <div>创建：${escapeHtml(task.createdAtLabel)}</div>
+        </div>
       </div>
     </div>
   `;
@@ -449,6 +476,98 @@ function renderFilterSummary() {
     return;
   }
   filterResultCountEl.textContent = `筛选结果：${total} 条`;
+}
+
+function renderBatchToolbar() {
+  const count = state.selectedTaskIds.size;
+  if (count === 0) {
+    batchToolbarEl.classList.add('hidden');
+    return;
+  }
+  batchToolbarEl.classList.remove('hidden');
+  selectedCountEl.textContent = count;
+}
+
+async function handleBatchCancel() {
+  const taskIds = [...state.selectedTaskIds];
+  if (taskIds.length === 0) return;
+  
+  const confirmed = confirm(`确定要取消选中的 ${taskIds.length} 个任务吗？`);
+  if (!confirmed) return;
+
+  try {
+    const { results } = await fetchJson('/api/tasks/batch-cancel', {
+      method: 'POST',
+      body: JSON.stringify({ taskIds })
+    });
+    
+    const successCount = results.success.length;
+    const failedCount = results.failed.length;
+    
+    alert(`批量取消完成：成功 ${successCount} 个${failedCount > 0 ? `，失败 ${failedCount} 个` : ''}`);
+    
+    state.selectedTaskIds.clear();
+    await loadTasks();
+  } catch (err) {
+    alert('批量取消失败：' + err.message);
+  }
+}
+
+async function handleBatchRetry() {
+  const taskIds = [...state.selectedTaskIds];
+  if (taskIds.length === 0) return;
+  
+  const confirmed = confirm(`确定要重试选中的 ${taskIds.length} 个失败任务吗？`);
+  if (!confirmed) return;
+
+  try {
+    const { results } = await fetchJson('/api/tasks/batch-retry', {
+      method: 'POST',
+      body: JSON.stringify({ taskIds })
+    });
+    
+    const successCount = results.success.length;
+    const failedCount = results.failed.length;
+    
+    alert(`批量重试完成：成功创建 ${successCount} 个新任务${failedCount > 0 ? `，失败 ${failedCount} 个` : ''}`);
+    
+    state.selectedTaskIds.clear();
+    await loadTasks();
+  } catch (err) {
+    alert('批量重试失败：' + err.message);
+  }
+}
+
+async function handleBatchPriority() {
+  const priority = batchPrioritySelect.value;
+  if (!priority) return;
+  
+  const taskIds = [...state.selectedTaskIds];
+  if (taskIds.length === 0) return;
+
+  try {
+    const { results } = await fetchJson('/api/tasks/batch-priority', {
+      method: 'PATCH',
+      body: JSON.stringify({ taskIds, priority })
+    });
+    
+    const successCount = results.success.length;
+    const failedCount = results.failed.length;
+    
+    alert(`批量修改优先级完成：成功 ${successCount} 个${failedCount > 0 ? `，失败 ${failedCount} 个` : ''}`);
+    
+    state.selectedTaskIds.clear();
+    batchPrioritySelect.value = '';
+    await loadTasks();
+  } catch (err) {
+    alert('批量修改优先级失败：' + err.message);
+  }
+}
+
+function handleBatchClear() {
+  state.selectedTaskIds.clear();
+  renderBatchToolbar();
+  renderTaskBoard();
 }
 
 function renderFilterPresets() {
@@ -1064,6 +1183,11 @@ filterKeywordEl.addEventListener('keydown', event => {
 [filterStatusEl, filterAgentEl, filterPriorityEl, filterModeEl].forEach(el => {
   el.addEventListener('change', () => applyFilters());
 });
+
+batchCancelBtn.addEventListener('click', handleBatchCancel);
+batchRetryBtn.addEventListener('click', handleBatchRetry);
+batchPrioritySelect.addEventListener('change', handleBatchPriority);
+batchClearBtn.addEventListener('click', handleBatchClear);
 
 function initFilters() {
   state.savedPresets = loadPresetsFromStorage();

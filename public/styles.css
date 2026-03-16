@@ -717,9 +717,56 @@ button.danger:hover {
 }
 
 .filter-result-count {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  margin-top: 8px;
+}
+
+.batch-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: var(--accent);
+  background: linear-gradient(135deg, rgba(96,165,250,.15) 0%, rgba(139,92,246,.15) 100%);
+  border: 1px solid rgba(96,165,250,.3);
+  border-radius: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-toolbar.hidden {
+  display: none;
+}
+
+.batch-toolbar-info {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.batch-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-toolbar-actions .filter-select,
+.batch-toolbar-actions .filter-btn {
+  min-width: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.filter-btn-danger {
+  background: rgba(239,68,68,.15);
+  border-color: rgba(239,68,68,.4);
+  color: #fca5a5;
+}
+
+.filter-btn-danger:hover {
+  background: rgba(239,68,68,.25);
+  border-color: rgba(239,68,68,.6);
 }
 
 #filterResultCount {
@@ -763,6 +810,34 @@ button.danger:hover {
   display: grid;
   gap: 6px;
   line-height: 1.45;
+}
+
+.task-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.task-card-checkbox {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.task-card-checkbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.task-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-card.batch-selected {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .empty-state {

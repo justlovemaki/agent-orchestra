@@ -156,6 +156,22 @@
             </div>
           </div>
           <div id="filterChips" class="filter-chips"></div>
+          <div id="batchToolbar" class="batch-toolbar hidden">
+            <div class="batch-toolbar-info">
+              <span id="selectedCount">0</span> 个任务已选中
+            </div>
+            <div class="batch-toolbar-actions">
+              <select id="batchPrioritySelect" class="filter-select">
+                <option value="">修改优先级</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+              <button id="batchRetryBtn" class="filter-btn">批量重试</button>
+              <button id="batchCancelBtn" class="filter-btn filter-btn-danger">批量取消</button>
+              <button id="batchClearBtn" class="filter-btn filter-btn-ghost">清除选择</button>
+            </div>
+          </div>
           <div id="taskBoard" class="task-board"></div>
           <div id="filterResultCount" class="filter-result-count muted small"></div>
         </section>
