@@ -152,7 +152,17 @@
               </div>
               <div class="filter-presets-actions">
                 <input type="text" id="presetNameInput" class="filter-input preset-name-input" placeholder="输入名称后保存当前筛选" maxlength="40" />
+                <label class="preset-share-label">
+                  <input type="checkbox" id="presetShareCheck" />
+                  共享给团队
+                </label>
                 <button id="savePresetBtn" class="filter-btn">保存为预设</button>
+              </div>
+            </div>
+            <div class="filter-presets-row filter-presets-row-shared">
+              <div class="filter-presets-head">
+                <span class="muted small">团队共享预设</span>
+                <div id="sharedPresetList" class="filter-presets-list"></div>
               </div>
             </div>
           </div>

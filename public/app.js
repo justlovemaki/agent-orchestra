@@ -6,6 +6,7 @@ const state = {
   runtime: null,
   filters: {},
   savedPresets: [],
+  sharedPresets: [],
   templates: [],
   editingTemplateId: null,
   groups: [],
@@ -54,8 +55,10 @@ const filterResultCountEl = document.getElementById('filterResultCount');
 const filterChipsEl = document.getElementById('filterChips');
 const defaultPresetChipsEl = document.getElementById('defaultPresetChips');
 const savedPresetListEl = document.getElementById('savedPresetList');
+const sharedPresetListEl = document.getElementById('sharedPresetList');
 const presetNameInputEl = document.getElementById('presetNameInput');
 const savePresetBtn = document.getElementById('savePresetBtn');
+const presetShareCheckEl = document.getElementById('presetShareCheck');
 const batchToolbarEl = document.getElementById('batchToolbar');
 const selectedCountEl = document.getElementById('selectedCount');
 const batchPrioritySelect = document.getElementById('batchPrioritySelect');
@@ -307,6 +310,7 @@ async function refreshAll(force = false) {
     loadTasks(force),
     loadTemplates(),
     loadGroups(),
+    loadSharedPresets(),
     loadWorkflows(),
     loadSessions(),
     loadAuditEvents(force)
@@ -678,6 +682,68 @@ function renderFilterPresets() {
       await applyPreset(state.savedPresets[index].filters);
     });
   });
+
+  renderSharedPresets();
+}
+
+function renderSharedPresets() {
+  if (!sharedPresetListEl) return;
+  
+  if (state.sharedPresets.length === 0) {
+    sharedPresetListEl.innerHTML = '<span class="preset-chip preset-chip-empty">还没有共享预设</span>';
+  } else {
+    sharedPresetListEl.innerHTML = state.sharedPresets.map((preset) => {
+      const active = areFiltersEqual(state.filters, preset.filters);
+      return `
+        <span class="preset-chip preset-chip-shared ${active ? 'is-active' : ''}" data-shared-preset-id="${preset.id}">
+          <button type="button" class="preset-chip-name" data-action="apply" data-shared-preset-id="${preset.id}">${escapeHtml(preset.name)}</button>
+          <span class="preset-chip-meta muted small">by ${escapeHtml(preset.createdBy)}</span>
+          <span class="preset-chip-actions">
+            <button type="button" data-action="edit" data-shared-preset-id="${preset.id}" title="编辑共享预设">编辑</button>
+            <button type="button" data-action="delete" data-shared-preset-id="${preset.id}" title="删除共享预设">删除</button>
+          </span>
+        </span>
+      `;
+    }).join('');
+  }
+
+  sharedPresetListEl.querySelectorAll('[data-shared-preset-id]').forEach(el => {
+    el.addEventListener('click', async event => {
+      event.preventDefault();
+      const presetId = event.target.dataset.sharedPresetId || el.dataset.sharedPresetId;
+      const action = event.target.dataset.action || 'apply';
+      const preset = state.sharedPresets.find(p => p.id === presetId);
+      if (!preset) return;
+      if (action === 'delete') {
+        if (!confirm('确定要删除此共享预设吗？')) return;
+        try {
+          await fetchJson(`/api/presets/${presetId}`, { method: 'DELETE' });
+          await loadSharedPresets();
+          renderSharedPresets();
+        } catch (err) {
+          alert(err.message);
+        }
+        return;
+      }
+      if (action === 'edit') {
+        const newName = window.prompt('请输入新的预设名称', preset.name);
+        if (!newName || newName.trim() === preset.name) return;
+        try {
+          await fetchJson(`/api/presets/${presetId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName.trim() })
+          });
+          await loadSharedPresets();
+          renderSharedPresets();
+        } catch (err) {
+          alert(err.message);
+        }
+        return;
+      }
+      await applyPreset(preset.filters);
+    });
+  });
 }
 
 function renderFilterChips() {
@@ -942,9 +1008,10 @@ function deletePreset(index) {
   renderFilterPresets();
 }
 
-function saveCurrentPreset() {
+async function saveCurrentPreset() {
   const name = normalizePresetName(presetNameInputEl.value);
   const filters = getFilters();
+  const isShared = presetShareCheckEl?.checked || false;
 
   if (!name) {
     alert('请先输入预设名称');
@@ -954,6 +1021,24 @@ function saveCurrentPreset() {
 
   if (!hasActiveFilters(filters)) {
     alert('当前没有可保存的筛选条件');
+    return;
+  }
+
+  if (isShared) {
+    try {
+      await fetchJson('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, filters, createdBy: 'Master' })
+      });
+      await loadSharedPresets();
+      renderSharedPresets();
+      presetNameInputEl.value = '';
+      if (presetShareCheckEl) presetShareCheckEl.checked = false;
+      alert('共享预设已保存');
+    } catch (err) {
+      alert('保存共享预设失败：' + err.message);
+    }
     return;
   }
 
@@ -991,6 +1076,15 @@ async function loadTemplates() {
 async function loadGroups() {
   const res = await fetchJson('/api/agent-groups');
   state.groups = res.groups;
+}
+
+async function loadSharedPresets() {
+  try {
+    const res = await fetchJson('/api/presets');
+    state.sharedPresets = res.presets || [];
+  } catch (err) {
+    state.sharedPresets = [];
+  }
 }
 
 async function loadWorkflows() {

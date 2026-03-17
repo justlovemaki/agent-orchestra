@@ -18,6 +18,7 @@ const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
 const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 const AGENT_GROUPS_FILE = path.join(DATA_DIR, 'agent-groups.json');
+const SHARED_PRESETS_FILE = path.join(DATA_DIR, 'shared-presets.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
@@ -40,6 +41,7 @@ async function ensureData() {
   try { await fsp.access(TASKS_FILE); } catch { await fsp.writeFile(TASKS_FILE, '[]\n'); }
   try { await fsp.access(TEMPLATES_FILE); } catch { await fsp.writeFile(TEMPLATES_FILE, '[]\n'); }
   try { await fsp.access(AGENT_GROUPS_FILE); } catch { await fsp.writeFile(AGENT_GROUPS_FILE, '[]\n'); }
+  try { await fsp.access(SHARED_PRESETS_FILE); } catch { await fsp.writeFile(SHARED_PRESETS_FILE, '[]\n'); }
 }
 
 async function writePidFile(pid = process.pid) {
@@ -299,6 +301,21 @@ async function writeAgentGroups(groups) {
 async function getAgentGroup(groupId) {
   const groups = await readAgentGroups();
   return groups.find(g => g.id === groupId) || null;
+}
+
+async function readSharedPresets() {
+  await ensureData();
+  return JSON.parse(await fsp.readFile(SHARED_PRESETS_FILE, 'utf8'));
+}
+
+async function writeSharedPresets(presets) {
+  await ensureData();
+  await fsp.writeFile(SHARED_PRESETS_FILE, JSON.stringify(presets, null, 2) + '\n');
+}
+
+async function getSharedPreset(presetId) {
+  const presets = await readSharedPresets();
+  return presets.find(p => p.id === presetId) || null;
 }
 
 async function updateTask(taskId, mutator) {
@@ -1052,6 +1069,46 @@ async function requestHandler(req, res) {
         if (idx === -1) throw new Error('分组不存在');
         groups.splice(idx, 1);
         await writeAgentGroups(groups);
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/presets') {
+        return json(res, 200, { presets: await readSharedPresets() });
+      }
+      if (req.method === 'POST' && pathname === '/api/presets') {
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('预设名称不能为空');
+        if (!body.filters || typeof body.filters !== 'object') throw new Error('筛选条件不能为空');
+        const presets = await readSharedPresets();
+        const newPreset = {
+          id: crypto.randomUUID(),
+          name: body.name.trim(),
+          filters: body.filters,
+          createdBy: body.createdBy || 'Master',
+          createdAt: Date.now()
+        };
+        presets.push(newPreset);
+        await writeSharedPresets(presets);
+        return json(res, 201, { preset: newPreset });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/presets/')) {
+        const presetId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const presets = await readSharedPresets();
+        const idx = presets.findIndex(p => p.id === presetId);
+        if (idx === -1) throw new Error('预设不存在');
+        if (body.name != null) presets[idx].name = body.name.trim();
+        if (body.filters != null) presets[idx].filters = body.filters;
+        presets[idx].updatedAt = Date.now();
+        await writeSharedPresets(presets);
+        return json(res, 200, { preset: presets[idx] });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/presets/')) {
+        const presetId = pathname.split('/')[3];
+        const presets = await readSharedPresets();
+        const idx = presets.findIndex(p => p.id === presetId);
+        if (idx === -1) throw new Error('预设不存在');
+        presets.splice(idx, 1);
+        await writeSharedPresets(presets);
         return json(res, 200, { success: true });
       }
       if (req.method === 'GET' && pathname === '/api/workflows') {
