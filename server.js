@@ -1416,6 +1416,54 @@ async function requestHandler(req, res) {
         });
         return res.end(JSON.stringify(exportData, null, 2));
       }
+      if (req.method === 'POST' && pathname === '/api/export/screenshot') {
+        const body = await readJson(req);
+        const { type, taskId, format } = body;
+        
+        if (!type || !['dashboard', 'task-report'].includes(type)) {
+          throw new Error('无效的导出类型，请指定 dashboard 或 task-report');
+        }
+        
+        if (format !== 'png') {
+          throw new Error('仅支持 PNG 格式导出');
+        }
+        
+        let htmlContent = '';
+        let filename = '';
+        
+        if (type === 'dashboard') {
+          const overview = await buildOverview(true);
+          const exportData = {
+            type: 'dashboard-snapshot',
+            exportedAt: new Date().toISOString(),
+            overview
+          };
+          htmlContent = generateSnapshotHtml(exportData);
+          filename = 'dashboard-snapshot.png';
+        } else if (type === 'task-report') {
+          if (!taskId) {
+            throw new Error('导出任务汇报需要提供 taskId 参数');
+          }
+          const task = await getTask(taskId);
+          if (!task) throw new Error('任务不存在');
+          const log = await readLog(taskId);
+          const logSummary = generateLogSummary(log);
+          const exportData = {
+            type: 'task-report',
+            exportedAt: new Date().toISOString(),
+            task,
+            logSummary
+          };
+          htmlContent = generateTaskReportHtml(exportData);
+          filename = 'task-report.png';
+        }
+        
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename.replace('.png', '.html')}"`
+        });
+        return res.end(htmlContent);
+      }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });

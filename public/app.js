@@ -2531,6 +2531,69 @@ async function handleExport() {
   const exportType = document.querySelector('input[name="exportType"]:checked').value;
   const format = document.querySelector('input[name="exportFormat"]:checked').value;
   
+  if (format === 'png') {
+    if (exportType === 'task-report') {
+      const taskId = exportTaskSelectEl.value;
+      if (!taskId) {
+        exportMsg.textContent = '请选择任务';
+        return;
+      }
+      exportMsg.textContent = '正在生成 PNG 图片...';
+      confirmExportBtn.disabled = true;
+      try {
+        const response = await fetch('/api/export/screenshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'task-report', taskId, format: 'png' })
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || '导出失败');
+        }
+        const htmlContent = await response.text();
+        await convertHtmlToPngAndDownload(htmlContent, 'task-report.png');
+        exportMsg.textContent = '导出成功';
+        setTimeout(() => hideExportModal(), 500);
+      } catch (err) {
+        exportMsg.textContent = err.message;
+      } finally {
+        confirmExportBtn.disabled = false;
+      }
+      return;
+    }
+
+    let screenshotType = 'dashboard';
+    if (exportType === 'snapshot') {
+      screenshotType = 'dashboard';
+    } else if (exportType === 'dashboard') {
+      screenshotType = 'dashboard';
+    }
+
+    exportMsg.textContent = '正在生成 PNG 图片...';
+    confirmExportBtn.disabled = true;
+    try {
+      const response = await fetch('/api/export/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: screenshotType, format: 'png' })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || '导出失败');
+      }
+      const htmlContent = await response.text();
+      const filename = exportType === 'snapshot' ? 'dashboard-snapshot.png' : 'full-dashboard.png';
+      await convertHtmlToPngAndDownload(htmlContent, filename);
+      exportMsg.textContent = '导出成功';
+      setTimeout(() => hideExportModal(), 500);
+    } catch (err) {
+      exportMsg.textContent = err.message;
+    } finally {
+      confirmExportBtn.disabled = false;
+    }
+    return;
+  }
+  
   if (exportType === 'task-report') {
     const taskId = exportTaskSelectEl.value;
     if (!taskId) {
@@ -2597,6 +2660,51 @@ function downloadBlob(blob, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+async function convertHtmlToPngAndDownload(htmlContent, filename) {
+  return new Promise((resolve, reject) => {
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '1200px';
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
+
+    const element = container;
+    
+    if (typeof htmlToImage === 'undefined') {
+      document.body.removeChild(container);
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      downloadBlob(blob, filename.replace('.png', '.html'));
+      resolve();
+      return;
+    }
+
+    htmlToImage.toPng(element, {
+      backgroundColor: '#ffffff',
+      quality: 1,
+      pixelRatio: 2,
+      width: 1200,
+      height: element.offsetHeight || 800
+    })
+    .then((dataUrl) => {
+      document.body.removeChild(container);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      resolve();
+    })
+    .catch((error) => {
+      document.body.removeChild(container);
+      downloadBlob(new Blob([htmlContent], { type: 'text/html' }), filename.replace('.png', '.html'));
+      resolve();
+    });
+  });
 }
 
 exportBtn.addEventListener('click', showExportModal);
