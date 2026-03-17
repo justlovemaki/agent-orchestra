@@ -164,6 +164,10 @@
                 <span class="muted small">团队共享预设</span>
                 <div id="sharedPresetList" class="filter-presets-list"></div>
               </div>
+              <div class="filter-presets-actions">
+                <button id="exportPresetsBtn" class="filter-btn filter-btn-ghost" title="导出预设">导出</button>
+                <button id="importPresetsBtn" class="filter-btn filter-btn-ghost" title="导入预设">导入</button>
+              </div>
             </div>
           </div>
           <div id="filterChips" class="filter-chips"></div>
@@ -508,6 +512,41 @@
         <button class="modal-close" id="closeAuditDetailModal">&times;</button>
       </div>
       <div id="auditDetailBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="importPresetsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导入预设</h3>
+        <button class="modal-close" id="closeImportPresetsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-presets-form">
+          <label class="import-file-label">
+            <span class="field-label">选择预设文件</span>
+            <input type="file" id="presetFileInput" accept=".json" />
+          </label>
+          <div id="importPresetInfo" class="import-preset-info muted small"></div>
+          <div class="import-mode-selection">
+            <span class="field-label">导入模式</span>
+            <label class="import-mode-option">
+              <input type="radio" name="importMode" value="merge" checked />
+              <span>合并模式（保留现有 + 添加新的）</span>
+            </label>
+            <label class="import-mode-option">
+              <input type="radio" name="importMode" value="overwrite" />
+              <span>覆盖模式（清空现有）</span>
+            </label>
+          </div>
+        </div>
+        <div id="importPresetMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="confirmImportPresetsBtn" class="primary" disabled>导入</button>
+          <button id="cancelImportPresetsBtn" class="ghost">取消</button>
+        </div>
+      </div>
     </div>
   </div>
 

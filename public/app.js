@@ -2383,3 +2383,111 @@ auditFilterKeywordEl.addEventListener('keydown', (e) => {
 });
 closeAuditDetailModal.addEventListener('click', () => hideAuditDetailModal());
 auditDetailModal.querySelector('.modal-backdrop').addEventListener('click', () => hideAuditDetailModal());
+
+const importPresetsModal = document.getElementById('importPresetsModal');
+const closeImportPresetsModal = document.getElementById('closeImportPresetsModal');
+const presetFileInput = document.getElementById('presetFileInput');
+const importPresetInfo = document.getElementById('importPresetInfo');
+const importPresetMsg = document.getElementById('importPresetMsg');
+const confirmImportPresetsBtn = document.getElementById('confirmImportPresetsBtn');
+const cancelImportPresetsBtn = document.getElementById('cancelImportPresetsBtn');
+const exportPresetsBtn = document.getElementById('exportPresetsBtn');
+const importPresetsBtn = document.getElementById('importPresetsBtn');
+
+let importedPresetData = null;
+
+function showImportPresetsModal() {
+  importedPresetData = null;
+  presetFileInput.value = '';
+  importPresetInfo.textContent = '';
+  importPresetMsg.textContent = '';
+  confirmImportPresetsBtn.disabled = true;
+  importPresetsModal.classList.remove('hidden');
+}
+
+function hideImportPresetsModal() {
+  importPresetsModal.classList.add('hidden');
+  importedPresetData = null;
+  presetFileInput.value = '';
+}
+
+async function handleExportPresets() {
+  try {
+    const response = await fetch('/api/presets/export');
+    if (!response.ok) throw new Error('导出失败');
+    const data = await response.blob();
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'presets.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('导出失败：' + err.message);
+  }
+}
+
+function handlePresetFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) {
+    importedPresetData = null;
+    importPresetInfo.textContent = '';
+    confirmImportPresetsBtn.disabled = true;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.version || !data.presets || !Array.isArray(data.presets)) {
+        importPresetInfo.textContent = '无效的文件格式';
+        importPresetMsg.textContent = '文件格式不正确，应包含 version 和 presets 字段';
+        confirmImportPresetsBtn.disabled = true;
+        return;
+      }
+      importedPresetData = data;
+      importPresetInfo.textContent = `发现 ${data.presets.length} 个预设`;
+      importPresetMsg.textContent = '';
+      confirmImportPresetsBtn.disabled = false;
+    } catch (err) {
+      importPresetInfo.textContent = '解析失败';
+      importPresetMsg.textContent = '无法解析 JSON 文件';
+      confirmImportPresetsBtn.disabled = true;
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function handleImportPresets() {
+  if (!importedPresetData) return;
+  const mode = document.querySelector('input[name="importMode"]:checked').value;
+  importPresetMsg.textContent = '正在导入...';
+  confirmImportPresetsBtn.disabled = true;
+  try {
+    const res = await fetchJson('/api/presets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: importedPresetData, mode })
+    });
+    const message = `导入完成：成功 ${res.imported} 个${res.skipped > 0 ? `，跳过 ${res.skipped} 个` : ''}`;
+    importPresetMsg.textContent = message;
+    setTimeout(() => {
+      hideImportPresetsModal();
+      loadSharedPresets();
+      renderSharedPresets();
+    }, 1000);
+  } catch (err) {
+    importPresetMsg.textContent = '导入失败：' + err.message;
+    confirmImportPresetsBtn.disabled = false;
+  }
+}
+
+exportPresetsBtn.addEventListener('click', handleExportPresets);
+importPresetsBtn.addEventListener('click', showImportPresetsModal);
+closeImportPresetsModal.addEventListener('click', hideImportPresetsModal);
+cancelImportPresetsBtn.addEventListener('click', hideImportPresetsModal);
+importPresetsModal.querySelector('.modal-backdrop').addEventListener('click', hideImportPresetsModal);
+presetFileInput.addEventListener('change', handlePresetFileSelect);
+confirmImportPresetsBtn.addEventListener('click', handleImportPresets);

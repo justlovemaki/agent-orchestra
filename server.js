@@ -1111,6 +1111,65 @@ async function requestHandler(req, res) {
         await writeSharedPresets(presets);
         return json(res, 200, { success: true });
       }
+      if (req.method === 'GET' && pathname === '/api/presets/export') {
+        const presets = await readSharedPresets();
+        const exportData = {
+          version: '1.0',
+          exportedAt: new Date().toISOString(),
+          presets: presets
+        };
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="presets.json"'
+        });
+        return res.end(JSON.stringify(exportData, null, 2));
+      }
+      if (req.method === 'POST' && pathname === '/api/presets/import') {
+        const body = await readJson(req);
+        if (!body.data || !Array.isArray(body.data.presets)) {
+          throw new Error('无效的导入文件格式');
+        }
+        const { data } = body;
+        const mode = body.mode || 'merge';
+        const existingPresets = await readSharedPresets();
+        let imported = 0;
+        let skipped = 0;
+        let results = { imported: 0, skipped: 0, errors: [] };
+
+        if (mode === 'overwrite') {
+          const importedPresets = data.presets.map(p => ({
+            id: crypto.randomUUID(),
+            name: p.name,
+            filters: p.filters,
+            createdBy: p.createdBy || 'import',
+            createdAt: Date.now()
+          }));
+          await writeSharedPresets(importedPresets);
+          results.imported = importedPresets.length;
+        } else {
+          for (const preset of data.presets) {
+            if (!preset.name || !preset.filters) {
+              results.skipped++;
+              continue;
+            }
+            const existingByName = existingPresets.find(p => p.name === preset.name);
+            if (existingByName) {
+              results.skipped++;
+              continue;
+            }
+            existingPresets.push({
+              id: crypto.randomUUID(),
+              name: preset.name,
+              filters: preset.filters,
+              createdBy: preset.createdBy || 'import',
+              createdAt: Date.now()
+            });
+            results.imported++;
+          }
+          await writeSharedPresets(existingPresets);
+        }
+        return json(res, 200, results);
+      }
       if (req.method === 'GET' && pathname === '/api/workflows') {
         return json(res, 200, { workflows: await loadWorkflows() });
       }
