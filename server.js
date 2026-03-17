@@ -1339,6 +1339,83 @@ async function requestHandler(req, res) {
       if (req.method === 'GET' && pathname === '/api/audit/types') {
         return json(res, 200, { types: getAuditEventTypes() });
       }
+      if (req.method === 'GET' && pathname === '/api/export/snapshot') {
+        const overview = await buildOverview(true);
+        const exportData = {
+          type: 'dashboard-snapshot',
+          exportedAt: new Date().toISOString(),
+          overview
+        };
+        const format = parsed.query.format || 'json';
+        if (format === 'html') {
+          const html = generateSnapshotHtml(exportData);
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="dashboard-snapshot.html"'
+          });
+          return res.end(html);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="dashboard-snapshot.json"'
+        });
+        return res.end(JSON.stringify(exportData, null, 2));
+      }
+      if (req.method === 'POST' && pathname === '/api/export/task-report') {
+        const body = await readJson(req);
+        const taskId = body.taskId;
+        if (!taskId) throw new Error('缺少 taskId 参数');
+        const task = await getTask(taskId);
+        if (!task) throw new Error('任务不存在');
+        const log = await readLog(taskId);
+        const logSummary = generateLogSummary(log);
+        const exportData = {
+          type: 'task-report',
+          exportedAt: new Date().toISOString(),
+          task,
+          logSummary
+        };
+        const format = body.format || 'json';
+        if (format === 'html') {
+          const html = generateTaskReportHtml(exportData);
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="task-report.html"'
+          });
+          return res.end(html);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="task-report.json"'
+        });
+        return res.end(JSON.stringify(exportData, null, 2));
+      }
+      if (req.method === 'GET' && pathname === '/api/export/dashboard') {
+        const overview = await buildOverview(true);
+        const tasks = await readTasks();
+        const runtime = await readRuntime();
+        const exportData = {
+          type: 'full-dashboard',
+          exportedAt: new Date().toISOString(),
+          overview,
+          tasks: tasks.map(formatTaskForUi),
+          runtime
+        };
+        const format = parsed.query.format || 'json';
+        if (format === 'html') {
+          const html = generateFullDashboardHtml(exportData);
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="full-dashboard.html"'
+          });
+          return res.end(html);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="full-dashboard.json"'
+        });
+        return res.end(JSON.stringify(exportData, null, 2));
+      }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
@@ -1379,6 +1456,339 @@ function readJson(req) {
     });
     req.on('error', reject);
   });
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
+function generateLogSummary(log) {
+  if (!log) return { totalLines: 0, summary: '暂无日志' };
+  const lines = log.split('\n').filter(l => l.trim());
+  const totalLines = lines.length;
+  const errorLines = lines.filter(l => l.toLowerCase().includes('error') || l.toLowerCase().includes('fail') || l.toLowerCase().includes('exception'));
+  const warnLines = lines.filter(l => l.toLowerCase().includes('warn') || l.toLowerCase().includes('warning'));
+  const lastLines = lines.slice(-20);
+  return {
+    totalLines,
+    errorCount: errorLines.length,
+    warnCount: warnLines.length,
+    lastLines: lastLines.join('\n'),
+    fullLog: log.slice(-50000)
+  };
+}
+
+function escapeHtmlForExport(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function generateSnapshotHtml(data) {
+  const o = data.overview;
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Orchestra - 仪表板快照</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    .header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px; }
+    .header h1 { margin: 0 0 8px 0; font-size: 28px; }
+    .header .meta { opacity: 0.8; font-size: 14px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-card .label { color: #64748b; font-size: 14px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 24px; font-weight: 700; color: #1e293b; }
+    .section { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+    .section h2 { margin: 0 0 16px 0; font-size: 18px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; }
+    .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .agent-card { background: #f8fafc; padding: 16px; border-radius: 6px; border-left: 3px solid #3b82f6; }
+    .agent-card .name { font-weight: 600; color: #1e293b; }
+    .agent-card .info { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .badge.busy { background: #fef3c7; color: #92400e; }
+    .badge.idle { background: #d1fae5; color: #065f46; }
+    .badge.offline { background: #f1f5f9; color: #64748b; }
+    .system-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .kv { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .kv .label { color: #64748b; font-size: 13px; }
+    .kv .value { color: #1e293b; font-weight: 500; }
+    @media print { body { background: white; } .section, .header { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Agent Orchestra - 仪表板快照</h1>
+    <div class="meta">导出时间：${new Date(data.exportedAt).toLocaleString('zh-CN')}</div>
+  </div>
+  
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">Agent 总数</div><div class="value">${o.totals.agents}</div></div>
+    <div class="stat-card"><div class="label">会话数</div><div class="value">${o.totals.sessions}</div></div>
+    <div class="stat-card"><div class="label">忙碌 Agent</div><div class="value">${o.totals.busyAgents}</div></div>
+    <div class="stat-card"><div class="label">排队任务</div><div class="value">${o.totals.taskQueued}</div></div>
+    <div class="stat-card"><div class="label">运行中</div><div class="value">${o.totals.taskRunning}</div></div>
+    <div class="stat-card"><div class="label">已完成/失败</div><div class="value">${o.totals.taskDone}/${o.totals.taskFailed}</div></div>
+  </div>
+  
+  <div class="section">
+    <h2>Agent 列表</h2>
+    <div class="agents-grid">
+      ${o.agents.map(a => `
+        <div class="agent-card">
+          <div class="name">${escapeHtmlForExport(a.name)}</div>
+          <div class="info">
+            <span class="badge ${a.status}">${a.status === 'busy' ? '忙碌' : a.status === 'idle' ? '空闲' : '离线'}</span>
+            · ${escapeHtmlForExport(a.model)} · ${a.sessionsCount} 会话
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+  
+  <div class="section">
+    <h2>系统状态</h2>
+    <div class="system-info">
+      <div class="kv"><div class="label">Gateway</div><div class="value">${o.gateway?.reachable ? '可达' : '不可达'}</div></div>
+      <div class="kv"><div class="label">延迟</div><div class="value">${o.gateway?.connectLatencyMs ?? '—'} ms</div></div>
+      <div class="kv"><div class="label">高危告警</div><div class="value">${o.securityAudit?.critical ?? 0}</div></div>
+      <div class="kv"><div class="label">警告</div><div class="value">${o.securityAudit?.warn ?? 0}</div></div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function generateTaskReportHtml(data) {
+  const task = data.task;
+  const logSummary = data.logSummary;
+  const statusLabel = { queued: '待执行', running: '执行中', paused: '已暂停', completed: '已完成', failed: '失败', canceled: '已取消' };
+  const priorityLabel = { low: '低', medium: '中', high: '高' };
+  const runStatusLabel = { queued: '待命', running: '执行中', completed: '完成', failed: '失败', canceled: '已取消' };
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Orchestra - 任务汇报</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    .header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px; }
+    .header h1 { margin: 0 0 8px 0; font-size: 24px; }
+    .header .meta { opacity: 0.8; font-size: 14px; }
+    .section { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+    .section h2 { margin: 0 0 16px 0; font-size: 18px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .info-item { padding: 12px; background: #f8fafc; border-radius: 6px; }
+    .info-item .label { color: #64748b; font-size: 13px; }
+    .info-item .value { font-weight: 600; color: #1e293b; margin-top: 4px; }
+    .prompt-box { background: #f8fafc; padding: 16px; border-radius: 6px; margin: 16px 0; white-space: pre-wrap; word-break: break-word; }
+    .runs-list { display: flex; flex-direction: column; gap: 12px; }
+    .run-item { padding: 16px; background: #f8fafc; border-radius: 6px; border-left: 3px solid #3b82f6; }
+    .run-item.failed { border-left-color: #ef4444; }
+    .run-item.completed { border-left-color: #22c55e; }
+    .run-item .agent { font-weight: 600; color: #1e293b; }
+    .run-item .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; margin-left: 8px; }
+    .run-item .status.completed { background: #d1fae5; color: #065f46; }
+    .run-item .status.failed { background: #fee2e2; color: #991b1b; }
+    .run-item .status.running { background: #dbeafe; color: #1e40af; }
+    .run-item .error { color: #dc2626; font-size: 13px; margin-top: 8px; padding: 8px; background: #fef2f2; border-radius: 4px; }
+    .log-summary { font-size: 13px; }
+    .log-summary .stats { display: flex; gap: 16px; margin-bottom: 12px; }
+    .log-summary .stat { padding: 4px 12px; background: #f1f5f9; border-radius: 4px; }
+    .log-summary .stat.error { background: #fee2e2; color: #991b1b; }
+    .log-summary .stat.warn { background: #fef3c7; color: #92400e; }
+    .log-box { background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-family: monospace; font-size: 12px; white-space: pre; max-height: 400px; overflow-y: auto; }
+    @media print { body { background: white; } .section { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${escapeHtmlForExport(task.title)}</h1>
+    <div class="meta">导出时间：${new Date(data.exportedAt).toLocaleString('zh-CN')}</div>
+  </div>
+  
+  <div class="section">
+    <h2>任务信息</h2>
+    <div class="info-grid">
+      <div class="info-item"><div class="label">状态</div><div class="value">${statusLabel[task.status] || task.status}</div></div>
+      <div class="info-item"><div class="label">优先级</div><div class="value">${priorityLabel[task.priority] || task.priority}</div></div>
+      <div class="info-item"><div class="label">执行模式</div><div class="value">${task.mode === 'parallel' ? '并行' : '串行广播'}</div></div>
+      <div class="info-item"><div class="label">创建时间</div><div class="value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-CN') : '—'}</div></div>
+      <div class="info-item"><div class="label">开始时间</div><div class="value">${task.startedAt ? new Date(task.startedAt).toLocaleString('zh-CN') : '—'}</div></div>
+      <div class="info-item"><div class="label">完成时间</div><div class="value">${task.finishedAt ? new Date(task.finishedAt).toLocaleString('zh-CN') : '—'}</div></div>
+    </div>
+    <div class="prompt-box"><div class="label" style="color:#64748b;font-size:13px;margin-bottom:8px;">任务内容</div>${escapeHtmlForExport(task.prompt)}</div>
+    <div class="info-item"><div class="label">分配的 Agent</div><div class="value">${(task.agents || []).join('、') || '—'}</div></div>
+  </div>
+  
+  <div class="section">
+    <h2>执行结果</h2>
+    <div class="runs-list">
+      ${(task.runs || []).map(run => `
+        <div class="run-item ${run.status}">
+          <div>
+            <span class="agent">${escapeHtmlForExport(run.agentId)}</span>
+            <span class="status ${run.status}">${runStatusLabel[run.status] || run.status}${run.exitCode != null ? ` (exit ${run.exitCode})` : ''}</span>
+          </div>
+          ${run.error ? `<div class="error">${escapeHtmlForExport(run.error)}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  </div>
+  
+  <div class="section">
+    <h2>日志摘要</h2>
+    <div class="log-summary">
+      <div class="stats">
+        <span class="stat">总行数: ${logSummary.totalLines}</span>
+        ${logSummary.errorCount > 0 ? `<span class="stat error">错误: ${logSummary.errorCount}</span>` : ''}
+        ${logSummary.warnCount > 0 ? `<span class="stat warn">警告: ${logSummary.warnCount}</span>` : ''}
+      </div>
+      <div class="label" style="color:#64748b;font-size:13px;margin-bottom:8px;">最近日志</div>
+      <div class="log-box">${escapeHtmlForExport(logSummary.lastLines) || '暂无日志'}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function generateFullDashboardHtml(data) {
+  const o = data.overview;
+  const tasks = data.tasks;
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Orchestra - 完整仪表板导出</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1400px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    .header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px; }
+    .header h1 { margin: 0 0 8px 0; font-size: 28px; }
+    .header .meta { opacity: 0.8; font-size: 14px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-card .label { color: #64748b; font-size: 14px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 24px; font-weight: 700; color: #1e293b; }
+    .section { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+    .section h2 { margin: 0 0 16px 0; font-size: 18px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; }
+    .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .agent-card { background: #f8fafc; padding: 16px; border-radius: 6px; border-left: 3px solid #3b82f6; }
+    .agent-card .name { font-weight: 600; color: #1e293b; }
+    .agent-card .info { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .task-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+    .column { background: #f8fafc; padding: 16px; border-radius: 8px; }
+    .column h3 { margin: 0 0 12px 0; font-size: 14px; color: #64748b; text-transform: uppercase; }
+    .task-card { background: white; padding: 12px; border-radius: 6px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .task-card .title { font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+    .task-card .meta { font-size: 12px; color: #64748b; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .badge.busy { background: #fef3c7; color: #92400e; }
+    .badge.idle { background: #d1fae5; color: #065f46; }
+    .badge.offline { background: #f1f5f9; color: #64748b; }
+    .badge.completed { background: #d1fae5; color: #065f46; }
+    .badge.failed { background: #fee2e2; color: #991b1b; }
+    .badge.running { background: #dbeafe; color: #1e40af; }
+    .badge.queued { background: #f1f5f9; color: #64748b; }
+    @media print { body { background: white; } .section, .header { box-shadow: none; } }
+    @media (max-width: 768px) { .task-board { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Agent Orchestra - 完整仪表板</h1>
+    <div class="meta">导出时间：${new Date(data.exportedAt).toLocaleString('zh-CN')}</div>
+  </div>
+  
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">Agent 总数</div><div class="value">${o.totals.agents}</div></div>
+    <div class="stat-card"><div class="label">会话数</div><div class="value">${o.totals.sessions}</div></div>
+    <div class="stat-card"><div class="label">忙碌 Agent</div><div class="value">${o.totals.busyAgents}</div></div>
+    <div class="stat-card"><div class="label">排队任务</div><div class="value">${o.totals.taskQueued}</div></div>
+    <div class="stat-card"><div class="label">运行中</div><div class="value">${o.totals.taskRunning}</div></div>
+    <div class="stat-card"><div class="label">已完成</div><div class="value">${o.totals.taskDone}</div></div>
+    <div class="stat-card"><div class="label">失败</div><div class="value">${o.totals.taskFailed}</div></div>
+  </div>
+  
+  <div class="section">
+    <h2>Agent 列表 (${o.agents.length})</h2>
+    <div class="agents-grid">
+      ${o.agents.map(a => `
+        <div class="agent-card">
+          <div class="name">${escapeHtmlForExport(a.name)}</div>
+          <div class="info">
+            <span class="badge ${a.status}">${a.status === 'busy' ? '忙碌' : a.status === 'idle' ? '空闲' : '离线'}</span>
+            · ${escapeHtmlForExport(a.model)} · ${a.sessionsCount} 会话
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+  
+  <div class="section">
+    <h2>任务看板 (${tasks.length} 个任务)</h2>
+    <div class="task-board">
+      <div class="column">
+        <h3>待执行 (${tasks.filter(t => t.status === 'queued').length})</h3>
+        ${tasks.filter(t => t.status === 'queued').map(t => `
+          <div class="task-card">
+            <div class="title">${escapeHtmlForExport(t.title)}</div>
+            <div class="meta">${escapeHtmlForExport(t.agents?.join(', ') || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="column">
+        <h3>执行中 (${tasks.filter(t => t.status === 'running').length})</h3>
+        ${tasks.filter(t => t.status === 'running').map(t => `
+          <div class="task-card">
+            <div class="title">${escapeHtmlForExport(t.title)}</div>
+            <div class="meta">${escapeHtmlForExport(t.agents?.join(', ') || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="column">
+        <h3>已完成 (${tasks.filter(t => t.status === 'completed').length})</h3>
+        ${tasks.filter(t => t.status === 'completed').map(t => `
+          <div class="task-card">
+            <div class="title">${escapeHtmlForExport(t.title)}</div>
+            <div class="meta">${escapeHtmlForExport(t.agents?.join(', ') || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="column">
+        <h3>失败 (${tasks.filter(t => t.status === 'failed').length})</h3>
+        ${tasks.filter(t => t.status === 'failed').map(t => `
+          <div class="task-card">
+            <div class="title">${escapeHtmlForExport(t.title)}</div>
+            <div class="meta">${escapeHtmlForExport(t.agents?.join(', ') || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="column">
+        <h3>已取消 (${tasks.filter(t => t.status === 'canceled').length})</h3>
+        ${tasks.filter(t => t.status === 'canceled').map(t => `
+          <div class="task-card">
+            <div class="title">${escapeHtmlForExport(t.title)}</div>
+            <div class="meta">${escapeHtmlForExport(t.agents?.join(', ') || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 ensureData().then(async () => {

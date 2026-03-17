@@ -2491,3 +2491,120 @@ cancelImportPresetsBtn.addEventListener('click', hideImportPresetsModal);
 importPresetsModal.querySelector('.modal-backdrop').addEventListener('click', hideImportPresetsModal);
 presetFileInput.addEventListener('change', handlePresetFileSelect);
 confirmImportPresetsBtn.addEventListener('click', handleImportPresets);
+
+const exportModal = document.getElementById('exportModal');
+const closeExportModal = document.getElementById('closeExportModal');
+const exportBtn = document.getElementById('exportBtn');
+const confirmExportBtn = document.getElementById('confirmExportBtn');
+const cancelExportBtn = document.getElementById('cancelExportBtn');
+const exportMsg = document.getElementById('exportMsg');
+const exportTaskSelectEl = document.getElementById('exportTaskSelectEl');
+const exportTaskSelect = document.getElementById('exportTaskSelect');
+
+function showExportModal() {
+  exportMsg.textContent = '';
+  renderExportTaskSelect();
+  updateExportTaskSelectVisibility();
+  exportModal.classList.remove('hidden');
+}
+
+function hideExportModal() {
+  exportModal.classList.add('hidden');
+}
+
+function updateExportTaskSelectVisibility() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  if (exportType === 'task-report') {
+    exportTaskSelect.classList.remove('hidden');
+  } else {
+    exportTaskSelect.classList.add('hidden');
+  }
+}
+
+function renderExportTaskSelect() {
+  const tasks = state.tasks;
+  exportTaskSelectEl.innerHTML = '<option value="">选择任务...</option>' +
+    tasks.map(t => `<option value="${t.id}">${escapeHtml(t.title)} (${statusLabel(t.status)})</option>`).join('');
+}
+
+async function handleExport() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  
+  if (exportType === 'task-report') {
+    const taskId = exportTaskSelectEl.value;
+    if (!taskId) {
+      exportMsg.textContent = '请选择任务';
+      return;
+    }
+    exportMsg.textContent = '正在导出...';
+    confirmExportBtn.disabled = true;
+    try {
+      const response = await fetch('/api/export/task-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, format })
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || '导出失败');
+      }
+      const blob = await response.blob();
+      downloadBlob(blob, `task-report.${format}`);
+      exportMsg.textContent = '导出成功';
+      setTimeout(() => hideExportModal(), 500);
+    } catch (err) {
+      exportMsg.textContent = err.message;
+    } finally {
+      confirmExportBtn.disabled = false;
+    }
+    return;
+  }
+
+  let url = '';
+  if (exportType === 'snapshot') {
+    url = `/api/export/snapshot?format=${format}`;
+  } else if (exportType === 'dashboard') {
+    url = `/api/export/dashboard?format=${format}`;
+  }
+
+  exportMsg.textContent = '正在导出...';
+  confirmExportBtn.disabled = true;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '导出失败');
+    }
+    const blob = await response.blob();
+    const filename = exportType === 'snapshot' ? 'dashboard-snapshot' : 'full-dashboard';
+    downloadBlob(blob, `${filename}.${format}`);
+    exportMsg.textContent = '导出成功';
+    setTimeout(() => hideExportModal(), 500);
+  } catch (err) {
+    exportMsg.textContent = err.message;
+  } finally {
+    confirmExportBtn.disabled = false;
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+exportBtn.addEventListener('click', showExportModal);
+closeExportModal.addEventListener('click', hideExportModal);
+cancelExportBtn.addEventListener('click', hideExportModal);
+exportModal.querySelector('.modal-backdrop').addEventListener('click', hideExportModal);
+confirmExportBtn.addEventListener('click', handleExport);
+
+document.querySelectorAll('input[name="exportType"]').forEach(radio => {
+  radio.addEventListener('change', updateExportTaskSelectVisibility);
+});
