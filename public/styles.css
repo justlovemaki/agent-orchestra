@@ -1024,6 +1024,18 @@ button.success:hover {
   margin-top: 8px;
   white-space: pre-wrap;
 }
+.run-retry-btn {
+  margin-top: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.run-retry-btn:hover { background: #2563eb; }
 
 .log-box {
   white-space: pre-wrap;

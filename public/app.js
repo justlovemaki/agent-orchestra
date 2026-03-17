@@ -786,6 +786,22 @@ async function loadTaskDetail(taskId) {
   if (['running', 'queued'].includes(task.status)) {
     startLogStream(taskId, log);
   }
+  
+  taskMetaEl.querySelectorAll('.run-retry-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const runId = btn.dataset.runId;
+      const taskId = btn.dataset.taskId;
+      try {
+        await fetchJson(`/api/tasks/${taskId}/runs/${runId}/retry`, { method: 'POST' });
+        alert('Run 已重新加入队列');
+        await loadTaskDetail(taskId);
+        await loadTasks();
+      } catch (err) {
+        alert('重试失败：' + err.message);
+      }
+    });
+  });
 }
 
 function startLogStream(taskId, initialLog) {
@@ -834,11 +850,13 @@ function updateTaskStatusInList(taskId, status) {
 }
 
 function renderRunItem(run) {
+  const canRetry = run.status === 'failed' || run.status === 'error';
   return `
     <div class="run-item">
       <div><strong>${escapeHtml(run.agentId)}</strong></div>
       <div class="muted small">${runStatusLabel(run.status)}${run.exitCode != null ? ` · exit ${run.exitCode}` : ''}</div>
       ${run.error ? `<div class="run-error">${escapeHtml(run.error)}</div>` : ''}
+      ${canRetry ? `<button class="run-retry-btn" data-run-id="${run.id}" data-task-id="${state.selectedTaskId}">重试此 Run</button>` : ''}
     </div>
   `;
 }

@@ -544,6 +544,48 @@ async function createRetryTask(taskId) {
   });
 }
 
+async function retryRun(taskId, runId) {
+  const task = await getTask(taskId);
+  if (!task) throw new Error('任务不存在');
+  
+  const run = task.runs.find(r => r.id === runId);
+  if (!run) throw new Error('Run 不存在');
+  if (!['failed', 'error'].includes(run.status)) {
+    throw new Error('只能重试状态为 failed 或 error 的 Run');
+  }
+
+  await updateTask(taskId, async t => {
+    const updatedRuns = t.runs.map(r => {
+      if (r.id === runId) {
+        return {
+          ...r,
+          status: 'queued',
+          startedAt: null,
+          finishedAt: null,
+          exitCode: null,
+          error: null,
+          result: null
+        };
+      }
+      return r;
+    });
+    
+    return {
+      ...t,
+      runs: updatedRuns,
+      status: t.status === 'failed' ? 'running' : t.status,
+      updatedAt: Date.now()
+    };
+  });
+
+  const updatedTask = await getTask(taskId);
+  if (updatedTask.runnerPid) {
+    try { process.kill(updatedTask.runnerPid, 'SIGUSR2'); } catch {}
+  }
+  
+  return formatTaskForUi(updatedTask);
+}
+
 async function cancelTask(taskId) {
   const task = await getTask(taskId);
   if (!task) throw new Error('任务不存在');
@@ -830,6 +872,12 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/retry')) {
         const taskId = pathname.split('/')[3];
         return json(res, 201, { task: await createRetryTask(taskId) });
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/tasks\/[^/]+\/runs\/[^/]+\/retry$/)) {
+        const parts = pathname.split('/');
+        const taskId = parts[3];
+        const runId = parts[5];
+        return json(res, 200, { task: await retryRun(taskId, runId) });
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/tasks\/[^/]+\/reassign$/)) {
         const taskId = pathname.split('/')[3];
