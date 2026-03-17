@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
+const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -526,6 +527,13 @@ async function createTask(body) {
   const tasks = await readTasks();
   tasks.push(task);
   await writeTasks(tasks);
+  await addAuditEvent('task.created', {
+    taskId: task.id,
+    title: task.title,
+    agents: task.agents,
+    mode: task.mode,
+    priority: task.priority
+  }, task.createdBy);
   const runner = await launchTaskRunner(task);
   return formatTaskForUi({ ...task, ...runner });
 }
@@ -582,6 +590,13 @@ async function retryRun(taskId, runId) {
   if (updatedTask.runnerPid) {
     try { process.kill(updatedTask.runnerPid, 'SIGUSR2'); } catch {}
   }
+
+  await addAuditEvent('task.retried', {
+    taskId: task.id,
+    runId: runId,
+    title: task.title,
+    agents: task.agents
+  }, 'Master');
   
   return formatTaskForUi(updatedTask);
 }
@@ -606,6 +621,12 @@ async function cancelTask(taskId) {
     try { process.kill(task.runnerPid, 'SIGTERM'); } catch {}
   }
 
+  await addAuditEvent('task.cancelled', {
+    taskId: task.id,
+    title: task.title,
+    agents: task.agents
+  }, 'Master');
+
   return formatTaskForUi(await getTask(taskId));
 }
 
@@ -625,6 +646,12 @@ async function pauseTask(taskId) {
     try { process.kill(task.runnerPid, 'SIGUSR1'); } catch {}
   }
 
+  await addAuditEvent('task.paused', {
+    taskId: task.id,
+    title: task.title,
+    agents: task.agents
+  }, 'Master');
+
   return formatTaskForUi(await getTask(taskId));
 }
 
@@ -643,6 +670,12 @@ async function resumeTask(taskId) {
   if (task.runnerPid) {
     try { process.kill(task.runnerPid, 'SIGUSR2'); } catch {}
   }
+
+  await addAuditEvent('task.resumed', {
+    taskId: task.id,
+    title: task.title,
+    agents: task.agents
+  }, 'Master');
 
   return formatTaskForUi(await getTask(taskId));
 }
@@ -664,6 +697,13 @@ async function reassignTask(taskId, newAgents) {
     reassignedAt: Date.now(),
     reassignedBy: 'Master'
   }));
+
+  await addAuditEvent('task.reassigned', {
+    taskId: task.id,
+    title: task.title,
+    oldAgents,
+    newAgents: agents
+  }, 'Master');
 
   return formatTaskForUi(await getTask(taskId));
 }
@@ -1040,6 +1080,13 @@ async function requestHandler(req, res) {
         const workflowId = pathname.split('/')[3];
         const body = await readJson(req);
         const run = await runWorkflow(workflowId, { stopOnFailure: body.stopOnFailure });
+        await addAuditEvent('workflow.executed', {
+          workflowId,
+          workflowName: run.workflowName,
+          runId: run.id,
+          status: run.status,
+          stopOnFailure: body.stopOnFailure
+        }, 'Master');
         return json(res, 201, { run });
       }
       if (req.method === 'GET' && pathname.startsWith('/api/workflow-runs/')) {
@@ -1124,6 +1171,11 @@ async function requestHandler(req, res) {
           '--json'
         ], 60000);
         const spawnResult = JSON.parse(cleanCliJson(result.stdout));
+        await addAuditEvent('session.spawned', {
+          agentId,
+          task,
+          result: spawnResult
+        }, 'Master');
         return json(res, 200, spawnResult);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/sessions\/[^/]+\/messages$/)) {
@@ -1141,7 +1193,35 @@ async function requestHandler(req, res) {
           '--json'
         ], 30000);
         const sendResult = JSON.parse(cleanCliJson(result.stdout));
+        await addAuditEvent('session.message_sent', {
+          sessionKey,
+          message
+        }, 'Master');
         return json(res, 200, sendResult);
+      }
+      if (req.method === 'POST' && pathname === '/api/audit') {
+        const body = await readJson(req);
+        if (!body.type) {
+          throw new Error('Audit event type is required');
+        }
+        const event = await addAuditEvent(body.type, body.details || {}, body.user || 'system');
+        return json(res, 201, { event });
+      }
+      if (req.method === 'GET' && pathname === '/api/audit') {
+        const filters = {
+          eventType: parsed.query.eventType || null,
+          user: parsed.query.user || null,
+          timeFrom: parsed.query.timeFrom || null,
+          timeTo: parsed.query.timeTo || null,
+          keyword: parsed.query.keyword || null,
+          limit: parsed.query.limit ? parseInt(parsed.query.limit, 10) : null,
+          offset: parsed.query.offset ? parseInt(parsed.query.offset, 10) : null
+        };
+        const events = await queryAuditEvents(filters);
+        return json(res, 200, { events });
+      }
+      if (req.method === 'GET' && pathname === '/api/audit/types') {
+        return json(res, 200, { types: getAuditEventTypes() });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {

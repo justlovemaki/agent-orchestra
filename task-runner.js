@@ -1,14 +1,37 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { execFile } = require('child_process');
+const crypto = require('crypto');
 
 const ROOT = __dirname;
 const TASKS_FILE = path.join(ROOT, 'data', 'tasks.json');
+const AUDIT_EVENTS_FILE = path.join(ROOT, 'data', 'audit-events.json');
 const taskId = process.argv[2];
 
 if (!taskId) {
   console.error('taskId required');
   process.exit(1);
+}
+
+async function addAuditEvent(type, details = {}, user = 'system') {
+  const event = {
+    id: crypto.randomUUID(),
+    type,
+    user,
+    details,
+    timestamp: Date.now()
+  };
+  try {
+    let events = [];
+    try {
+      const data = await fs.readFile(AUDIT_EVENTS_FILE, 'utf8');
+      events = JSON.parse(data);
+    } catch {}
+    events.push(event);
+    await fs.writeFile(AUDIT_EVENTS_FILE, JSON.stringify(events, null, 2) + '\n');
+  } catch (err) {
+    console.error('[task:' + taskId + '] failed to write audit event:', err.message);
+  }
 }
 
 let paused = false;
@@ -209,8 +232,16 @@ async function runSingle(task, run) {
   } else if (latest.paused) {
     console.log(`[task:${taskId}] runner paused`);
   } else {
-    await updateTask(async t => ({ ...t, status: failed ? 'failed' : 'completed', finishedAt: Date.now() }));
+    const finalStatus = failed ? 'failed' : 'completed';
+    await updateTask(async t => ({ ...t, status: finalStatus, finishedAt: Date.now() }));
     console.log(`[task:${taskId}] runner finished`);
+    
+    await addAuditEvent('task.' + finalStatus, {
+      taskId: latest.id,
+      title: latest.title,
+      agents: latest.agents,
+      runs: latest.runs
+    }, 'system');
   }
 })().catch(async error => {
   console.error(`[task:${taskId}] fatal`, error);

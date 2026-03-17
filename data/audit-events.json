@@ -1,0 +1,12 @@
+[
+  {
+    "id": "de1117bd-372a-4f46-ad91-85843a6e6f53",
+    "type": "task.created",
+    "user": "Master",
+    "details": {
+      "taskId": "test-123",
+      "title": "Test Task"
+    },
+    "timestamp": 1773744191811
+  }
+]

@@ -19,7 +19,9 @@ const state = {
   logEventSource: null,
   logStreamActive: false,
   sessions: [],
-  selectedSessionKey: null
+  selectedSessionKey: null,
+  auditEvents: [],
+  auditFilters: {}
 };
 
 const statsEl = document.getElementById('stats');
@@ -113,6 +115,20 @@ const confirmReassignBtn = document.getElementById('confirmReassignBtn');
 const cancelReassignBtn = document.getElementById('cancelReassignBtn');
 
 let reassignTaskId = null;
+
+const auditFilterKeywordEl = document.getElementById('auditFilterKeyword');
+const auditEventTypeEl = document.getElementById('auditEventType');
+const auditTimeFromEl = document.getElementById('auditTimeFrom');
+const auditTimeToEl = document.getElementById('auditTimeTo');
+const applyAuditFilterBtn = document.getElementById('applyAuditFilterBtn');
+const clearAuditFilterBtn = document.getElementById('clearAuditFilterBtn');
+const auditFilterChipsEl = document.getElementById('auditFilterChips');
+const auditEventsListEl = document.getElementById('auditEventsList');
+const auditResultCountEl = document.getElementById('auditResultCount');
+
+const auditDetailModal = document.getElementById('auditDetailModal');
+const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
+const auditDetailBodyEl = document.getElementById('auditDetailBody');
 
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
@@ -292,7 +308,8 @@ async function refreshAll(force = false) {
     loadTemplates(),
     loadGroups(),
     loadWorkflows(),
-    loadSessions()
+    loadSessions(),
+    loadAuditEvents(force)
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
@@ -322,6 +339,9 @@ function render() {
   renderWorkflows();
   renderSessionList();
   renderSpawnAgentSelect();
+  renderAuditEvents();
+  renderAuditFilterChips();
+  renderAuditResultCount();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -2057,3 +2077,215 @@ sessionMessageInput.addEventListener('keydown', (e) => {
     sendSessionMessage();
   }
 });
+
+async function loadAuditEvents(force = false) {
+  try {
+    const query = buildAuditQuery(state.auditFilters, force);
+    const res = await fetchJson(`/api/audit${query}`);
+    state.auditEvents = res.events || [];
+  } catch (err) {
+    state.auditEvents = [];
+  }
+}
+
+function buildAuditQuery(filters = {}, force = false) {
+  const params = new URLSearchParams();
+  if (force) params.set('force', '1');
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value != null && value !== '') params.set(key, value);
+  });
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+function getAuditFilters() {
+  const filters = {};
+  const keyword = auditFilterKeywordEl.value.trim();
+  const eventType = auditEventTypeEl.value;
+  const timeFrom = auditTimeFromEl.value;
+  const timeTo = auditTimeToEl.value;
+
+  if (keyword) filters.keyword = keyword;
+  if (eventType) filters.eventType = eventType;
+  if (timeFrom) filters.timeFrom = new Date(timeFrom).toISOString();
+  if (timeTo) filters.timeTo = new Date(timeTo).toISOString();
+
+  return filters;
+}
+
+function hasActiveAuditFilters(filters = {}) {
+  return Object.values(filters).some(value => value != null && value !== '');
+}
+
+function renderAuditEvents() {
+  const events = state.auditEvents;
+  if (!events || events.length === 0) {
+    auditEventsListEl.innerHTML = '<div class="empty-state">暂无审计事件</div>';
+    return;
+  }
+  auditEventsListEl.innerHTML = events.map(event => `
+    <div class="audit-event-item" data-event-id="${event.id}">
+      <div class="audit-event-header">
+        <span class="audit-event-type audit-event-type-${event.eventType}">${auditEventTypeLabel(event.eventType)}</span>
+        <span class="audit-event-time">${event.timestamp ? new Date(event.timestamp).toLocaleString('zh-CN') : '—'}</span>
+      </div>
+      <div class="audit-event-content">${escapeHtml(event.message || event.description || '—')}</div>
+      <div class="audit-event-meta">
+        ${event.agentId ? `<span>Agent: ${escapeHtml(event.agentId)}</span>` : ''}
+        ${event.taskId ? `<span>Task: ${escapeHtml(event.taskId)}</span>` : ''}
+        ${event.sessionKey ? `<span>Session: ${escapeHtml(event.sessionKey)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  auditEventsListEl.querySelectorAll('.audit-event-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const eventId = el.dataset.eventId;
+      showAuditDetailModal(eventId);
+    });
+  });
+}
+
+function auditEventTypeLabel(type) {
+  const labels = {
+    'task_created': '任务创建',
+    'task_started': '任务开始',
+    'task_completed': '任务完成',
+    'task_failed': '任务失败',
+    'task_canceled': '任务取消',
+    'agent_start': 'Agent启动',
+    'agent_stop': 'Agent停止',
+    'agent_error': 'Agent错误',
+    'session_start': '会话开始',
+    'session_end': '会话结束',
+    'workflow_run': '工作流执行',
+    'system': '系统事件'
+  };
+  return labels[type] || type;
+}
+
+function renderAuditFilterChips() {
+  const filters = state.auditFilters;
+  const labels = {
+    keyword: { label: '关键词', getValue: f => f.keyword },
+    eventType: { label: '事件类型', getValue: f => f.eventType ? auditEventTypeLabel(f.eventType) : null },
+    timeFrom: { label: '开始时间', getValue: f => f.timeFrom ? new Date(f.timeFrom).toLocaleString('zh-CN') : null },
+    timeTo: { label: '结束时间', getValue: f => f.timeTo ? new Date(f.timeTo).toLocaleString('zh-CN') : null }
+  };
+
+  const chips = [];
+  Object.entries(labels).forEach(([key, { label, getValue }]) => {
+    const value = getValue(filters);
+    if (value) {
+      chips.push({ key, label, value });
+    }
+  });
+
+  if (chips.length === 0) {
+    auditFilterChipsEl.innerHTML = '';
+    return;
+  }
+
+  auditFilterChipsEl.innerHTML = chips.map(chip => `
+    <span class="filter-chip" data-key="${chip.key}">
+      ${chip.label}: ${escapeHtml(chip.value)}
+      <span class="filter-chip-remove">×</span>
+    </span>
+  `).join('');
+
+  auditFilterChipsEl.querySelectorAll('.filter-chip').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.key;
+      removeAuditFilterChip(key);
+    });
+  });
+}
+
+async function removeAuditFilterChip(key) {
+  const newFilters = { ...state.auditFilters };
+  delete newFilters[key];
+  state.auditFilters = newFilters;
+  populateAuditFilterInputs(newFilters);
+  await loadAuditEvents();
+  renderAuditEvents();
+  renderAuditFilterChips();
+  renderAuditResultCount();
+}
+
+function populateAuditFilterInputs(filters) {
+  auditFilterKeywordEl.value = filters.keyword || '';
+  auditEventTypeEl.value = filters.eventType || '';
+  auditTimeFromEl.value = formatDateTimeLocalValue(filters.timeFrom);
+  auditTimeToEl.value = formatDateTimeLocalValue(filters.timeTo);
+}
+
+function renderAuditResultCount() {
+  const total = state.auditEvents.length;
+  if (!hasActiveAuditFilters(state.auditFilters)) {
+    auditResultCountEl.textContent = `当前展示全部审计事件 · ${total} 条`;
+    return;
+  }
+  auditResultCountEl.textContent = `筛选结果：${total} 条`;
+}
+
+async function applyAuditFilters() {
+  state.auditFilters = getAuditFilters();
+  await loadAuditEvents();
+  renderAuditEvents();
+  renderAuditFilterChips();
+  renderAuditResultCount();
+}
+
+async function clearAuditFilters() {
+  auditFilterKeywordEl.value = '';
+  auditEventTypeEl.value = '';
+  auditTimeFromEl.value = '';
+  auditTimeToEl.value = '';
+  state.auditFilters = {};
+  await loadAuditEvents();
+  renderAuditEvents();
+  renderAuditFilterChips();
+  renderAuditResultCount();
+}
+
+function showAuditDetailModal(eventId) {
+  const event = state.auditEvents.find(e => e.id === eventId);
+  if (!event) return;
+
+  auditDetailBodyEl.innerHTML = `
+    <div class="audit-detail">
+      <div class="detail-grid">
+        <div><span class="muted">事件 ID</span><strong>${escapeHtml(event.id || '—')}</strong></div>
+        <div><span class="muted">事件类型</span><strong>${auditEventTypeLabel(event.eventType)}</strong></div>
+        <div><span class="muted">时间</span><strong>${event.timestamp ? new Date(event.timestamp).toLocaleString('zh-CN') : '—'}</strong></div>
+        ${event.agentId ? `<div><span class="muted">Agent</span><strong>${escapeHtml(event.agentId)}</strong></div>` : ''}
+        ${event.taskId ? `<div><span class="muted">Task</span><strong>${escapeHtml(event.taskId)}</strong></div>` : ''}
+        ${event.sessionKey ? `<div><span class="muted">Session</span><strong>${escapeHtml(event.sessionKey)}</strong></div>` : ''}
+        ${event.userId ? `<div><span class="muted">用户</span><strong>${escapeHtml(event.userId)}</strong></div>` : ''}
+      </div>
+      ${event.message ? `<div class="prompt-box" style="margin-top: 16px;"><span class="muted small">事件描述</span><br/>${escapeHtml(event.message)}</div>` : ''}
+      ${event.details ? `<div class="prompt-box" style="margin-top: 12px;"><span class="muted small">详细信息</span><br/>${escapeHtml(JSON.stringify(event.details, null, 2))}</div>` : ''}
+      ${event.data ? `<div class="prompt-box" style="margin-top: 12px;"><span class="muted small">附加数据</span><br/>${escapeHtml(typeof event.data === 'object' ? JSON.stringify(event.data, null, 2) : event.data)}</div>` : ''}
+    </div>
+  `;
+
+  auditDetailModal.classList.remove('hidden');
+}
+
+function hideAuditDetailModal() {
+  auditDetailModal.classList.add('hidden');
+}
+
+applyAuditFilterBtn.addEventListener('click', () => applyAuditFilters());
+clearAuditFilterBtn.addEventListener('click', () => clearAuditFilters());
+auditFilterKeywordEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    applyAuditFilters();
+  }
+});
+[auditEventTypeEl].forEach(el => {
+  el.addEventListener('change', () => applyAuditFilters());
+});
+closeAuditDetailModal.addEventListener('click', () => hideAuditDetailModal());
+auditDetailModal.querySelector('.modal-backdrop').addEventListener('click', () => hideAuditDetailModal());

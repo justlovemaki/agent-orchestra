@@ -290,6 +290,40 @@
           </div>
           <div id="sessionList" class="session-list"></div>
         </section>
+
+        <section id="auditPanel" class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Audit</div>
+              <h2>审计日志</h2>
+            </div>
+          </div>
+          <div id="auditFilterBar" class="filter-bar">
+            <input type="text" id="auditFilterKeyword" class="filter-input" placeholder="搜索关键词..." />
+            <select id="auditEventType" class="filter-select">
+              <option value="">全部事件类型</option>
+              <option value="task_created">任务创建</option>
+              <option value="task_started">任务开始</option>
+              <option value="task_completed">任务完成</option>
+              <option value="task_failed">任务失败</option>
+              <option value="task_canceled">任务取消</option>
+              <option value="agent_start">Agent 启动</option>
+              <option value="agent_stop">Agent 停止</option>
+              <option value="agent_error">Agent 错误</option>
+              <option value="session_start">会话开始</option>
+              <option value="session_end">会话结束</option>
+              <option value="workflow_run">工作流执行</option>
+              <option value="system">系统事件</option>
+            </select>
+            <input type="datetime-local" id="auditTimeFrom" class="filter-input filter-time" placeholder="从..." />
+            <input type="datetime-local" id="auditTimeTo" class="filter-input filter-time" placeholder="到..." />
+            <button id="applyAuditFilterBtn" class="filter-btn">筛选</button>
+            <button id="clearAuditFilterBtn" class="filter-btn filter-btn-ghost">清除</button>
+          </div>
+          <div id="auditFilterChips" class="filter-chips"></div>
+          <div id="auditEventsList" class="audit-events-list"></div>
+          <div id="auditResultCount" class="filter-result-count muted small"></div>
+        </section>
       </section>
 
       <aside class="side-column">
@@ -453,6 +487,17 @@
           <button id="cancelReassignBtn" class="ghost">取消</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="auditDetailModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>审计事件详情</h3>
+        <button class="modal-close" id="closeAuditDetailModal">&times;</button>
+      </div>
+      <div id="auditDetailBody" class="modal-body"></div>
     </div>
   </div>
 
