@@ -430,6 +430,32 @@
     </div>
   </div>
 
+  <div id="reassignTaskModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>重新指派任务</h3>
+        <button class="modal-close" id="closeReassignModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="reassignTaskInfo" class="reassign-task-info"></div>
+        <div class="field-group">
+          <div class="field-label">当前分配 Agent</div>
+          <div id="currentAgentsList" class="current-agents-list"></div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">选择新 Agent（可多选）</div>
+          <div id="reassignAgentCheckboxes" class="checkbox-list"></div>
+        </div>
+        <div id="reassignMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="confirmReassignBtn" class="primary">确认重新指派</button>
+          <button id="cancelReassignBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

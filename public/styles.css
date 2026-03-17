@@ -853,6 +853,22 @@ button.success:hover {
   min-width: 0;
 }
 
+.task-card-reassign-btn {
+  margin-top: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.task-card-reassign-btn:hover {
+  background: var(--primary-dark);
+}
+
 .task-card.batch-selected {
   border-color: rgba(96, 165, 250, 0.5);
   background: rgba(96, 165, 250, 0.08);
@@ -2108,6 +2124,20 @@ button.ghost.tiny {
 .session-message-time {
   font-size: 11px;
   color: var(--muted);
+  margin-top: 8px;
+}
+
+.reassign-task-info {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+}
+
+.current-agents-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 8px;
 }
 

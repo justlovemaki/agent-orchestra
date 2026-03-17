@@ -103,6 +103,17 @@ const sessionMessageInput = document.getElementById('sessionMessageInput');
 const sendSessionMessageBtn = document.getElementById('sendSessionMessageBtn');
 const sessionMessageMsg = document.getElementById('sessionMessageMsg');
 
+const reassignTaskModal = document.getElementById('reassignTaskModal');
+const closeReassignModal = document.getElementById('closeReassignModal');
+const reassignTaskInfo = document.getElementById('reassignTaskInfo');
+const currentAgentsList = document.getElementById('currentAgentsList');
+const reassignAgentCheckboxes = document.getElementById('reassignAgentCheckboxes');
+const reassignMsg = document.getElementById('reassignMsg');
+const confirmReassignBtn = document.getElementById('confirmReassignBtn');
+const cancelReassignBtn = document.getElementById('cancelReassignBtn');
+
+let reassignTaskId = null;
+
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
 const DEFAULT_PRESETS = [
@@ -427,11 +438,19 @@ function renderTaskBoard() {
       renderTaskBoard();
     });
   });
+  taskBoardEl.querySelectorAll('.task-card-reassign-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = el.dataset.taskId;
+      openReassignModal(taskId);
+    });
+  });
 }
 
 function renderTaskCard(task) {
   const runs = task.runs.map(r => `${r.agentId}:${runStatusLabel(r.status)}`).join(' · ');
   const isSelected = state.selectedTaskIds.has(task.id);
+  const canReassign = task.status === 'queued' || task.status === 'paused';
   return `
     <div class="task-card ${state.selectedTaskId === task.id ? 'selected' : ''} ${isSelected ? 'batch-selected' : ''}" data-task-id="${task.id}">
       <div class="task-card-checkbox">
@@ -446,6 +465,7 @@ function renderTaskCard(task) {
           <div>执行：${escapeHtml(runs)}</div>
           <div>创建：${escapeHtml(task.createdAtLabel)}</div>
         </div>
+        ${canReassign ? `<button class="task-card-reassign-btn" data-task-id="${task.id}">重新指派</button>` : ''}
       </div>
     </div>
   `;
@@ -1946,6 +1966,69 @@ async function spawnSubagent() {
 showSpawnFormBtn.addEventListener('click', () => showSpawnForm());
 cancelSpawnBtn.addEventListener('click', () => hideSpawnForm());
 confirmSpawnBtn.addEventListener('click', () => spawnSubagent());
+
+function openReassignModal(taskId) {
+  reassignTaskId = taskId;
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  
+  reassignTaskInfo.innerHTML = `<strong>${escapeHtml(task.title)}</strong>`;
+  currentAgentsList.innerHTML = (task.agents || []).map(a => `<span class="badge">${escapeHtml(a)}</span>`).join(' ') || '—';
+  
+  reassignAgentCheckboxes.innerHTML = state.overview.agents.map(agent => `
+    <label class="checkbox-item">
+      <input type="checkbox" name="reassignAgents" value="${agent.id}" />
+      <span><strong>${escapeHtml(agent.name)}</strong><br/><span class="muted small">${escapeHtml(agent.model)}</span></span>
+    </label>
+  `).join('');
+  
+  const currentAgentsSet = new Set(task.agents || []);
+  reassignAgentCheckboxes.querySelectorAll('input').forEach(cb => {
+    cb.checked = currentAgentsSet.has(cb.value);
+  });
+  
+  reassignMsg.textContent = '';
+  reassignTaskModal.classList.remove('hidden');
+}
+
+function hideReassignModal() {
+  reassignTaskModal.classList.add('hidden');
+  reassignTaskId = null;
+}
+
+async function handleReassign() {
+  if (!reassignTaskId) return;
+  
+  const selectedAgents = [...reassignAgentCheckboxes.querySelectorAll('input:checked')].map(x => x.value);
+  if (selectedAgents.length === 0) {
+    reassignMsg.textContent = '请至少选择一个 Agent';
+    return;
+  }
+  
+  reassignMsg.textContent = '正在重新指派...';
+  confirmReassignBtn.disabled = true;
+  try {
+    await fetchJson(`/api/tasks/${reassignTaskId}/reassign`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agents: selectedAgents })
+    });
+    reassignMsg.textContent = '重新指派成功';
+    setTimeout(() => {
+      hideReassignModal();
+      refreshAll(true);
+    }, 500);
+  } catch (err) {
+    reassignMsg.textContent = err.message;
+  } finally {
+    confirmReassignBtn.disabled = false;
+  }
+}
+
+closeReassignModal.addEventListener('click', () => hideReassignModal());
+reassignTaskModal.querySelector('.modal-backdrop').addEventListener('click', () => hideReassignModal());
+confirmReassignBtn.addEventListener('click', () => handleReassign());
+cancelReassignBtn.addEventListener('click', () => hideReassignModal());
 
 closeSessionMessagesModal.addEventListener('click', () => hideSessionMessagesModal());
 sessionMessagesModal.querySelector('.modal-backdrop').addEventListener('click', () => hideSessionMessagesModal());

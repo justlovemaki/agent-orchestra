@@ -605,6 +605,27 @@ async function resumeTask(taskId) {
   return formatTaskForUi(await getTask(taskId));
 }
 
+async function reassignTask(taskId, newAgents) {
+  const task = await getTask(taskId);
+  if (!task) throw new Error('任务不存在');
+  if (!['queued', 'paused'].includes(task.status)) {
+    throw new Error('仅允许对排队中或已暂停的任务进行重新指派');
+  }
+  const agents = normalizeAgents(newAgents);
+  if (!agents.length) throw new Error('至少需要选择一个 Agent');
+
+  const oldAgents = task.agents || [];
+  await updateTask(taskId, async t => ({
+    ...t,
+    agents,
+    runs: makeRuns(agents),
+    reassignedAt: Date.now(),
+    reassignedBy: 'Master'
+  }));
+
+  return formatTaskForUi(await getTask(taskId));
+}
+
 async function batchCancelTasks(taskIds) {
   const results = { success: [], failed: [] };
   for (const taskId of taskIds) {
@@ -809,6 +830,14 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/retry')) {
         const taskId = pathname.split('/')[3];
         return json(res, 201, { task: await createRetryTask(taskId) });
+      }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/tasks\/[^/]+\/reassign$/)) {
+        const taskId = pathname.split('/')[3];
+        const body = await readJson(req);
+        if (!Array.isArray(body.agents) || body.agents.length === 0) {
+          throw new Error('请提供有效的 Agent 数组');
+        }
+        return json(res, 200, { task: await reassignTask(taskId, body.agents) });
       }
       if (req.method === 'POST' && pathname === '/api/tasks/batch-cancel') {
         const body = await readJson(req);
