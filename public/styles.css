@@ -2626,3 +2626,33 @@ button.ghost.tiny {
   background: var(--primary-soft);
   border-color: var(--primary);
 }
+
+.auth-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.current-user-name {
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+#authForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#authForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

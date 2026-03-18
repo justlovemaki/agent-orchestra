@@ -22,8 +22,12 @@ const state = {
   sessions: [],
   selectedSessionKey: null,
   auditEvents: [],
-  auditFilters: {}
+  auditFilters: {},
+  currentUser: null,
+  authToken: localStorage.getItem('authToken')
 };
+
+const AUTH_TOKEN_KEY = 'authToken';
 
 const statsEl = document.getElementById('stats');
 const agentsGridEl = document.getElementById('agentsGrid');
@@ -133,6 +137,24 @@ const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
 const auditDetailBodyEl = document.getElementById('auditDetailBody');
 
+const authModal = document.getElementById('authModal');
+const closeAuthModal = document.getElementById('closeAuthModal');
+const authModalTitle = document.getElementById('authModalTitle');
+const authNameInput = document.getElementById('authNameInput');
+const authPasswordInput = document.getElementById('authPasswordInput');
+const authConfirmPasswordInput = document.getElementById('authConfirmPasswordInput');
+const passwordLabel = document.getElementById('passwordLabel');
+const confirmPasswordLabel = document.getElementById('confirmPasswordLabel');
+const authSubmitBtn = document.getElementById('authSubmitBtn');
+const authSwitchBtn = document.getElementById('authSwitchBtn');
+const cancelAuthBtn = document.getElementById('cancelAuthBtn');
+const authMsg = document.getElementById('authMsg');
+const userInfo = document.getElementById('userInfo');
+const currentUserName = document.getElementById('currentUserName');
+const loginBtn = document.getElementById('loginBtn');
+const loginBtnContainer = document.getElementById('loginBtnContainer');
+const logoutBtn = document.getElementById('logoutBtn');
+
 const FILTER_STORAGE_KEY = 'agentOrchestraFilters';
 const FILTER_PRESET_STORAGE_KEY = 'agentOrchestraFilterPresets';
 const DEFAULT_PRESETS = [
@@ -141,8 +163,15 @@ const DEFAULT_PRESETS = [
   { key: 'today', name: '今天创建的任务', filters: { timeFrom: 'dynamic:todayStart', timeTo: 'dynamic:todayEnd' } }
 ];
 
-async function fetchJson(url, options) {
-  const res = await fetch(url, options);
+async function fetchJson(url, options = {}) {
+  const headers = { ...options.headers };
+  if (state.authToken) {
+    headers['Authorization'] = `Bearer ${state.authToken}`;
+  }
+  if (options.body && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(url, { ...options, headers });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || '请求失败');
   return data;
@@ -297,6 +326,143 @@ function buildTaskQuery(filters = {}, force = false) {
   return query ? `?${query}` : '';
 }
 
+let authMode = 'login';
+
+function showAuthModal(mode = 'login') {
+  authMode = mode;
+  authModal.classList.remove('hidden');
+  authNameInput.value = '';
+  authPasswordInput.value = '';
+  authConfirmPasswordInput.value = '';
+  authMsg.textContent = '';
+  if (mode === 'login') {
+    authModalTitle.textContent = '登录';
+    authSubmitBtn.textContent = '登录';
+    authSwitchBtn.textContent = '注册新账号';
+    confirmPasswordLabel.classList.add('hidden');
+  } else {
+    authModalTitle.textContent = '注册';
+    authSubmitBtn.textContent = '注册';
+    authSwitchBtn.textContent = '已有账号？登录';
+    confirmPasswordLabel.classList.remove('hidden');
+  }
+  authNameInput.focus();
+}
+
+function hideAuthModal() {
+  authModal.classList.add('hidden');
+}
+
+function renderAuthUI() {
+  if (state.currentUser) {
+    userInfo.classList.remove('hidden');
+    loginBtnContainer.classList.add('hidden');
+    currentUserName.textContent = state.currentUser.name;
+  } else {
+    userInfo.classList.add('hidden');
+    loginBtnContainer.classList.remove('hidden');
+  }
+}
+
+async function checkAuthStatus() {
+  if (!state.authToken) {
+    state.currentUser = null;
+    renderAuthUI();
+    return;
+  }
+  try {
+    const res = await fetchJson('/api/auth/me');
+    state.currentUser = res.user;
+  } catch (err) {
+    state.currentUser = null;
+    state.authToken = null;
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+  renderAuthUI();
+}
+
+async function handleAuthSubmit() {
+  const name = authNameInput.value.trim();
+  const password = authPasswordInput.value;
+  const confirmPassword = authConfirmPasswordInput.value;
+
+  if (!name) {
+    authMsg.textContent = '请输入用户名';
+    return;
+  }
+  if (!password) {
+    authMsg.textContent = '请输入密码';
+    return;
+  }
+
+  authMsg.textContent = '处理中...';
+  authSubmitBtn.disabled = true;
+
+  try {
+    if (authMode === 'login') {
+      const res = await fetchJson('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ name, password })
+      });
+      state.authToken = res.token;
+      state.currentUser = res.user;
+      localStorage.setItem(AUTH_TOKEN_KEY, res.token);
+      authMsg.textContent = '登录成功';
+      setTimeout(() => {
+        hideAuthModal();
+        renderAuthUI();
+      }, 500);
+    } else {
+      if (password.length < 4) {
+        authMsg.textContent = '密码至少需要 4 个字符';
+        authSubmitBtn.disabled = false;
+        return;
+      }
+      if (password !== confirmPassword) {
+        authMsg.textContent = '两次输入的密码不一致';
+        authSubmitBtn.disabled = false;
+        return;
+      }
+      const res = await fetchJson('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, password })
+      });
+      state.authToken = res.token;
+      state.currentUser = res.user;
+      localStorage.setItem(AUTH_TOKEN_KEY, res.token);
+      authMsg.textContent = '注册成功';
+      setTimeout(() => {
+        hideAuthModal();
+        renderAuthUI();
+      }, 500);
+    }
+  } catch (err) {
+    authMsg.textContent = err.message;
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetchJson('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  state.currentUser = null;
+  state.authToken = null;
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  renderAuthUI();
+}
+
+loginBtn.addEventListener('click', () => showAuthModal('login'));
+authSubmitBtn.addEventListener('click', () => handleAuthSubmit());
+authSwitchBtn.addEventListener('click', () => {
+  showAuthModal(authMode === 'login' ? 'register' : 'login');
+});
+cancelAuthBtn.addEventListener('click', () => hideAuthModal());
+closeAuthModal.addEventListener('click', () => hideAuthModal());
+logoutBtn.addEventListener('click', () => handleLogout());
+authModal.querySelector('.modal-backdrop').addEventListener('click', () => hideAuthModal());
+
 async function loadTasks(force = false) {
   const query = buildTaskQuery(state.filters, force);
   const tasksRes = await fetchJson(`/api/tasks${query}`);
@@ -307,6 +473,7 @@ async function refreshAll(force = false) {
   const [overview, runtimeRes] = await Promise.all([
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
     fetchJson('/api/runtime').catch(() => null),
+    checkAuthStatus(),
     loadTasks(force),
     loadTemplates(),
     loadGroups(),

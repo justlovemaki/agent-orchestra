@@ -9,6 +9,7 @@ const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
+const { register, login, logout, verifyToken, getCurrentUser, getUsers } = require('./lib/users');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -31,6 +32,13 @@ let overviewCache = {
   expiresAt: 0,
   inFlight: null
 };
+
+async function verifyTokenFromRequest(req) {
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return null;
+  return await verifyToken(token);
+}
 
 let currentPort = PORT;
 let serverInstance = null;
@@ -1384,6 +1392,54 @@ async function requestHandler(req, res) {
           message
         }, 'Master');
         return json(res, 200, sendResult);
+      }
+      if (req.method === 'POST' && pathname === '/api/auth/register') {
+        const body = await readJson(req);
+        const { name, password } = body;
+        const result = await register(name, password);
+        await addAuditEvent('user.registered', {
+          userId: result.user.id,
+          userName: result.user.name
+        }, result.user.name);
+        return json(res, 201, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/auth/login') {
+        const body = await readJson(req);
+        const { name, password } = body;
+        const result = await login(name, password);
+        await addAuditEvent('user.logged_in', {
+          userId: result.user.id,
+          userName: result.user.name
+        }, result.user.name);
+        return json(res, 200, result);
+      }
+      if (req.method === 'POST' && pathname === '/api/auth/logout') {
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+        const currentUser = token ? await verifyToken(token) : null;
+        await logout(token);
+        if (currentUser) {
+          await addAuditEvent('user.logged_out', {
+            userId: currentUser.id,
+            userName: currentUser.name
+          }, currentUser.name);
+        }
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/auth/me') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '未登录' });
+        }
+        return json(res, 200, { user: currentUser });
+      }
+      if (req.method === 'GET' && pathname === '/api/users') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const users = await getUsers();
+        return json(res, 200, { users });
       }
       if (req.method === 'POST' && pathname === '/api/audit') {
         const body = await readJson(req);

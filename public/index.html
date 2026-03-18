@@ -19,6 +19,15 @@
         <p class="muted hero-text">用更清晰的方式查看 Agent 状态、派发任务、跟踪执行与回看日志。</p>
       </div>
       <div class="hero-actions actions">
+        <div id="authSection" class="auth-section">
+          <div id="userInfo" class="user-info hidden">
+            <span id="currentUserName" class="current-user-name"></span>
+            <button id="logoutBtn" class="ghost small">登出</button>
+          </div>
+          <div id="loginBtnContainer">
+            <button id="loginBtn" class="ghost">登录</button>
+          </div>
+        </div>
         <button id="refreshBtn" class="ghost">刷新数据</button>
         <button id="exportBtn" class="ghost">导出</button>
         <span id="lastUpdated" class="muted small"></span>
@@ -421,6 +430,38 @@
         </section>
       </aside>
     </main>
+  </div>
+
+  <div id="authModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="authModalTitle">登录</h3>
+        <button class="modal-close" id="closeAuthModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="authForm">
+          <label>
+            <span class="field-label">用户名</span>
+            <input type="text" id="authNameInput" placeholder="输入用户名" required />
+          </label>
+          <label id="passwordLabel">
+            <span class="field-label">密码</span>
+            <input type="password" id="authPasswordInput" placeholder="输入密码" required />
+          </label>
+          <label id="confirmPasswordLabel" class="hidden">
+            <span class="field-label">确认密码</span>
+            <input type="password" id="authConfirmPasswordInput" placeholder="再次输入密码" />
+          </label>
+        </div>
+        <div id="authMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="authSubmitBtn" class="primary">登录</button>
+          <button id="authSwitchBtn" class="ghost">注册新账号</button>
+          <button id="cancelAuthBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="workflowRunModal" class="modal hidden">
