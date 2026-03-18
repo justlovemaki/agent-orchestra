@@ -2656,3 +2656,44 @@ button.ghost.tiny {
   flex-direction: column;
   gap: 6px;
 }
+
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sync-dot.sync-idle {
+  background: var(--muted);
+}
+
+.sync-dot.sync-syncing {
+  background: var(--warning, #f59e0b);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.sync-dot.sync-synced {
+  background: var(--success, #10b981);
+}
+
+.sync-dot.sync-error {
+  background: var(--danger);
+}
+
+.sync-text {
+  font-size: 12px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

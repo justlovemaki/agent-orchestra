@@ -20,6 +20,8 @@ const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 const AGENT_GROUPS_FILE = path.join(DATA_DIR, 'agent-groups.json');
 const SHARED_PRESETS_FILE = path.join(DATA_DIR, 'shared-presets.json');
+const USER_PRESETS_FILE = path.join(DATA_DIR, 'user-presets.json');
+const USER_TEMPLATES_FILE = path.join(DATA_DIR, 'user-templates.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
@@ -50,6 +52,8 @@ async function ensureData() {
   try { await fsp.access(TEMPLATES_FILE); } catch { await fsp.writeFile(TEMPLATES_FILE, '[]\n'); }
   try { await fsp.access(AGENT_GROUPS_FILE); } catch { await fsp.writeFile(AGENT_GROUPS_FILE, '[]\n'); }
   try { await fsp.access(SHARED_PRESETS_FILE); } catch { await fsp.writeFile(SHARED_PRESETS_FILE, '[]\n'); }
+  try { await fsp.access(USER_PRESETS_FILE); } catch { await fsp.writeFile(USER_PRESETS_FILE, '[]\n'); }
+  try { await fsp.access(USER_TEMPLATES_FILE); } catch { await fsp.writeFile(USER_TEMPLATES_FILE, '[]\n'); }
 }
 
 async function writePidFile(pid = process.pid) {
@@ -324,6 +328,84 @@ async function writeSharedPresets(presets) {
 async function getSharedPreset(presetId) {
   const presets = await readSharedPresets();
   return presets.find(p => p.id === presetId) || null;
+}
+
+async function readUserPresets(userId) {
+  await ensureData();
+  const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+  return allUserPresets.filter(p => p.userId === userId);
+}
+
+async function writeUserPresets(userId, presets) {
+  await ensureData();
+  const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+  const others = allUserPresets.filter(p => p.userId !== userId);
+  const updated = [...others, ...presets.map(p => ({ ...p, userId }))];
+  await fsp.writeFile(USER_PRESETS_FILE, JSON.stringify(updated, null, 2) + '\n');
+}
+
+async function addUserPreset(userId, preset) {
+  await ensureData();
+  const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+  const newPreset = { ...preset, userId };
+  allUserPresets.push(newPreset);
+  await fsp.writeFile(USER_PRESETS_FILE, JSON.stringify(allUserPresets, null, 2) + '\n');
+  return newPreset;
+}
+
+async function updateUserPreset(userId, presetId, updates) {
+  await ensureData();
+  const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+  const idx = allUserPresets.findIndex(p => p.userId === userId && p.id === presetId);
+  if (idx === -1) throw new Error('预设不存在');
+  allUserPresets[idx] = { ...allUserPresets[idx], ...updates, updatedAt: Date.now() };
+  await fsp.writeFile(USER_PRESETS_FILE, JSON.stringify(allUserPresets, null, 2) + '\n');
+  return allUserPresets[idx];
+}
+
+async function deleteUserPreset(userId, presetId) {
+  await ensureData();
+  const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+  const idx = allUserPresets.findIndex(p => p.userId === userId && p.id === presetId);
+  if (idx === -1) throw new Error('预设不存在');
+  allUserPresets.splice(idx, 1);
+  await fsp.writeFile(USER_PRESETS_FILE, JSON.stringify(allUserPresets, null, 2) + '\n');
+  return { success: true };
+}
+
+async function readUserTemplates(userId) {
+  await ensureData();
+  const allUserTemplates = JSON.parse(await fsp.readFile(USER_TEMPLATES_FILE, 'utf8'));
+  return allUserTemplates.filter(t => t.userId === userId);
+}
+
+async function addUserTemplate(userId, template) {
+  await ensureData();
+  const allUserTemplates = JSON.parse(await fsp.readFile(USER_TEMPLATES_FILE, 'utf8'));
+  const newTemplate = { ...template, userId };
+  allUserTemplates.push(newTemplate);
+  await fsp.writeFile(USER_TEMPLATES_FILE, JSON.stringify(allUserTemplates, null, 2) + '\n');
+  return newTemplate;
+}
+
+async function updateUserTemplate(userId, templateId, updates) {
+  await ensureData();
+  const allUserTemplates = JSON.parse(await fsp.readFile(USER_TEMPLATES_FILE, 'utf8'));
+  const idx = allUserTemplates.findIndex(t => t.userId === userId && t.id === templateId);
+  if (idx === -1) throw new Error('模板不存在');
+  allUserTemplates[idx] = { ...allUserTemplates[idx], ...updates, updatedAt: Date.now() };
+  await fsp.writeFile(USER_TEMPLATES_FILE, JSON.stringify(allUserTemplates, null, 2) + '\n');
+  return allUserTemplates[idx];
+}
+
+async function deleteUserTemplate(userId, templateId) {
+  await ensureData();
+  const allUserTemplates = JSON.parse(await fsp.readFile(USER_TEMPLATES_FILE, 'utf8'));
+  const idx = allUserTemplates.findIndex(t => t.userId === userId && t.id === templateId);
+  if (idx === -1) throw new Error('模板不存在');
+  allUserTemplates.splice(idx, 1);
+  await fsp.writeFile(USER_TEMPLATES_FILE, JSON.stringify(allUserTemplates, null, 2) + '\n');
+  return { success: true };
 }
 
 async function updateTask(taskId, mutator) {
@@ -1247,6 +1329,102 @@ async function requestHandler(req, res) {
           await writeSharedPresets(existingPresets);
         }
         return json(res, 200, results);
+      }
+      if (req.method === 'GET' && pathname === '/api/sync/presets') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能同步预设' });
+        }
+        const sharedPresets = await readSharedPresets();
+        const userPresets = await readUserPresets(currentUser.id);
+        return json(res, 200, {
+          presets: [...sharedPresets, ...userPresets.map(p => ({ ...p, isUserPreset: true }))]
+        });
+      }
+      if (req.method === 'POST' && pathname === '/api/sync/presets') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能保存预设' });
+        }
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('预设名称不能为空');
+        if (!body.filters || typeof body.filters !== 'object') throw new Error('筛选条件不能为空');
+        const newPreset = {
+          id: body.id || crypto.randomUUID(),
+          name: body.name.trim(),
+          filters: body.filters,
+          createdAt: body.createdAt || Date.now(),
+          updatedAt: Date.now()
+        };
+        const savedPreset = await addUserPreset(currentUser.id, newPreset);
+        return json(res, 201, { preset: savedPreset });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/sync/presets/')) {
+        const presetId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能更新预设' });
+        }
+        const body = await readJson(req);
+        const updatedPreset = await updateUserPreset(currentUser.id, presetId, body);
+        return json(res, 200, { preset: updatedPreset });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/sync/presets/')) {
+        const presetId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能删除预设' });
+        }
+        await deleteUserPreset(currentUser.id, presetId);
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/sync/templates') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能同步模板' });
+        }
+        const templates = await readUserTemplates(currentUser.id);
+        return json(res, 200, { templates });
+      }
+      if (req.method === 'POST' && pathname === '/api/sync/templates') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能保存模板' });
+        }
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('模板名称不能为空');
+        const newTemplate = {
+          id: body.id || crypto.randomUUID(),
+          name: body.name.trim(),
+          description: body.description || '',
+          defaultAgents: body.defaultAgents || [],
+          defaultPriority: body.defaultPriority || 'medium',
+          defaultMode: body.defaultMode || 'broadcast',
+          defaultContent: body.defaultContent || '',
+          createdAt: body.createdAt || Date.now(),
+          updatedAt: Date.now()
+        };
+        const savedTemplate = await addUserTemplate(currentUser.id, newTemplate);
+        return json(res, 201, { template: savedTemplate });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/sync/templates/')) {
+        const templateId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能更新模板' });
+        }
+        const body = await readJson(req);
+        const updatedTemplate = await updateUserTemplate(currentUser.id, templateId, body);
+        return json(res, 200, { template: updatedTemplate });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/sync/templates/')) {
+        const templateId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能删除模板' });
+        }
+        await deleteUserTemplate(currentUser.id, templateId);
+        return json(res, 200, { success: true });
       }
       if (req.method === 'GET' && pathname === '/api/workflows') {
         return json(res, 200, { workflows: await loadWorkflows() });

@@ -7,7 +7,9 @@ const state = {
   filters: {},
   savedPresets: [],
   sharedPresets: [],
+  userPresets: [],
   templates: [],
+  userTemplates: [],
   editingTemplateId: null,
   groups: [],
   editingGroupId: null,
@@ -24,7 +26,10 @@ const state = {
   auditEvents: [],
   auditFilters: {},
   currentUser: null,
-  authToken: localStorage.getItem('authToken')
+  authToken: localStorage.getItem('authToken'),
+  syncStatus: 'idle',
+  lastSyncTime: null,
+  isSyncing: false
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -263,6 +268,27 @@ function savePresetsToStorage(presets) {
   } catch {}
 }
 
+const TEMPLATE_STORAGE_KEY = 'agentOrchestraTemplates';
+
+function loadTemplatesFromStorage() {
+  try {
+    const stored = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTemplatesToStorage(templates) {
+  try {
+    if (Array.isArray(templates) && templates.length > 0) {
+      localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates));
+    } else {
+      localStorage.removeItem(TEMPLATE_STORAGE_KEY);
+    }
+  } catch {}
+}
+
 function syncFiltersToUrl(filters) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
@@ -411,6 +437,7 @@ async function handleAuthSubmit() {
       setTimeout(() => {
         hideAuthModal();
         renderAuthUI();
+        syncUserData();
       }, 500);
     } else {
       if (password.length < 4) {
@@ -434,6 +461,7 @@ async function handleAuthSubmit() {
       setTimeout(() => {
         hideAuthModal();
         renderAuthUI();
+        syncUserData();
       }, 500);
     }
   } catch (err) {
@@ -505,6 +533,7 @@ function render() {
   renderFilterSummary();
   renderTemplates();
   renderTemplateSelect();
+  renderSyncStatus();
   renderGroupFilter();
   renderGroupList();
   renderWorkflows();
@@ -1187,6 +1216,10 @@ function renamePreset(index) {
 }
 
 function deletePreset(index) {
+  const preset = state.savedPresets[index];
+  if (preset && state.currentUser) {
+    syncDeletePresetFromCloud(preset.name);
+  }
   state.savedPresets.splice(index, 1);
   savePresetsToStorage(state.savedPresets);
   renderFilterPresets();
@@ -1227,7 +1260,7 @@ async function saveCurrentPreset() {
   }
 
   const existingIndex = state.savedPresets.findIndex(preset => preset.name === name);
-  const nextPreset = { name, filters };
+  const nextPreset = { name, filters, updatedAt: Date.now() };
   if (existingIndex >= 0) {
     state.savedPresets.splice(existingIndex, 1, nextPreset);
   } else {
@@ -1237,6 +1270,9 @@ async function saveCurrentPreset() {
   savePresetsToStorage(state.savedPresets);
   presetNameInputEl.value = '';
   renderFilterPresets();
+  if (state.currentUser) {
+    syncPresetToCloud(nextPreset);
+  }
 }
 
 async function clearFilters() {
@@ -1283,6 +1319,176 @@ async function loadSessions() {
   } catch (err) {
     state.sessions = [];
   }
+}
+
+async function syncUserData() {
+  if (!state.currentUser || state.isSyncing) return;
+  state.isSyncing = true;
+  state.syncStatus = 'syncing';
+  renderSyncStatus();
+  try {
+    const [presetsRes, templatesRes] = await Promise.all([
+      fetchJson('/api/sync/presets'),
+      fetchJson('/api/sync/templates')
+    ]);
+    state.sharedPresets = presetsRes.presets.filter(p => !p.isUserPreset);
+    state.userPresets = presetsRes.presets.filter(p => p.isUserPreset);
+    state.userTemplates = templatesRes.templates || [];
+    state.savedPresets = mergePresetsFromCloud(state.userPresets);
+    state.templates = mergeTemplatesFromCloud(state.userTemplates);
+    savePresetsToStorage(state.savedPresets);
+    saveTemplatesToStorage(state.templates);
+    state.lastSyncTime = Date.now();
+    state.syncStatus = 'synced';
+    renderFilterPresets();
+    renderTemplates();
+    renderTemplateSelect();
+  } catch (err) {
+    console.error('同步失败:', err);
+    state.syncStatus = 'error';
+  } finally {
+    state.isSyncing = false;
+    renderSyncStatus();
+  }
+}
+
+function mergePresetsFromCloud(userPresets) {
+  const localPresets = loadPresetsFromStorage();
+  const cloudMap = new Map(userPresets.map(p => [p.name, p]));
+  const merged = [];
+  const seenNames = new Set();
+  for (const preset of localPresets) {
+    const cloudPreset = cloudMap.get(preset.name);
+    if (cloudPreset) {
+      merged.push({ ...cloudPreset, name: preset.name, filters: cloudPreset.filters });
+      seenNames.add(preset.name);
+    } else {
+      merged.push(preset);
+      seenNames.add(preset.name);
+    }
+  }
+  for (const preset of userPresets) {
+    if (!seenNames.has(preset.name)) {
+      merged.push({ name: preset.name, filters: preset.filters });
+      seenNames.add(preset.name);
+    }
+  }
+  return merged.slice(0, 8);
+}
+
+function mergeTemplatesFromCloud(userTemplates) {
+  const localTemplates = loadTemplatesFromStorage();
+  const cloudMap = new Map(userTemplates.map(t => [t.id, t]));
+  const merged = [...localTemplates];
+  for (const template of userTemplates) {
+    if (!merged.find(t => t.id === template.id)) {
+      merged.push(template);
+    }
+  }
+  return merged;
+}
+
+async function syncPresetToCloud(preset) {
+  if (!state.currentUser) return;
+  try {
+    const existing = state.userPresets.find(p => p.name === preset.name);
+    if (existing) {
+      const updated = await fetchJson(`/api/sync/presets/${existing.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: preset.name, filters: preset.filters })
+      });
+      const idx = state.userPresets.findIndex(p => p.id === existing.id);
+      state.userPresets[idx] = updated.preset;
+    } else {
+      const created = await fetchJson('/api/sync/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: preset.name, filters: preset.filters })
+      });
+      state.userPresets.push(created.preset);
+    }
+  } catch (err) {
+    console.error('同步预设到云端失败:', err);
+  }
+}
+
+async function syncDeletePresetFromCloud(presetName) {
+  if (!state.currentUser) return;
+  try {
+    const preset = state.userPresets.find(p => p.name === presetName);
+    if (preset) {
+      await fetchJson(`/api/sync/presets/${preset.id}`, { method: 'DELETE' });
+      state.userPresets = state.userPresets.filter(p => p.id !== preset.id);
+    }
+  } catch (err) {
+    console.error('删除云端预设失败:', err);
+  }
+}
+
+async function syncTemplateToCloud(template) {
+  if (!state.currentUser) return;
+  try {
+    if (template.id) {
+      const existing = state.userTemplates.find(t => t.id === template.id);
+      if (existing) {
+        const updated = await fetchJson(`/api/sync/templates/${template.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(template)
+        });
+        const idx = state.userTemplates.findIndex(t => t.id === template.id);
+        state.userTemplates[idx] = updated.template;
+        return;
+      }
+    }
+    const created = await fetchJson('/api/sync/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template)
+    });
+    const idx = state.templates.findIndex(t => t.id === template.id);
+    if (idx >= 0) {
+      state.templates[idx].id = created.template.id;
+    }
+    if (state.editingTemplateId === template.id) {
+      state.editingTemplateId = created.template.id;
+    }
+    state.userTemplates.push(created.template);
+  } catch (err) {
+    console.error('同步模板到云端失败:', err);
+  }
+}
+
+async function syncDeleteTemplateFromCloud(templateId) {
+  if (!state.currentUser) return;
+  try {
+    const template = state.userTemplates.find(t => t.id === templateId);
+    if (template) {
+      await fetchJson(`/api/sync/templates/${templateId}`, { method: 'DELETE' });
+      state.userTemplates = state.userTemplates.filter(t => t.id !== templateId);
+    }
+  } catch (err) {
+    console.error('删除云端模板失败:', err);
+  }
+}
+
+function renderSyncStatus() {
+  const syncIndicator = document.getElementById('syncIndicator');
+  if (!syncIndicator) return;
+  if (!state.currentUser) {
+    syncIndicator.classList.add('hidden');
+    return;
+  }
+  syncIndicator.classList.remove('hidden');
+  const statusMap = {
+    idle: { text: '未同步', class: 'sync-idle' },
+    syncing: { text: '同步中...', class: 'sync-syncing' },
+    synced: { text: '已同步', class: 'sync-synced' },
+    error: { text: '同步失败', class: 'sync-error' }
+  };
+  const status = statusMap[state.syncStatus] || statusMap.idle;
+  syncIndicator.innerHTML = `<span class="sync-dot ${status.class}"></span><span class="sync-text">${status.text}</span>`;
 }
 
 function renderTemplateAgentCheckboxes(selectedAgents = []) {
@@ -1353,6 +1559,9 @@ function renderTemplates() {
       const templateId = btn.dataset.templateId;
       try {
         await fetchJson(`/api/templates/${templateId}`, { method: 'DELETE' });
+        if (state.currentUser) {
+          await syncDeleteTemplateFromCloud(templateId);
+        }
         await loadTemplates();
         renderTemplates();
         renderTemplateSelect();
@@ -1404,6 +1613,7 @@ async function saveTemplate() {
   }
   const agents = [...templateAgentCheckboxesEl.querySelectorAll('input:checked')].map(x => x.value);
   const payload = {
+    id: state.editingTemplateId || crypto.randomUUID(),
     name,
     description: templateDescInput.value.trim(),
     defaultAgents: agents,
@@ -1428,6 +1638,9 @@ async function saveTemplate() {
     }
     hideTemplateForm();
     await loadTemplates();
+    if (state.currentUser) {
+      await syncTemplateToCloud(payload);
+    }
     renderTemplates();
     renderTemplateSelect();
   } catch (err) {
