@@ -1339,6 +1339,27 @@ async function requestHandler(req, res) {
       if (req.method === 'GET' && pathname === '/api/audit/types') {
         return json(res, 200, { types: getAuditEventTypes() });
       }
+      if (req.method === 'GET' && pathname === '/api/feishu/config') {
+        const config = getFeishuConfig();
+        if (config) {
+          return json(res, 200, { 
+            configured: true, 
+            appId: config.appId ? config.appId.slice(0, 4) + '****' : '',
+            hasAppSecret: !!config.appSecret
+          });
+        }
+        return json(res, 200, { configured: false });
+      }
+      if (req.method === 'POST' && pathname === '/api/feishu/config') {
+        const body = await readJson(req);
+        const { appId, appSecret } = body;
+        if (!appId || !appSecret) {
+          throw new Error('缺少 appId 或 appSecret 参数');
+        }
+        const configPath = path.join(DATA_DIR, 'feishu-config.json');
+        await fsp.writeFile(configPath, JSON.stringify({ appId, appSecret }, null, 2));
+        return json(res, 200, { success: true, message: '飞书配置已保存' });
+      }
       if (req.method === 'GET' && pathname === '/api/export/snapshot') {
         const overview = await buildOverview(true);
         const exportData = {
@@ -1463,6 +1484,37 @@ async function requestHandler(req, res) {
           'Content-Disposition': `attachment; filename="${filename.replace('.png', '.html')}"`
         });
         return res.end(htmlContent);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/share/feishu') {
+        const body = await readJson(req);
+        const { type, taskId, channelId, imageBase64 } = body;
+
+        if (!channelId) {
+          throw new Error('缺少 channelId 参数');
+        }
+
+        if (!type || !['dashboard', 'task-report'].includes(type)) {
+          throw new Error('无效的分享类型，请指定 dashboard 或 task-report');
+        }
+
+        if (!imageBase64) {
+          throw new Error('缺少图片数据');
+        }
+
+        const feishuConfig = getFeishuConfig();
+        if (!feishuConfig || !feishuConfig.appId || !feishuConfig.appSecret) {
+          throw new Error('飞书配置未完成，请先配置飞书机器人');
+        }
+
+        let title = type === 'dashboard' ? '仪表板快照' : '任务汇报';
+        if (type === 'task-report' && taskId) {
+          const task = await getTask(taskId);
+          if (task) title = `任务汇报 - ${task.name || task.id}`;
+        }
+
+        const result = await sendFeishuImageMessage(feishuConfig, channelId, imageBase64, title);
+        return json(res, 200, { success: true, message: '分享成功', messageId: result.message_id });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
@@ -1898,3 +1950,75 @@ ensureData().then(async () => {
   } catch {}
   process.exit(1);
 });
+
+function getFeishuConfig() {
+  const configPath = path.join(DATA_DIR, 'feishu-config.json');
+  try {
+    const configData = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(configData);
+  } catch {
+    return null;
+  }
+}
+
+async function getFeishuAccessToken(config) {
+  const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({
+      app_id: config.appId,
+      app_secret: config.appSecret
+    })
+  });
+  const data = await response.json();
+  if (data.code !== 0) {
+    throw new Error(`获取飞书 access_token 失败: ${data.msg}`);
+  }
+  return data.tenant_access_token;
+}
+
+async function uploadFeishuImage(config, accessToken, imageBase64, imageType = 'png') {
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('image_type', 'message');
+  formData.append('image', new Blob([buffer], `image/${imageType}`), `screenshot.${imageType}`);
+
+  const response = await fetch('https://open.feishu.cn/open-apis/im/v1/images', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: formData
+  });
+  const data = await response.json();
+  if (data.code !== 0) {
+    throw new Error(`上传图片到飞书失败: ${data.msg}`);
+  }
+  return data.data.image_key;
+}
+
+async function sendFeishuImageMessage(config, channelId, imageBase64, title) {
+  const accessToken = await getFeishuAccessToken(config);
+  const imageKey = await uploadFeishuImage(config, accessToken, imageBase64);
+
+  const receiveIdType = channelId.startsWith('oc_') ? 'open_id' : 'chat_id';
+  const response = await fetch('https://open.feishu.cn/open-apis/im/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({
+      receive_id: channelId,
+      receive_id_type: receiveIdType,
+      msg_type: 'image',
+      content: JSON.stringify({ image_key: imageKey })
+    })
+  });
+
+  const data = await response.json();
+  if (data.code !== 0) {
+    throw new Error(`发送飞书消息失败: ${data.msg}`);
+  }
+  return data.data;
+}

@@ -2500,11 +2500,18 @@ const cancelExportBtn = document.getElementById('cancelExportBtn');
 const exportMsg = document.getElementById('exportMsg');
 const exportTaskSelectEl = document.getElementById('exportTaskSelectEl');
 const exportTaskSelect = document.getElementById('exportTaskSelect');
+const shareToFeishuCheckbox = document.getElementById('shareToFeishu');
+const feishuChannelInput = document.getElementById('feishuChannelInput');
+const feishuChannelId = document.getElementById('feishuChannelId');
+const shareToFeishuBtn = document.getElementById('shareToFeishuBtn');
+const feishuShareSection = document.getElementById('feishuShareSection');
 
 function showExportModal() {
   exportMsg.textContent = '';
   renderExportTaskSelect();
   updateExportTaskSelectVisibility();
+  updateFeishuShareVisibility();
+  checkFeishuConfig();
   exportModal.classList.remove('hidden');
 }
 
@@ -2519,6 +2526,153 @@ function updateExportTaskSelectVisibility() {
   } else {
     exportTaskSelect.classList.add('hidden');
   }
+}
+
+function updateFeishuShareVisibility() {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  const isPngFormat = format === 'png';
+  
+  if (isPngFormat) {
+    feishuShareSection.classList.remove('hidden');
+  } else {
+    feishuShareSection.classList.add('hidden');
+    shareToFeishuCheckbox.checked = false;
+    feishuChannelInput.classList.add('hidden');
+    confirmExportBtn.classList.remove('hidden');
+    shareToFeishuBtn.classList.add('hidden');
+  }
+}
+
+async function checkFeishuConfig() {
+  try {
+    const response = await fetch('/api/feishu/config');
+    const data = await response.json();
+    if (!data.configured) {
+      feishuShareSection.querySelector('.field-label').textContent = '分享到飞书 (需配置)';
+      shareToFeishuCheckbox.disabled = true;
+    } else {
+      feishuShareSection.querySelector('.field-label').textContent = '分享到飞书';
+      shareToFeishuCheckbox.disabled = false;
+    }
+  } catch (err) {
+    shareToFeishuCheckbox.disabled = true;
+  }
+}
+
+function updateFeishuButtonVisibility() {
+  if (shareToFeishuCheckbox.checked) {
+    confirmExportBtn.classList.add('hidden');
+    shareToFeishuBtn.classList.remove('hidden');
+    feishuChannelInput.classList.remove('hidden');
+  } else {
+    confirmExportBtn.classList.remove('hidden');
+    shareToFeishuBtn.classList.add('hidden');
+    feishuChannelInput.classList.add('hidden');
+  }
+}
+
+async function handleShareToFeishu() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  const taskId = exportTaskSelectEl.value;
+  const channelId = feishuChannelId.value.trim();
+  
+  if (!channelId) {
+    exportMsg.textContent = '请输入飞书群 ID';
+    return;
+  }
+  
+  let screenshotType = 'dashboard';
+  if (exportType === 'task-report') {
+    if (!taskId) {
+      exportMsg.textContent = '请选择任务';
+      return;
+    }
+    screenshotType = 'task-report';
+  }
+
+  exportMsg.textContent = '正在生成截图...';
+  shareToFeishuBtn.disabled = true;
+  confirmExportBtn.disabled = true;
+  
+  try {
+    const response = await fetch('/api/export/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: screenshotType, taskId, format: 'png' })
+    });
+    
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '生成截图失败');
+    }
+    
+    const htmlContent = await response.text();
+    const imageBase64 = await convertHtmlToBase64Png(htmlContent);
+    
+    exportMsg.textContent = '正在发送到飞书...';
+    
+    const shareResponse = await fetch('/api/share/feishu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        type: screenshotType, 
+        taskId: taskId || undefined,
+        channelId,
+        imageBase64
+      })
+    });
+    
+    if (!shareResponse.ok) {
+      const err = await shareResponse.json();
+      throw new Error(err.error || '分享到飞书失败');
+    }
+    
+    const result = await shareResponse.json();
+    exportMsg.textContent = '分享成功!';
+    setTimeout(() => hideExportModal(), 1000);
+  } catch (err) {
+    exportMsg.textContent = err.message;
+  } finally {
+    shareToFeishuBtn.disabled = false;
+    confirmExportBtn.disabled = false;
+  }
+}
+
+function convertHtmlToBase64Png(htmlContent) {
+  return new Promise((resolve, reject) => {
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    container.style.width = '1200px';
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
+
+    const element = container;
+    
+    if (typeof htmlToImage === 'undefined') {
+      document.body.removeChild(container);
+      reject(new Error('html-to-image 库未加载'));
+      return;
+    }
+
+    htmlToImage.toPng(element, {
+      backgroundColor: '#ffffff',
+      quality: 1,
+      pixelRatio: 2,
+      width: 1200,
+      height: element.offsetHeight || 800
+    })
+    .then((dataUrl) => {
+      document.body.removeChild(container);
+      const base64 = dataUrl.split(',')[1];
+      resolve(base64);
+    })
+    .catch((error) => {
+      document.body.removeChild(container);
+      reject(error);
+    });
+  });
 }
 
 function renderExportTaskSelect() {
@@ -2712,7 +2866,14 @@ closeExportModal.addEventListener('click', hideExportModal);
 cancelExportBtn.addEventListener('click', hideExportModal);
 exportModal.querySelector('.modal-backdrop').addEventListener('click', hideExportModal);
 confirmExportBtn.addEventListener('click', handleExport);
+shareToFeishuBtn.addEventListener('click', handleShareToFeishu);
 
 document.querySelectorAll('input[name="exportType"]').forEach(radio => {
   radio.addEventListener('change', updateExportTaskSelectVisibility);
 });
+
+document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
+  radio.addEventListener('change', updateFeishuShareVisibility);
+});
+
+shareToFeishuCheckbox.addEventListener('change', updateFeishuButtonVisibility);

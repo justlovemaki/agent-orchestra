@@ -606,10 +606,29 @@
               </label>
             </div>
           </label>
+          <div id="feishuShareSection" class="feishu-share-section">
+            <label class="feishu-share-label">
+              <span class="field-label">分享到飞书</span>
+              <div class="feishu-share-options">
+                <label class="feishu-share-option">
+                  <input type="checkbox" id="shareToFeishu" />
+                  <span>分享到飞书群</span>
+                </label>
+              </div>
+            </label>
+            <div id="feishuChannelInput" class="feishu-channel-input hidden">
+              <label>
+                <span class="field-label">飞书群 ID</span>
+                <input type="text" id="feishuChannelId" class="filter-select" placeholder="输入飞书群 ID (如 oc_xxx)" />
+                <span class="muted small">在飞书群设置中获取群 ID</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div id="exportMsg" class="form-msg"></div>
         <div class="modal-actions">
           <button id="confirmExportBtn" class="primary">导出</button>
+          <button id="shareToFeishuBtn" class="primary hidden">分享到飞书</button>
           <button id="cancelExportBtn" class="ghost">取消</button>
         </div>
       </div>

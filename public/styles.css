@@ -527,6 +527,56 @@ button.success:hover {
   margin-top: 8px;
 }
 
+.feishu-share-section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.feishu-share-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feishu-share-options {
+  margin-top: 8px;
+}
+
+.feishu-share-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.feishu-share-option input {
+  width: auto;
+  min-width: auto;
+}
+
+.feishu-channel-input {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.feishu-channel-input input {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.feishu-channel-input .muted {
+  display: block;
+  margin-top: 4px;
+}
+
 .export-task-select select {
   width: 100%;
   margin-top: 8px;
