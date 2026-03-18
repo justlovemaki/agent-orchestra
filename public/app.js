@@ -2670,13 +2670,20 @@ const feishuChannelInput = document.getElementById('feishuChannelInput');
 const feishuChannelId = document.getElementById('feishuChannelId');
 const shareToFeishuBtn = document.getElementById('shareToFeishuBtn');
 const feishuShareSection = document.getElementById('feishuShareSection');
+const shareToDingTalkBtn = document.getElementById('shareToDingTalkBtn');
+const shareToDingTalkCheckbox = document.getElementById('shareToDingTalk');
+const dingtalkWebhookInput = document.getElementById('dingtalkWebhookInput');
+const dingtalkWebhook = document.getElementById('dingtalkWebhook');
+const dingtalkShareSection = document.getElementById('dingtalkShareSection');
 
 function showExportModal() {
   exportMsg.textContent = '';
   renderExportTaskSelect();
   updateExportTaskSelectVisibility();
   updateFeishuShareVisibility();
+  updateDingTalkShareVisibility();
   checkFeishuConfig();
+  checkDingTalkConfig();
   exportModal.classList.remove('hidden');
 }
 
@@ -2708,6 +2715,21 @@ function updateFeishuShareVisibility() {
   }
 }
 
+function updateDingTalkShareVisibility() {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  const isPngFormat = format === 'png';
+  
+  if (isPngFormat) {
+    dingtalkShareSection.classList.remove('hidden');
+  } else {
+    dingtalkShareSection.classList.add('hidden');
+    shareToDingTalkCheckbox.checked = false;
+    dingtalkWebhookInput.classList.add('hidden');
+    confirmExportBtn.classList.remove('hidden');
+    shareToDingTalkBtn.classList.add('hidden');
+  }
+}
+
 async function checkFeishuConfig() {
   try {
     const response = await fetch('/api/feishu/config');
@@ -2733,6 +2755,34 @@ function updateFeishuButtonVisibility() {
     confirmExportBtn.classList.remove('hidden');
     shareToFeishuBtn.classList.add('hidden');
     feishuChannelInput.classList.add('hidden');
+  }
+}
+
+async function checkDingTalkConfig() {
+  try {
+    const response = await fetch('/api/dingtalk/config');
+    const data = await response.json();
+    if (!data.configured) {
+      dingtalkShareSection.querySelector('.field-label').textContent = '分享到钉钉 (需配置)';
+      shareToDingTalkCheckbox.disabled = true;
+    } else {
+      dingtalkShareSection.querySelector('.field-label').textContent = '分享到钉钉';
+      shareToDingTalkCheckbox.disabled = false;
+    }
+  } catch (err) {
+    shareToDingTalkCheckbox.disabled = true;
+  }
+}
+
+function updateDingTalkButtonVisibility() {
+  if (shareToDingTalkCheckbox.checked) {
+    confirmExportBtn.classList.add('hidden');
+    shareToDingTalkBtn.classList.remove('hidden');
+    dingtalkWebhookInput.classList.remove('hidden');
+  } else {
+    confirmExportBtn.classList.remove('hidden');
+    shareToDingTalkBtn.classList.add('hidden');
+    dingtalkWebhookInput.classList.add('hidden');
   }
 }
 
@@ -2799,6 +2849,73 @@ async function handleShareToFeishu() {
     exportMsg.textContent = err.message;
   } finally {
     shareToFeishuBtn.disabled = false;
+    confirmExportBtn.disabled = false;
+  }
+}
+
+async function handleShareToDingTalk() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  const taskId = exportTaskSelectEl.value;
+  const webhook = dingtalkWebhook.value.trim();
+  
+  if (!webhook) {
+    exportMsg.textContent = '请输入钉钉群 webhook 地址';
+    return;
+  }
+  
+  let screenshotType = 'dashboard';
+  if (exportType === 'task-report') {
+    if (!taskId) {
+      exportMsg.textContent = '请选择任务';
+      return;
+    }
+    screenshotType = 'task-report';
+  }
+
+  exportMsg.textContent = '正在生成截图...';
+  shareToDingTalkBtn.disabled = true;
+  confirmExportBtn.disabled = true;
+  
+  try {
+    const response = await fetch('/api/export/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: screenshotType, taskId, format: 'png' })
+    });
+    
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '生成截图失败');
+    }
+    
+    const htmlContent = await response.text();
+    const imageBase64 = await convertHtmlToBase64Png(htmlContent);
+    
+    exportMsg.textContent = '正在发送到钉钉...';
+    
+    const shareResponse = await fetch('/api/share/dingtalk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        type: screenshotType, 
+        taskId: taskId || undefined,
+        webhook,
+        imageBase64
+      })
+    });
+    
+    if (!shareResponse.ok) {
+      const err = await shareResponse.json();
+      throw new Error(err.error || '分享到钉钉失败');
+    }
+    
+    const result = await shareResponse.json();
+    exportMsg.textContent = '分享成功!';
+    setTimeout(() => hideExportModal(), 1000);
+  } catch (err) {
+    exportMsg.textContent = err.message;
+  } finally {
+    shareToDingTalkBtn.disabled = false;
     confirmExportBtn.disabled = false;
   }
 }
@@ -3032,13 +3149,18 @@ cancelExportBtn.addEventListener('click', hideExportModal);
 exportModal.querySelector('.modal-backdrop').addEventListener('click', hideExportModal);
 confirmExportBtn.addEventListener('click', handleExport);
 shareToFeishuBtn.addEventListener('click', handleShareToFeishu);
+shareToDingTalkBtn.addEventListener('click', handleShareToDingTalk);
 
 document.querySelectorAll('input[name="exportType"]').forEach(radio => {
   radio.addEventListener('change', updateExportTaskSelectVisibility);
 });
 
 document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
-  radio.addEventListener('change', updateFeishuShareVisibility);
+  radio.addEventListener('change', () => {
+    updateFeishuShareVisibility();
+    updateDingTalkShareVisibility();
+  });
 });
 
 shareToFeishuCheckbox.addEventListener('change', updateFeishuButtonVisibility);
+shareToDingTalkCheckbox.addEventListener('change', updateDingTalkButtonVisibility);

@@ -1586,6 +1586,53 @@ async function requestHandler(req, res) {
         const result = await sendFeishuImageMessage(feishuConfig, channelId, imageBase64, title);
         return json(res, 200, { success: true, message: '分享成功', messageId: result.message_id });
       }
+      if (req.method === 'GET' && pathname === '/api/dingtalk/config') {
+        const config = getDingTalkConfig();
+        if (config) {
+          return json(res, 200, { 
+            configured: true, 
+            appKey: config.appKey ? config.appKey.slice(0, 4) + '****' : '',
+            hasAppSecret: !!config.appSecret,
+            hasWebhook: !!config.webhook
+          });
+        }
+        return json(res, 200, { configured: false });
+      }
+      if (req.method === 'POST' && pathname === '/api/dingtalk/config') {
+        const body = await readJson(req);
+        const { appKey, appSecret, webhook } = body;
+        if (!appKey || !appSecret || !webhook) {
+          throw new Error('缺少 appKey、appSecret 或 webhook 参数');
+        }
+        await saveDingTalkConfig({ appKey, appSecret, webhook });
+        return json(res, 200, { success: true, message: '钉钉配置已保存' });
+      }
+      if (req.method === 'POST' && pathname === '/api/share/dingtalk') {
+        const body = await readJson(req);
+        const { type, taskId, webhook, imageBase64 } = body;
+
+        if (!webhook) {
+          throw new Error('缺少 webhook 参数');
+        }
+
+        if (!type || !['dashboard', 'task-report'].includes(type)) {
+          throw new Error('无效的分享类型，请指定 dashboard 或 task-report');
+        }
+
+        if (!imageBase64) {
+          throw new Error('缺少图片数据');
+        }
+
+        let title = type === 'dashboard' ? '仪表板快照' : '任务汇报';
+        if (type === 'task-report' && taskId) {
+          const task = await getTask(taskId);
+          if (task) title = `任务汇报 - ${task.name || task.id}`;
+        }
+
+        const result = await sendDingTalkImageMessage(webhook, imageBase64, title);
+        return json(res, 200, { success: true, message: '分享成功', messageId: result.messageId });
+
+      }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
@@ -2091,4 +2138,88 @@ async function sendFeishuImageMessage(config, channelId, imageBase64, title) {
     throw new Error(`发送飞书消息失败: ${data.msg}`);
   }
   return data.data;
+}
+
+// ==================== DingTalk Sharing Functions ====================
+
+function getDingTalkConfig() {
+  const configPath = path.join(DATA_DIR, 'dingtalk-config.json');
+  try {
+    const configData = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(configData);
+  } catch {
+    return null;
+  }
+}
+
+async function saveDingTalkConfig(config) {
+  const configPath = path.join(DATA_DIR, 'dingtalk-config.json');
+  await fsp.writeFile(configPath, JSON.stringify(config, null, 2) + '\n');
+  return config;
+}
+
+async function getDingTalkAccessToken(config) {
+  const response = await fetch(`https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(config.appKey)}&appsecret=${encodeURIComponent(config.appSecret)}`);
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`获取钉钉 access_token 失败：${data.errmsg}`);
+  }
+  return data.access_token;
+}
+
+async function uploadDingTalkImage(accessToken, imageBase64, imageType = 'png') {
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer], `image/${imageType}`), `screenshot.${imageType}`);
+  formData.append('type', 'image');
+
+  const response = await fetch('https://oapi.dingtalk.com/media/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    },
+    body: formData
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`上传图片到钉钉失败：${data.errmsg}`);
+  }
+  return data.media_id;
+}
+
+async function sendDingTalkImageMessage(webhook, imageBase64, title) {
+  const imageType = 'png';
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer], `image/${imageType}`), `screenshot.${imageType}`);
+  formData.append('type', 'image');
+
+  const uploadResponse = await fetch('https://oapi.dingtalk.com/media/upload', {
+    method: 'POST',
+    body: formData
+  });
+  const uploadData = await uploadResponse.json();
+  if (uploadData.errcode !== 0) {
+    throw new Error(`上传图片到钉钉失败：${uploadData.errmsg}`);
+  }
+  const mediaId = uploadData.media_id;
+
+  const messagePayload = {
+    msgtype: 'markdown',
+    markdown: {
+      title: title || 'Agent Orchestra 面板截图',
+      text: `![screenshot](@${mediaId})\n\n**${title || 'Agent Orchestra 面板截图'}**`
+    }
+  };
+
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(messagePayload)
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`发送钉钉消息失败：${data.errmsg}`);
+  }
+  return { messageId: mediaId };
 }

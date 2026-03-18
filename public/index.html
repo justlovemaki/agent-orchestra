@@ -674,11 +674,30 @@
               </label>
             </div>
           </div>
+          <div id="dingtalkShareSection" class="dingtalk-share-section">
+            <label class="dingtalk-share-label">
+              <span class="field-label">分享到钉钉</span>
+              <div class="dingtalk-share-options">
+                <label class="dingtalk-share-option">
+                  <input type="checkbox" id="shareToDingTalk" />
+                  <span>分享到钉钉群</span>
+                </label>
+              </div>
+            </label>
+            <div id="dingtalkWebhookInput" class="dingtalk-webhook-input hidden">
+              <label>
+                <span class="field-label">钉钉群 webhook</span>
+                <input type="text" id="dingtalkWebhook" class="filter-select" placeholder="输入钉钉群机器人 webhook 地址" />
+                <span class="muted small">在钉钉群机器人设置中获取 webhook 地址</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div id="exportMsg" class="form-msg"></div>
         <div class="modal-actions">
           <button id="confirmExportBtn" class="primary">导出</button>
           <button id="shareToFeishuBtn" class="primary hidden">分享到飞书</button>
+          <button id="shareToDingTalkBtn" class="primary hidden">分享到钉钉</button>
           <button id="cancelExportBtn" class="ghost">取消</button>
         </div>
       </div>
