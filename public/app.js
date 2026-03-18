@@ -694,13 +694,18 @@ function renderSharedPresets() {
   } else {
     sharedPresetListEl.innerHTML = state.sharedPresets.map((preset) => {
       const active = areFiltersEqual(state.filters, preset.filters);
+      const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
+      const canEdit = permissions.canEdit.includes('Master') || permissions.canEdit.includes('*') || permissions.canEdit.includes(preset.createdBy);
+      const canDelete = permissions.canDelete.includes('Master') || permissions.canDelete.includes(preset.createdBy);
+      const isOwner = preset.createdBy === 'Master';
       return `
         <span class="preset-chip preset-chip-shared ${active ? 'is-active' : ''}" data-shared-preset-id="${preset.id}">
           <button type="button" class="preset-chip-name" data-action="apply" data-shared-preset-id="${preset.id}">${escapeHtml(preset.name)}</button>
           <span class="preset-chip-meta muted small">by ${escapeHtml(preset.createdBy)}</span>
           <span class="preset-chip-actions">
-            <button type="button" data-action="edit" data-shared-preset-id="${preset.id}" title="编辑共享预设">编辑</button>
-            <button type="button" data-action="delete" data-shared-preset-id="${preset.id}" title="删除共享预设">删除</button>
+            <button type="button" data-action="permissions" data-shared-preset-id="${preset.id}" title="管理权限" ${!isOwner ? '' : ''}>权限</button>
+            <button type="button" data-action="edit" data-shared-preset-id="${preset.id}" title="编辑共享预设" ${canEdit ? '' : 'disabled'}>编辑</button>
+            <button type="button" data-action="delete" data-shared-preset-id="${preset.id}" title="删除共享预设" ${canDelete ? '' : 'disabled'}>删除</button>
           </span>
         </span>
       `;
@@ -714,7 +719,15 @@ function renderSharedPresets() {
       const action = event.target.dataset.action || 'apply';
       const preset = state.sharedPresets.find(p => p.id === presetId);
       if (!preset) return;
+      if (action === 'permissions') {
+        showPresetPermissionsModal(presetId);
+        return;
+      }
       if (action === 'delete') {
+        if (event.target.disabled) {
+          alert('您没有删除此预设的权限');
+          return;
+        }
         if (!confirm('确定要删除此共享预设吗？')) return;
         try {
           await fetchJson(`/api/presets/${presetId}`, { method: 'DELETE' });
@@ -726,13 +739,17 @@ function renderSharedPresets() {
         return;
       }
       if (action === 'edit') {
+        if (event.target.disabled) {
+          alert('您没有编辑此预设的权限');
+          return;
+        }
         const newName = window.prompt('请输入新的预设名称', preset.name);
         if (!newName || newName.trim() === preset.name) return;
         try {
           await fetchJson(`/api/presets/${presetId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newName.trim() })
+            body: JSON.stringify({ name: newName.trim(), userId: 'Master' })
           });
           await loadSharedPresets();
           renderSharedPresets();
@@ -2491,6 +2508,154 @@ cancelImportPresetsBtn.addEventListener('click', hideImportPresetsModal);
 importPresetsModal.querySelector('.modal-backdrop').addEventListener('click', hideImportPresetsModal);
 presetFileInput.addEventListener('change', handlePresetFileSelect);
 confirmImportPresetsBtn.addEventListener('click', handleImportPresets);
+
+const presetPermissionsModal = document.getElementById('presetPermissionsModal');
+const closePresetPermissionsModal = document.getElementById('closePresetPermissionsModal');
+const presetPermissionsInfo = document.getElementById('presetPermissionsInfo');
+const canEditUsersList = document.getElementById('canEditUsersList');
+const canDeleteUsersList = document.getElementById('canDeleteUsersList');
+const addCanEditUser = document.getElementById('addCanEditUser');
+const addCanDeleteUser = document.getElementById('addCanDeleteUser');
+const addCanEditUserBtn = document.getElementById('addCanEditUserBtn');
+const addCanDeleteUserBtn = document.getElementById('addCanDeleteUserBtn');
+const savePresetPermissionsBtn = document.getElementById('savePresetPermissionsBtn');
+const cancelPresetPermissionsBtn = document.getElementById('cancelPresetPermissionsBtn');
+const presetPermissionsMsg = document.getElementById('presetPermissionsMsg');
+
+let currentEditingPresetId = null;
+let currentPresetPermissions = null;
+let currentPresetCreatedBy = null;
+
+function showPresetPermissionsModal(presetId) {
+  currentEditingPresetId = presetId;
+  presetPermissionsMsg.textContent = '';
+  addCanEditUser.value = '';
+  addCanDeleteUser.value = '';
+  const preset = state.sharedPresets.find(p => p.id === presetId);
+  if (!preset) {
+    presetPermissionsMsg.textContent = '预设不存在';
+    return;
+  }
+  currentPresetCreatedBy = preset.createdBy;
+  presetPermissionsInfo.innerHTML = `
+    <div class="preset-name">${escapeHtml(preset.name)}</div>
+    <div class="preset-created-by">创建者: ${escapeHtml(preset.createdBy)}</div>
+  `;
+  fetchJson(`/api/presets/${presetId}/permissions`)
+    .then(data => {
+      currentPresetPermissions = data.permissions;
+      renderPermissionsLists();
+      presetPermissionsModal.classList.remove('hidden');
+    })
+    .catch(err => {
+      presetPermissionsMsg.textContent = err.message;
+    });
+}
+
+function hidePresetPermissionsModal() {
+  presetPermissionsModal.classList.add('hidden');
+  currentEditingPresetId = null;
+  currentPresetPermissions = null;
+  currentPresetCreatedBy = null;
+}
+
+function renderPermissionsLists() {
+  if (!currentPresetPermissions) return;
+  canEditUsersList.innerHTML = currentPresetPermissions.canEdit.map(user => `
+    <span class="permission-user-chip ${user === currentPresetCreatedBy ? 'is-creator' : ''}" data-user="${escapeHtml(user)}">
+      ${escapeHtml(user)}
+      ${user !== currentPresetCreatedBy ? '<span class="remove-user" data-action="remove-edit" data-user="' + escapeHtml(user) + '">×</span>' : ''}
+    </span>
+  `).join('');
+  canDeleteUsersList.innerHTML = currentPresetPermissions.canDelete.map(user => `
+    <span class="permission-user-chip ${user === currentPresetCreatedBy ? 'is-creator' : ''}" data-user="${escapeHtml(user)}">
+      ${escapeHtml(user)}
+      ${user !== currentPresetCreatedBy ? '<span class="remove-user" data-action="remove-delete" data-user="' + escapeHtml(user) + '">×</span>' : ''}
+    </span>
+  `).join('');
+  canEditUsersList.querySelectorAll('.remove-user').forEach(el => {
+    el.addEventListener('click', () => {
+      const user = el.dataset.user;
+      currentPresetPermissions.canEdit = currentPresetPermissions.canEdit.filter(u => u !== user);
+      renderPermissionsLists();
+    });
+  });
+  canDeleteUsersList.querySelectorAll('.remove-user').forEach(el => {
+    el.addEventListener('click', () => {
+      const user = el.dataset.user;
+      currentPresetPermissions.canDelete = currentPresetPermissions.canDelete.filter(u => u !== user);
+      renderPermissionsLists();
+    });
+  });
+}
+
+addCanEditUserBtn.addEventListener('click', () => {
+  const user = addCanEditUser.value.trim();
+  if (!user) return;
+  if (currentPresetPermissions.canEdit.includes(user)) {
+    presetPermissionsMsg.textContent = '用户已在编辑权限列表中';
+    return;
+  }
+  currentPresetPermissions.canEdit.push(user);
+  addCanEditUser.value = '';
+  renderPermissionsLists();
+});
+
+addCanDeleteUserBtn.addEventListener('click', () => {
+  const user = addCanDeleteUser.value.trim();
+  if (!user) return;
+  if (currentPresetPermissions.canDelete.includes(user)) {
+    presetPermissionsMsg.textContent = '用户已在删除权限列表中';
+    return;
+  }
+  currentPresetPermissions.canDelete.push(user);
+  addCanDeleteUser.value = '';
+  renderPermissionsLists();
+});
+
+savePresetPermissionsBtn.addEventListener('click', async () => {
+  if (!currentEditingPresetId || !currentPresetPermissions) return;
+  try {
+    await fetchJson(`/api/presets/${currentEditingPresetId}/permissions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: currentPresetPermissions })
+    });
+    hidePresetPermissionsModal();
+    await loadSharedPresets();
+    renderSharedPresets();
+  } catch (err) {
+    presetPermissionsMsg.textContent = err.message;
+  }
+});
+
+closePresetPermissionsModal.addEventListener('click', hidePresetPermissionsModal);
+cancelPresetPermissionsBtn.addEventListener('click', hidePresetPermissionsModal);
+presetPermissionsModal.querySelector('.modal-backdrop').addEventListener('click', hidePresetPermissionsModal);
+
+document.querySelectorAll('[data-permission-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!currentPresetPermissions) return;
+    const mode = btn.dataset.permissionMode;
+    if (mode === 'owner') {
+      currentPresetPermissions = {
+        canEdit: [currentPresetCreatedBy],
+        canDelete: [currentPresetCreatedBy]
+      };
+    } else if (mode === 'team') {
+      currentPresetPermissions = {
+        canEdit: [currentPresetCreatedBy],
+        canDelete: [currentPresetCreatedBy]
+      };
+    } else if (mode === 'public') {
+      currentPresetPermissions = {
+        canEdit: ['*'],
+        canDelete: [currentPresetCreatedBy]
+      };
+    }
+    renderPermissionsLists();
+  });
+});
 
 const exportModal = document.getElementById('exportModal');
 const closeExportModal = document.getElementById('closeExportModal');

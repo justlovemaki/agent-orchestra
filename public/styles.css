@@ -2434,3 +2434,95 @@ button.ghost.tiny {
   font-size: 13px;
   line-height: 1.5;
 }
+
+.preset-permissions-info {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+}
+
+.preset-permissions-info .preset-name {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.preset-permissions-info .preset-created-by {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.preset-permissions-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.permission-section {
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.permission-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.permission-quick-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.permission-quick-actions .filter-btn[data-permission-mode] {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.permission-user-input {
+  display: flex;
+  gap: 8px;
+}
+
+.permission-user-input input {
+  width: 140px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.permission-users-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.permission-user-chip .remove-user {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.permission-user-chip .remove-user:hover {
+  color: var(--danger);
+}
+
+.permission-user-chip.is-creator {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}

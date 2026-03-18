@@ -1079,12 +1079,17 @@ async function requestHandler(req, res) {
         if (!body.name?.trim()) throw new Error('预设名称不能为空');
         if (!body.filters || typeof body.filters !== 'object') throw new Error('筛选条件不能为空');
         const presets = await readSharedPresets();
+        const createdBy = body.createdBy || 'Master';
         const newPreset = {
           id: crypto.randomUUID(),
           name: body.name.trim(),
           filters: body.filters,
-          createdBy: body.createdBy || 'Master',
-          createdAt: Date.now()
+          createdBy: createdBy,
+          createdAt: Date.now(),
+          permissions: {
+            canEdit: [createdBy],
+            canDelete: [createdBy]
+          }
         };
         presets.push(newPreset);
         await writeSharedPresets(presets);
@@ -1096,20 +1101,73 @@ async function requestHandler(req, res) {
         const presets = await readSharedPresets();
         const idx = presets.findIndex(p => p.id === presetId);
         if (idx === -1) throw new Error('预设不存在');
-        if (body.name != null) presets[idx].name = body.name.trim();
-        if (body.filters != null) presets[idx].filters = body.filters;
-        presets[idx].updatedAt = Date.now();
+        const preset = presets[idx];
+        const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
+        const requestUser = body.userId || 'Master';
+        if (!permissions.canEdit.includes(requestUser) && requestUser !== 'Master') {
+          throw new Error('您没有编辑此预设的权限');
+        }
+        if (body.name != null) preset.name = body.name.trim();
+        if (body.filters != null) preset.filters = body.filters;
+        preset.updatedAt = Date.now();
         await writeSharedPresets(presets);
-        return json(res, 200, { preset: presets[idx] });
+        return json(res, 200, { preset });
       }
       if (req.method === 'DELETE' && pathname.startsWith('/api/presets/')) {
         const presetId = pathname.split('/')[3];
         const presets = await readSharedPresets();
         const idx = presets.findIndex(p => p.id === presetId);
         if (idx === -1) throw new Error('预设不存在');
+        const preset = presets[idx];
+        const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
+        const requestUser = preset.createdBy;
+        if (!permissions.canDelete.includes(requestUser) && requestUser !== 'Master') {
+          throw new Error('您没有删除此预设的权限');
+        }
         presets.splice(idx, 1);
         await writeSharedPresets(presets);
         return json(res, 200, { success: true });
+      }
+      if ((req.method === 'GET' || req.method === 'PUT') && pathname.match(/^\/api\/presets\/[\w-]+\/permissions$/)) {
+        const presetId = pathname.split('/')[3];
+        const presets = await readSharedPresets();
+        const preset = presets.find(p => p.id === presetId);
+        if (!preset) throw new Error('预设不存在');
+        if (req.method === 'GET') {
+          return json(res, 200, {
+            presetId: preset.id,
+            createdBy: preset.createdBy,
+            permissions: preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] }
+          });
+        }
+        if (req.method === 'PUT') {
+          const body = await readJson(req);
+          const requestUser = body.userId || 'Master';
+          if (preset.createdBy !== requestUser && requestUser !== 'Master') {
+            throw new Error('只有创建者或管理员可以修改权限');
+          }
+          const newPermissions = body.permissions;
+          if (!newPermissions || typeof newPermissions !== 'object') {
+            throw new Error('无效的权限配置');
+          }
+          const idx = presets.findIndex(p => p.id === presetId);
+          presets[idx].permissions = {
+            canEdit: Array.isArray(newPermissions.canEdit) ? newPermissions.canEdit : [preset.createdBy],
+            canDelete: Array.isArray(newPermissions.canDelete) ? newPermissions.canDelete : [preset.createdBy]
+          };
+          if (!presets[idx].permissions.canEdit.includes(preset.createdBy)) {
+            presets[idx].permissions.canEdit.push(preset.createdBy);
+          }
+          if (!presets[idx].permissions.canDelete.includes(preset.createdBy)) {
+            presets[idx].permissions.canDelete.push(preset.createdBy);
+          }
+          await writeSharedPresets(presets);
+          return json(res, 200, {
+            presetId: preset.id,
+            createdBy: preset.createdBy,
+            permissions: presets[idx].permissions
+          });
+        }
       }
       if (req.method === 'GET' && pathname === '/api/presets/export') {
         const presets = await readSharedPresets();
@@ -1137,13 +1195,20 @@ async function requestHandler(req, res) {
         let results = { imported: 0, skipped: 0, errors: [] };
 
         if (mode === 'overwrite') {
-          const importedPresets = data.presets.map(p => ({
-            id: crypto.randomUUID(),
-            name: p.name,
-            filters: p.filters,
-            createdBy: p.createdBy || 'import',
-            createdAt: Date.now()
-          }));
+          const importedPresets = data.presets.map(p => {
+            const createdBy = p.createdBy || 'import';
+            return {
+              id: crypto.randomUUID(),
+              name: p.name,
+              filters: p.filters,
+              createdBy: createdBy,
+              createdAt: Date.now(),
+              permissions: {
+                canEdit: [createdBy],
+                canDelete: [createdBy]
+              }
+            };
+          });
           await writeSharedPresets(importedPresets);
           results.imported = importedPresets.length;
         } else {
@@ -1157,12 +1222,17 @@ async function requestHandler(req, res) {
               results.skipped++;
               continue;
             }
+            const createdBy = preset.createdBy || 'import';
             existingPresets.push({
               id: crypto.randomUUID(),
               name: preset.name,
               filters: preset.filters,
-              createdBy: preset.createdBy || 'import',
-              createdAt: Date.now()
+              createdBy: createdBy,
+              createdAt: Date.now(),
+              permissions: {
+                canEdit: [createdBy],
+                canDelete: [createdBy]
+              }
             });
             results.imported++;
           }

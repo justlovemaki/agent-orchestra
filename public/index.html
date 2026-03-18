@@ -552,6 +552,56 @@
     </div>
   </div>
 
+  <div id="presetPermissionsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>权限管理</h3>
+        <button class="modal-close" id="closePresetPermissionsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="presetPermissionsInfo" class="preset-permissions-info"></div>
+        <div class="preset-permissions-presets">
+          <div class="permission-section">
+            <div class="permission-section-header">
+              <span class="field-label">快速设置</span>
+            </div>
+            <div class="permission-quick-actions">
+              <button class="filter-btn filter-btn-ghost" data-permission-mode="owner">仅创建者</button>
+              <button class="filter-btn filter-btn-ghost" data-permission-mode="team">团队可见</button>
+              <button class="filter-btn filter-btn-ghost" data-permission-mode="public">所有人可编辑</button>
+            </div>
+          </div>
+          <div class="permission-section">
+            <div class="permission-section-header">
+              <span class="field-label">可编辑用户</span>
+              <div class="permission-user-input">
+                <input type="text" id="addCanEditUser" placeholder="输入用户 ID" />
+                <button id="addCanEditUserBtn" class="filter-btn">添加</button>
+              </div>
+            </div>
+            <div id="canEditUsersList" class="permission-users-list"></div>
+          </div>
+          <div class="permission-section">
+            <div class="permission-section-header">
+              <span class="field-label">可删除用户</span>
+              <div class="permission-user-input">
+                <input type="text" id="addCanDeleteUser" placeholder="输入用户 ID" />
+                <button id="addCanDeleteUserBtn" class="filter-btn">添加</button>
+              </div>
+            </div>
+            <div id="canDeleteUsersList" class="permission-users-list"></div>
+          </div>
+        </div>
+        <div id="presetPermissionsMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="savePresetPermissionsBtn" class="primary">保存</button>
+          <button id="cancelPresetPermissionsBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="exportModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
