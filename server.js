@@ -1633,6 +1633,53 @@ async function requestHandler(req, res) {
         return json(res, 200, { success: true, message: '分享成功', messageId: result.messageId });
 
       }
+      if (req.method === 'GET' && pathname === '/api/wecom/config') {
+        const config = getWecomConfig();
+        if (config) {
+          return json(res, 200, {
+            configured: true,
+            corpId: config.corpId ? config.corpId.slice(0, 4) + '****' : '',
+            hasAgentId: !!config.agentId,
+            hasSecret: !!config.secret,
+            hasWebhook: !!config.webhook
+          });
+        }
+        return json(res, 200, { configured: false });
+      }
+      if (req.method === 'POST' && pathname === '/api/wecom/config') {
+        const body = await readJson(req);
+        const { corpId, agentId, secret, webhook } = body;
+        if (!corpId || !agentId || !secret || !webhook) {
+          throw new Error('缺少 corpId、agentId、secret 或 webhook 参数');
+        }
+        await saveWecomConfig({ corpId, agentId, secret, webhook });
+        return json(res, 200, { success: true, message: '企业微信配置已保存' });
+      }
+      if (req.method === 'POST' && pathname === '/api/share/wecom') {
+        const body = await readJson(req);
+        const { type, taskId, webhook, imageBase64 } = body;
+
+        if (!webhook) {
+          throw new Error('缺少 webhook 参数');
+        }
+
+        if (!type || !['dashboard', 'task-report'].includes(type)) {
+          throw new Error('无效的分享类型，请指定 dashboard 或 task-report');
+        }
+
+        if (!imageBase64) {
+          throw new Error('缺少图片数据');
+        }
+
+        let title = type === 'dashboard' ? 'Agent Orchestra 仪表板快照' : '任务汇报';
+        if (type === 'task-report' && taskId) {
+          const task = await getTask(taskId);
+          if (task) title = `任务汇报 - ${task.title || task.id}`;
+        }
+
+        const result = await sendWecomImageMessage(webhook, imageBase64, title);
+        return json(res, 200, { success: true, message: '分享成功', messageId: result.messageId });
+      }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
@@ -2220,6 +2267,84 @@ async function sendDingTalkImageMessage(webhook, imageBase64, title) {
   const data = await response.json();
   if (data.errcode !== 0) {
     throw new Error(`发送钉钉消息失败：${data.errmsg}`);
+  }
+  return { messageId: mediaId };
+}
+
+// ==================== WeChat Work Sharing Functions ====================
+
+function getWecomConfig() {
+  const configPath = path.join(DATA_DIR, 'wecom-config.json');
+  try {
+    const configData = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(configData);
+  } catch {
+    return null;
+  }
+}
+
+async function saveWecomConfig(config) {
+  const configPath = path.join(DATA_DIR, 'wecom-config.json');
+  await fsp.writeFile(configPath, JSON.stringify(config, null, 2) + '\n');
+  return config;
+}
+
+async function getWecomAccessToken(config) {
+  const response = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(config.corpId)}&corpsecret=${encodeURIComponent(config.secret)}`);
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`获取企业微信 access_token 失败：${data.errmsg}`);
+  }
+  return data.access_token;
+}
+
+async function uploadWecomImage(accessToken, imageBase64, imageType = 'png') {
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer], `image/${imageType}`), `screenshot.${imageType}`);
+
+  const response = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/media/upload?access_token=${accessToken}&type=image`, {
+    method: 'POST',
+    body: formData
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`上传图片到企业微信失败：${data.errmsg}`);
+  }
+  return data.media_id;
+}
+
+async function sendWecomImageMessage(webhook, imageBase64, title) {
+  const imageType = 'png';
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('media', new Blob([buffer], `image/${imageType}`), `screenshot.${imageType}`);
+
+  const uploadResponse = await fetch(`${webhook}&type=image`, {
+    method: 'POST',
+    body: formData
+  });
+  const uploadData = await uploadResponse.json();
+  if (uploadData.errcode !== 0) {
+    throw new Error(`上传图片到企业微信失败：${uploadData.errmsg}`);
+  }
+  const mediaId = uploadData.media_id;
+
+  const messagePayload = {
+    msgtype: 'image',
+    image: {
+      media_id: mediaId
+    }
+  };
+
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(messagePayload)
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`发送企业微信消息失败：${data.errmsg}`);
   }
   return { messageId: mediaId };
 }

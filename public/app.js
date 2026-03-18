@@ -2682,8 +2682,10 @@ function showExportModal() {
   updateExportTaskSelectVisibility();
   updateFeishuShareVisibility();
   updateDingTalkShareVisibility();
+  updateWecomShareVisibility();
   checkFeishuConfig();
   checkDingTalkConfig();
+  checkWecomConfig();
   exportModal.classList.remove('hidden');
 }
 
@@ -3159,8 +3161,128 @@ document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
   radio.addEventListener('change', () => {
     updateFeishuShareVisibility();
     updateDingTalkShareVisibility();
+    updateWecomShareVisibility();
   });
 });
 
 shareToFeishuCheckbox.addEventListener('change', updateFeishuButtonVisibility);
 shareToDingTalkCheckbox.addEventListener('change', updateDingTalkButtonVisibility);
+
+const shareToWecomBtn = document.getElementById('shareToWecomBtn');
+const shareToWecomCheckbox = document.getElementById('shareToWecom');
+const wecomWebhookInput = document.getElementById('wecomWebhookInput');
+const wecomWebhook = document.getElementById('wecomWebhook');
+const wecomShareSection = document.getElementById('wecomShareSection');
+
+function updateWecomShareVisibility() {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  const isPngFormat = format === 'png';
+  
+  if (isPngFormat) {
+    wecomShareSection.classList.remove('hidden');
+  } else {
+    wecomShareSection.classList.add('hidden');
+    shareToWecomCheckbox.checked = false;
+    wecomWebhookInput.classList.add('hidden');
+    confirmExportBtn.classList.remove('hidden');
+    shareToWecomBtn.classList.add('hidden');
+  }
+}
+
+async function checkWecomConfig() {
+  try {
+    const response = await fetch('/api/wecom/config');
+    const data = await response.json();
+    if (!data.configured) {
+      wecomShareSection.querySelector('.field-label').textContent = '分享到企业微信 (需配置)';
+      shareToWecomCheckbox.disabled = true;
+    } else {
+      wecomShareSection.querySelector('.field-label').textContent = '分享到企业微信';
+      shareToWecomCheckbox.disabled = false;
+    }
+  } catch (err) {
+    shareToWecomCheckbox.disabled = true;
+  }
+}
+
+function updateWecomButtonVisibility() {
+  if (shareToWecomCheckbox.checked) {
+    confirmExportBtn.classList.add('hidden');
+    shareToWecomBtn.classList.remove('hidden');
+    wecomWebhookInput.classList.remove('hidden');
+  } else {
+    confirmExportBtn.classList.remove('hidden');
+    shareToWecomBtn.classList.add('hidden');
+    wecomWebhookInput.classList.add('hidden');
+  }
+}
+
+async function handleShareToWecom() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  const taskId = exportTaskSelectEl.value;
+  const webhook = wecomWebhook.value.trim();
+  
+  if (!webhook) {
+    exportMsg.textContent = '请输入企业微信群 webhook 地址';
+    return;
+  }
+  
+  let screenshotType = 'dashboard';
+  if (exportType === 'task-report') {
+    if (!taskId) {
+      exportMsg.textContent = '请选择任务';
+      return;
+    }
+    screenshotType = 'task-report';
+  }
+
+  exportMsg.textContent = '正在生成截图...';
+  shareToWecomBtn.disabled = true;
+  confirmExportBtn.disabled = true;
+  
+  try {
+    const response = await fetch('/api/export/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: screenshotType, taskId, format: 'png' })
+    });
+    
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '生成截图失败');
+    }
+    
+    const htmlContent = await response.text();
+    const imageBase64 = await convertHtmlToBase64Png(htmlContent);
+    
+    exportMsg.textContent = '正在发送到企业微信...';
+    
+    const shareResponse = await fetch('/api/share/wecom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        type: screenshotType, 
+        taskId: taskId || undefined,
+        webhook,
+        imageBase64
+      })
+    });
+    
+    if (!shareResponse.ok) {
+      const err = await shareResponse.json();
+      throw new Error(err.error || '分享到企业微信失败');
+    }
+    
+    const result = await shareResponse.json();
+    exportMsg.textContent = '分享成功!';
+    setTimeout(() => hideExportModal(), 1000);
+  } catch (err) {
+    exportMsg.textContent = err.message;
+  } finally {
+    shareToWecomBtn.disabled = false;
+    confirmExportBtn.disabled = false;
+  }
+}
+
+shareToWecomBtn.addEventListener('click', handleShareToWecom);
+shareToWecomCheckbox.addEventListener('change', updateWecomButtonVisibility);

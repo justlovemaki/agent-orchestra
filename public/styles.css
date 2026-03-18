@@ -622,6 +622,61 @@ button.success:hover {
   margin-top: 4px;
 }
 
+.wecom-share-section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.wecom-share-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wecom-share-options {
+  margin-top: 8px;
+}
+
+.wecom-share-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.wecom-share-option:hover {
+  border-color: #07c160;
+}
+
+.wecom-share-option input {
+  width: auto;
+  min-width: auto;
+  accent-color: #07c160;
+}
+
+.wecom-webhook-input {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.wecom-webhook-input input {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.wecom-share-section .muted {
+  display: block;
+  margin-top: 4px;
+}
+
 .export-task-select select {
   width: 100%;
   margin-top: 8px;

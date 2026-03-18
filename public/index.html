@@ -692,12 +692,31 @@
               </label>
             </div>
           </div>
+          <div id="wecomShareSection" class="wecom-share-section">
+            <label class="wecom-share-label">
+              <span class="field-label">分享到企业微信</span>
+              <div class="wecom-share-options">
+                <label class="wecom-share-option">
+                  <input type="checkbox" id="shareToWecom" />
+                  <span>分享到企业微信群</span>
+                </label>
+              </div>
+            </label>
+            <div id="wecomWebhookInput" class="wecom-webhook-input hidden">
+              <label>
+                <span class="field-label">企业微信群 webhook</span>
+                <input type="text" id="wecomWebhook" class="filter-select" placeholder="输入企业微信群机器人 webhook 地址" />
+                <span class="muted small">在企业微信群机器人设置中获取 webhook 地址</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div id="exportMsg" class="form-msg"></div>
         <div class="modal-actions">
           <button id="confirmExportBtn" class="primary">导出</button>
           <button id="shareToFeishuBtn" class="primary hidden">分享到飞书</button>
           <button id="shareToDingTalkBtn" class="primary hidden">分享到钉钉</button>
+          <button id="shareToWecomBtn" class="primary hidden">分享到企业微信</button>
           <button id="cancelExportBtn" class="ghost">取消</button>
         </div>
       </div>
