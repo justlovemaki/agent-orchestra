@@ -3063,9 +3063,11 @@ function showExportModal() {
   updateFeishuShareVisibility();
   updateDingTalkShareVisibility();
   updateWecomShareVisibility();
+  updateSlackShareVisibility();
   checkFeishuConfig();
   checkDingTalkConfig();
   checkWecomConfig();
+  checkSlackConfig();
   exportModal.classList.remove('hidden');
 }
 
@@ -3542,6 +3544,7 @@ document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
     updateFeishuShareVisibility();
     updateDingTalkShareVisibility();
     updateWecomShareVisibility();
+    updateSlackShareVisibility();
   });
 });
 
@@ -3553,6 +3556,12 @@ const shareToWecomCheckbox = document.getElementById('shareToWecom');
 const wecomWebhookInput = document.getElementById('wecomWebhookInput');
 const wecomWebhook = document.getElementById('wecomWebhook');
 const wecomShareSection = document.getElementById('wecomShareSection');
+
+const shareToSlackBtn = document.getElementById('shareToSlackBtn');
+const shareToSlackCheckbox = document.getElementById('shareToSlack');
+const slackChannelInput = document.getElementById('slackChannelInput');
+const slackChannelId = document.getElementById('slackChannelId');
+const slackShareSection = document.getElementById('slackShareSection');
 
 function updateWecomShareVisibility() {
   const format = document.querySelector('input[name="exportFormat"]:checked').value;
@@ -3566,6 +3575,21 @@ function updateWecomShareVisibility() {
     wecomWebhookInput.classList.add('hidden');
     confirmExportBtn.classList.remove('hidden');
     shareToWecomBtn.classList.add('hidden');
+  }
+}
+
+function updateSlackShareVisibility() {
+  const format = document.querySelector('input[name="exportFormat"]:checked').value;
+  const isPngFormat = format === 'png';
+  
+  if (isPngFormat) {
+    slackShareSection.classList.remove('hidden');
+  } else {
+    slackShareSection.classList.add('hidden');
+    shareToSlackCheckbox.checked = false;
+    slackChannelInput.classList.add('hidden');
+    confirmExportBtn.classList.remove('hidden');
+    shareToSlackBtn.classList.add('hidden');
   }
 }
 
@@ -3585,6 +3609,22 @@ async function checkWecomConfig() {
   }
 }
 
+async function checkSlackConfig() {
+  try {
+    const response = await fetch('/api/slack/config');
+    const data = await response.json();
+    if (!data.configured) {
+      slackShareSection.querySelector('.field-label').textContent = '分享到 Slack (需配置)';
+      shareToSlackCheckbox.disabled = true;
+    } else {
+      slackShareSection.querySelector('.field-label').textContent = '分享到 Slack';
+      shareToSlackCheckbox.disabled = false;
+    }
+  } catch (err) {
+    shareToSlackCheckbox.disabled = true;
+  }
+}
+
 function updateWecomButtonVisibility() {
   if (shareToWecomCheckbox.checked) {
     confirmExportBtn.classList.add('hidden');
@@ -3594,6 +3634,18 @@ function updateWecomButtonVisibility() {
     confirmExportBtn.classList.remove('hidden');
     shareToWecomBtn.classList.add('hidden');
     wecomWebhookInput.classList.add('hidden');
+  }
+}
+
+function updateSlackButtonVisibility() {
+  if (shareToSlackCheckbox.checked) {
+    confirmExportBtn.classList.add('hidden');
+    shareToSlackBtn.classList.remove('hidden');
+    slackChannelInput.classList.remove('hidden');
+  } else {
+    confirmExportBtn.classList.remove('hidden');
+    shareToSlackBtn.classList.add('hidden');
+    slackChannelInput.classList.add('hidden');
   }
 }
 
@@ -3664,5 +3716,74 @@ async function handleShareToWecom() {
   }
 }
 
+async function handleShareToSlack() {
+  const exportType = document.querySelector('input[name="exportType"]:checked').value;
+  const taskId = exportTaskSelectEl.value;
+  const channelId = slackChannelId.value.trim();
+  
+  if (!channelId) {
+    exportMsg.textContent = '请输入 Slack Channel ID';
+    return;
+  }
+  
+  let screenshotType = 'dashboard';
+  if (exportType === 'task-report') {
+    if (!taskId) {
+      exportMsg.textContent = '请选择任务';
+      return;
+    }
+    screenshotType = 'task-report';
+  }
+
+  exportMsg.textContent = '正在生成截图...';
+  shareToSlackBtn.disabled = true;
+  confirmExportBtn.disabled = true;
+  
+  try {
+    const response = await fetch('/api/export/screenshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: screenshotType, taskId, format: 'png' })
+    });
+    
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '生成截图失败');
+    }
+    
+    const htmlContent = await response.text();
+    const imageBase64 = await convertHtmlToBase64Png(htmlContent);
+    
+    exportMsg.textContent = '正在发送到 Slack...';
+    
+    const shareResponse = await fetch('/api/share/slack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        type: screenshotType, 
+        taskId: taskId || undefined,
+        channelId,
+        imageBase64
+      })
+    });
+    
+    if (!shareResponse.ok) {
+      const err = await shareResponse.json();
+      throw new Error(err.error || '分享到 Slack 失败');
+    }
+    
+    const result = await shareResponse.json();
+    exportMsg.textContent = '分享成功!';
+    setTimeout(() => hideExportModal(), 1000);
+  } catch (err) {
+    exportMsg.textContent = err.message;
+  } finally {
+    shareToSlackBtn.disabled = false;
+    confirmExportBtn.disabled = false;
+  }
+}
+
 shareToWecomBtn.addEventListener('click', handleShareToWecom);
 shareToWecomCheckbox.addEventListener('change', updateWecomButtonVisibility);
+shareToSlackBtn.addEventListener('click', handleShareToSlack);
+shareToSlackCheckbox.addEventListener('change', updateSlackButtonVisibility);

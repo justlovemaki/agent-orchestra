@@ -1914,6 +1914,55 @@ async function requestHandler(req, res) {
         const result = await sendWecomImageMessage(webhook, imageBase64, title);
         return json(res, 200, { success: true, message: '分享成功', messageId: result.messageId });
       }
+      if (req.method === 'GET' && pathname === '/api/slack/config') {
+        const config = getSlackConfig();
+        if (config) {
+          return json(res, 200, { 
+            configured: true, 
+            botToken: config.botToken ? config.botToken.slice(0, 8) + '****' : ''
+          });
+        }
+        return json(res, 200, { configured: false });
+      }
+      if (req.method === 'POST' && pathname === '/api/slack/config') {
+        const body = await readJson(req);
+        const { botToken } = body;
+        if (!botToken) {
+          throw new Error('缺少 botToken 参数');
+        }
+        await saveSlackConfig({ botToken });
+        return json(res, 200, { success: true, message: 'Slack 配置已保存' });
+      }
+      if (req.method === 'POST' && pathname === '/api/share/slack') {
+        const body = await readJson(req);
+        const { type, taskId, channelId, imageBase64 } = body;
+
+        if (!channelId) {
+          throw new Error('缺少 channelId 参数');
+        }
+
+        if (!type || !['dashboard', 'task-report'].includes(type)) {
+          throw new Error('无效的分享类型，请指定 dashboard 或 task-report');
+        }
+
+        if (!imageBase64) {
+          throw new Error('缺少图片数据');
+        }
+
+        const slackConfig = getSlackConfig();
+        if (!slackConfig || !slackConfig.botToken) {
+          throw new Error('Slack 配置未完成，请先配置 Slack Bot Token');
+        }
+
+        let title = type === 'dashboard' ? 'Agent Orchestra 仪表板快照' : '任务汇报';
+        if (type === 'task-report' && taskId) {
+          const task = await getTask(taskId);
+          if (task) title = `任务汇报 - ${task.title || task.id}`;
+        }
+
+        const result = await sendSlackImageMessage(slackConfig, channelId, imageBase64, title);
+        return json(res, 200, { success: true, message: '分享成功', messageId: result.messageId });
+      }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       return json(res, 500, { error: error.message, stderr: error.stderr, stdout: error.stdout });
@@ -2581,4 +2630,44 @@ async function sendWecomImageMessage(webhook, imageBase64, title) {
     throw new Error(`发送企业微信消息失败：${data.errmsg}`);
   }
   return { messageId: mediaId };
+}
+
+// ==================== Slack Sharing Functions ====================
+
+function getSlackConfig() {
+  const configPath = path.join(DATA_DIR, 'slack-config.json');
+  try {
+    const configData = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(configData);
+  } catch {
+    return null;
+  }
+}
+
+async function saveSlackConfig(config) {
+  const configPath = path.join(DATA_DIR, 'slack-config.json');
+  await fsp.writeFile(configPath, JSON.stringify(config, null, 2) + '\n');
+  return config;
+}
+
+async function sendSlackImageMessage(config, channelId, imageBase64, title) {
+  const buffer = Buffer.from(imageBase64, 'base64');
+  const formData = new FormData();
+  formData.append('file', new Blob([buffer], 'image/png'), 'screenshot.png');
+  formData.append('channels', channelId);
+  formData.append('title', title || 'Agent Orchestra 面板截图');
+
+  const uploadResponse = await fetch('https://slack.com/api/files.upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.botToken}`
+    },
+    body: formData
+  });
+  const uploadData = await uploadResponse.json();
+  if (!uploadData.ok) {
+    throw new Error(`上传图片到 Slack 失败：${uploadData.error}`);
+  }
+
+  return { messageId: uploadData.file?.id || 'uploaded' };
 }

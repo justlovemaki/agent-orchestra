@@ -752,6 +752,24 @@
               </label>
             </div>
           </div>
+          <div id="slackShareSection" class="slack-share-section">
+            <label class="slack-share-label">
+              <span class="field-label">分享到 Slack</span>
+              <div class="slack-share-options">
+                <label class="slack-share-option">
+                  <input type="checkbox" id="shareToSlack" />
+                  <span>分享到 Slack 群</span>
+                </label>
+              </div>
+            </label>
+            <div id="slackChannelInput" class="slack-channel-input hidden">
+              <label>
+                <span class="field-label">Slack Channel ID</span>
+                <input type="text" id="slackChannelId" class="filter-select" placeholder="输入 Slack Channel ID (如 C0123456789)" />
+                <span class="muted small">在 Slack 群详情中获取 Channel ID</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div id="exportMsg" class="form-msg"></div>
         <div class="modal-actions">
@@ -759,6 +777,7 @@
           <button id="shareToFeishuBtn" class="primary hidden">分享到飞书</button>
           <button id="shareToDingTalkBtn" class="primary hidden">分享到钉钉</button>
           <button id="shareToWecomBtn" class="primary hidden">分享到企业微信</button>
+          <button id="shareToSlackBtn" class="primary hidden">分享到 Slack</button>
           <button id="cancelExportBtn" class="ghost">取消</button>
         </div>
       </div>

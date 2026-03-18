@@ -677,6 +677,61 @@ button.success:hover {
   margin-top: 4px;
 }
 
+.slack-share-section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.slack-share-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slack-share-options {
+  margin-top: 8px;
+}
+
+.slack-share-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.slack-share-option:hover {
+  border-color: #4a154b;
+}
+
+.slack-share-option input {
+  width: auto;
+  min-width: auto;
+  accent-color: #4a154b;
+}
+
+.slack-channel-input {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.slack-channel-input input {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.slack-channel-input .muted {
+  display: block;
+  margin-top: 4px;
+}
+
 .export-task-select select {
   width: 100%;
   margin-top: 8px;
