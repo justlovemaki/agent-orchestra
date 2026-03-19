@@ -3932,12 +3932,27 @@ const backupPreviewSection = document.getElementById('backupPreviewSection');
 const backupPreviewContent = document.getElementById('backupPreviewContent');
 const autoSnapshotCheckbox = document.getElementById('autoSnapshotCheckbox');
 
+const scheduledBackupEnabled = document.getElementById('scheduledBackupEnabled');
+const scheduledBackupOptions = document.getElementById('scheduledBackupOptions');
+const scheduledBackupFrequency = document.getElementById('scheduledBackupFrequency');
+const scheduledBackupDayOfWeek = document.getElementById('scheduledBackupDayOfWeek');
+const dayOfWeekField = document.getElementById('dayOfWeekField');
+const scheduledBackupTime = document.getElementById('scheduledBackupTime');
+const scheduledBackupMode = document.getElementById('scheduledBackupMode');
+const scheduledBackupRetention = document.getElementById('scheduledBackupRetention');
+const nextScheduledBackupTime = document.getElementById('nextScheduledBackupTime');
+const saveScheduledBackupConfigBtn = document.getElementById('saveScheduledBackupConfigBtn');
+const runScheduledBackupNowBtn = document.getElementById('runScheduledBackupNowBtn');
+const scheduledBackupHistoryList = document.getElementById('scheduledBackupHistoryList');
+
 let selectedBackupFile = null;
 let selectedBackupData = null;
 
 function showBackupModal() {
   loadBackupStatus();
   loadBackupHistory();
+  loadScheduledBackupConfig();
+  loadScheduledBackupHistory();
   backupModal.classList.remove('hidden');
 }
 
@@ -4166,6 +4181,138 @@ createBackupBtn.addEventListener('click', handleCreateBackup);
 backupFileInput.addEventListener('change', handleBackupFileSelect);
 clearBackupFile.addEventListener('click', clearBackupFileSelection);
 restoreBackupBtn.addEventListener('click', handleRestoreBackup);
+
+async function loadScheduledBackupConfig() {
+  try {
+    const res = await fetchJson('/api/admin/scheduled-backup/config');
+    scheduledBackupEnabled.checked = res.enabled || false;
+    scheduledBackupFrequency.value = res.frequency || 'daily';
+    scheduledBackupDayOfWeek.value = res.dayOfWeek !== undefined ? res.dayOfWeek : 1;
+    scheduledBackupTime.value = res.time || '02:00';
+    scheduledBackupMode.value = res.mode || 'full';
+    scheduledBackupRetention.value = res.retentionCount || 5;
+    
+    if (res.enabled) {
+      scheduledBackupOptions.classList.remove('hidden');
+      if (res.nextRunTime) {
+        nextScheduledBackupTime.textContent = new Date(res.nextRunTime).toLocaleString('zh-CN');
+      } else {
+        nextScheduledBackupTime.textContent = '—';
+      }
+    } else {
+      scheduledBackupOptions.classList.add('hidden');
+      nextScheduledBackupTime.textContent = '—';
+    }
+    
+    updateDayOfWeekVisibility();
+  } catch (err) {
+    console.error('加载定时备份配置失败:', err);
+  }
+}
+
+function updateDayOfWeekVisibility() {
+  if (scheduledBackupFrequency.value === 'weekly') {
+    dayOfWeekField.style.display = 'block';
+  } else {
+    dayOfWeekField.style.display = 'none';
+  }
+}
+
+async function loadScheduledBackupHistory() {
+  try {
+    const res = await fetchJson('/api/admin/scheduled-backup/history');
+    const list = scheduledBackupHistoryList;
+    if (!res.history || res.history.length === 0) {
+      list.innerHTML = '<div class="muted small">暂无自动备份记录</div>';
+      return;
+    }
+    list.innerHTML = res.history.map(h => `
+      <div class="backup-history-item ${h.status === 'failed' ? 'backup-history-failed' : ''}">
+        <div class="backup-history-info">
+          <span class="backup-history-time">${new Date(h.startedAt).toLocaleString('zh-CN')}</span>
+          <span class="${h.status === 'success' ? 'success' : (h.status === 'failed' ? 'error' : 'muted')}">${h.status === 'success' ? '成功' : (h.status === 'failed' ? '失败' : '运行中')}</span>
+        </div>
+        <div class="backup-history-meta muted small">
+          ${h.fileName ? `文件: ${h.fileName}` : ''}
+          ${h.fileSize ? ` | 大小: ${formatBytes(h.fileSize)}` : ''}
+          ${h.error ? ` | 错误: ${escapeHtml(h.error)}` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('加载自动备份历史失败:', err);
+  }
+}
+
+async function handleSaveScheduledBackupConfig() {
+  const config = {
+    enabled: scheduledBackupEnabled.checked,
+    frequency: scheduledBackupFrequency.value,
+    time: scheduledBackupTime.value,
+    dayOfWeek: parseInt(scheduledBackupDayOfWeek.value, 10),
+    mode: scheduledBackupMode.value,
+    retentionCount: parseInt(scheduledBackupRetention.value, 10)
+  };
+  
+  try {
+    backupMsg.textContent = '正在保存配置...';
+    const res = await fetchJson('/api/admin/scheduled-backup/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    
+    if (res.nextRunTime) {
+      nextScheduledBackupTime.textContent = new Date(res.nextRunTime).toLocaleString('zh-CN');
+    }
+    
+    if (config.enabled) {
+      scheduledBackupOptions.classList.remove('hidden');
+    } else {
+      scheduledBackupOptions.classList.add('hidden');
+      nextScheduledBackupTime.textContent = '—';
+    }
+    
+    backupMsg.textContent = '配置保存成功';
+    setTimeout(() => { backupMsg.textContent = ''; }, 3000);
+  } catch (err) {
+    backupMsg.textContent = err.message;
+  }
+}
+
+async function handleRunScheduledBackupNow() {
+  try {
+    backupMsg.textContent = '正在执行备份...';
+    runScheduledBackupNowBtn.disabled = true;
+    const res = await fetchJson('/api/admin/scheduled-backup/run', { method: 'POST' });
+    
+    if (res.success) {
+      backupMsg.textContent = `备份创建成功: ${res.fileName}`;
+      await loadScheduledBackupHistory();
+      if (res.nextRunTime) {
+        nextScheduledBackupTime.textContent = new Date(res.nextRunTime).toLocaleString('zh-CN');
+      }
+    } else {
+      backupMsg.textContent = `备份失败: ${res.error}`;
+      await loadScheduledBackupHistory();
+    }
+  } catch (err) {
+    backupMsg.textContent = err.message;
+  } finally {
+    runScheduledBackupNowBtn.disabled = false;
+  }
+}
+
+scheduledBackupEnabled.addEventListener('change', () => {
+  if (scheduledBackupEnabled.checked) {
+    scheduledBackupOptions.classList.remove('hidden');
+  } else {
+    scheduledBackupOptions.classList.add('hidden');
+  }
+});
+
+scheduledBackupFrequency.addEventListener('change', updateDayOfWeekVisibility);
+saveScheduledBackupConfigBtn.addEventListener('click', handleSaveScheduledBackupConfig);
+runScheduledBackupNowBtn.addEventListener('click', handleRunScheduledBackupNow);
 
 const openBackupModalBtn = document.getElementById('openBackupModalBtn');
 if (openBackupModalBtn) {

@@ -9,7 +9,8 @@ const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
-const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, getUserById, getUserPermissions } = require('./lib/users');
+const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
+const scheduledBackup = require('./lib/scheduled-backup');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -2105,6 +2106,83 @@ async function requestHandler(req, res) {
           });
         }
 
+        if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {
+          const config = await scheduledBackup.getConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'scheduled-backup/config') {
+          const body = await readJson(req);
+          const { enabled, frequency, time, dayOfWeek, retentionCount, mode } = body;
+          
+          if (enabled !== undefined && typeof enabled !== 'boolean') {
+            throw new Error('enabled 必须是布尔值');
+          }
+          if (frequency !== undefined && !['daily', 'weekly'].includes(frequency)) {
+            throw new Error('frequency 必须是 daily 或 weekly');
+          }
+          if (time !== undefined) {
+            const timeMatch = time.match(/^(\d{1,2}):(\d{2})$/);
+            if (!timeMatch) {
+              throw new Error('time 格式必须是 HH:MM');
+            }
+            const hours = parseInt(timeMatch[1], 10);
+            const minutes = parseInt(timeMatch[2], 10);
+            if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+              throw new Error('time 时间无效');
+            }
+          }
+          if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
+            throw new Error('dayOfWeek 必须是 0-6 之间的数字');
+          }
+          if (retentionCount !== undefined && (retentionCount < 1 || retentionCount > 100)) {
+            throw new Error('retentionCount 必须在 1-100 之间');
+          }
+          if (mode !== undefined && !['full', 'incremental'].includes(mode)) {
+            throw new Error('mode 必须是 full 或 incremental');
+          }
+          
+          const result = await scheduledBackup.updateConfig({
+            enabled,
+            frequency,
+            time,
+            dayOfWeek,
+            retentionCount,
+            mode
+          });
+          
+          await addAuditEvent('scheduled_backup.config_changed', {
+            changedBy: currentUser.name,
+            config: result.config
+          }, currentUser.name, currentUser.id);
+          
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'GET' && adminPath === 'scheduled-backup/history') {
+          const history = await scheduledBackup.getHistory(50);
+          return json(res, 200, { history });
+        }
+
+        if (req.method === 'POST' && adminPath === 'scheduled-backup/run') {
+          const result = await scheduledBackup.executeScheduledBackup();
+          
+          if (result.success) {
+            await addAuditEvent('scheduled_backup.created', {
+              fileName: result.fileName,
+              fileSize: result.fileSize,
+              triggeredBy: 'manual'
+            }, currentUser.name, currentUser.id);
+          } else {
+            await addAuditEvent('scheduled_backup.failed', {
+              error: result.error,
+              triggeredBy: 'manual'
+            }, currentUser.name, currentUser.id);
+          }
+          
+          return json(res, 200, result);
+        }
+
         return json(res, 404, { error: '管理员接口不存在' });
       }
       if (req.method === 'POST' && pathname === '/api/audit') {
@@ -2838,6 +2916,64 @@ ensureData().then(async () => {
   await writeRuntime('running');
   console.log(`PID file written to ${PID_FILE}`);
   console.log(`Runtime info written to ${RUNTIME_FILE}`);
+
+  const createBackupData = async (mode = 'full') => {
+    const now = Date.now();
+    const users = await loadUsers();
+    const tasks = await readTasks();
+    const templates = await readTemplates();
+    const agentGroups = await readAgentGroups();
+    const sharedPresets = await readSharedPresets();
+    const allUserPresets = JSON.parse(await fsp.readFile(USER_PRESETS_FILE, 'utf8'));
+    const allUserTemplates = JSON.parse(await fsp.readFile(USER_TEMPLATES_FILE, 'utf8'));
+    const workflows = await loadWorkflows();
+    const workflowRuns = await readWorkflowRuns();
+    const auditEvents = await queryAuditEvents({});
+
+    let dataToBackup;
+    if (mode === 'incremental') {
+      const recentTasks = tasks.filter(t => !t.id.startsWith('temp-') && t.createdAt > now - 7 * 24 * 60 * 60 * 1000);
+      const recentAuditEvents = auditEvents.filter(e => e.timestamp > now - 7 * 24 * 60 * 60 * 1000);
+      dataToBackup = {
+        users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+        tokens: {},
+        tasks: recentTasks,
+        templates,
+        'agent-groups': agentGroups,
+        'shared-presets': sharedPresets,
+        'user-presets': allUserPresets,
+        'user-templates': allUserTemplates,
+        workflows,
+        'workflow-runs': workflowRuns,
+        'audit-events': recentAuditEvents
+      };
+    } else {
+      dataToBackup = {
+        users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+        tokens: {},
+        tasks: tasks.filter(t => !t.id.startsWith('temp-')),
+        templates,
+        'agent-groups': agentGroups,
+        'shared-presets': sharedPresets,
+        'user-presets': allUserPresets,
+        'user-templates': allUserTemplates,
+        workflows,
+        'workflow-runs': workflowRuns,
+        'audit-events': auditEvents
+      };
+    }
+
+    return {
+      version: '1.0',
+      backupAt: now,
+      backupMode: mode,
+      data: dataToBackup
+    };
+  };
+
+  scheduledBackup.setBackupCreateFunction(createBackupData);
+  await scheduledBackup.init();
+  console.log('Scheduled backup initialized');
 
   let cleaningUp = false;
   const cleanup = async (signal, exitCode = 0) => {

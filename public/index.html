@@ -882,6 +882,84 @@
             <div class="muted small">暂无备份记录</div>
           </div>
         </div>
+
+        <div class="backup-section">
+          <h4>定时自动备份</h4>
+          <p class="muted small">设置自动备份计划，系统将按设定时间自动创建备份</p>
+          
+          <div class="scheduled-backup-config">
+            <label class="checkbox-label">
+              <input type="checkbox" id="scheduledBackupEnabled" />
+              <span>启用定时自动备份</span>
+            </label>
+            
+            <div id="scheduledBackupOptions" class="scheduled-backup-options hidden">
+              <div class="scheduled-backup-row">
+                <div class="scheduled-backup-field">
+                  <label>
+                    <span class="field-label">备份频率</span>
+                    <select id="scheduledBackupFrequency" class="filter-select">
+                      <option value="daily">每天</option>
+                      <option value="weekly">每周</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="scheduled-backup-field" id="dayOfWeekField" style="display: none;">
+                  <label>
+                    <span class="field-label">选择星期</span>
+                    <select id="scheduledBackupDayOfWeek" class="filter-select">
+                      <option value="0">周日</option>
+                      <option value="1">周一</option>
+                      <option value="2">周二</option>
+                      <option value="3">周三</option>
+                      <option value="4">周四</option>
+                      <option value="5">周五</option>
+                      <option value="6">周六</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="scheduled-backup-field">
+                  <label>
+                    <span class="field-label">备份时间</span>
+                    <input type="time" id="scheduledBackupTime" class="filter-input" value="02:00" />
+                  </label>
+                </div>
+                <div class="scheduled-backup-field">
+                  <label>
+                    <span class="field-label">备份模式</span>
+                    <select id="scheduledBackupMode" class="filter-select">
+                      <option value="full">完整备份</option>
+                      <option value="incremental">增量备份</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="scheduled-backup-field">
+                  <label>
+                    <span class="field-label">保留数量</span>
+                    <input type="number" id="scheduledBackupRetention" class="filter-input" min="1" max="100" value="5" />
+                  </label>
+                </div>
+              </div>
+              
+              <div class="scheduled-backup-info">
+                <span class="muted small">下次备份时间：</span>
+                <span id="nextScheduledBackupTime" class="scheduled-backup-next">—</span>
+              </div>
+              
+              <div class="scheduled-backup-actions">
+                <button id="saveScheduledBackupConfigBtn" class="primary">保存配置</button>
+                <button id="runScheduledBackupNowBtn" class="ghost">立即执行一次</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="backup-section">
+          <h4>自动备份历史</h4>
+          <div id="scheduledBackupHistoryList" class="backup-history-list">
+            <div class="muted small">暂无自动备份记录</div>
+          </div>
+        </div>
       </div>
       <div id="backupMsg" class="form-msg"></div>
     </div>
