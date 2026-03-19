@@ -2354,7 +2354,7 @@ async function requestHandler(req, res) {
 
         if (req.method === 'POST' && adminPath === 'cloud-storage/config') {
           const body = await readJson(req);
-          const { provider, bucket, region, endpoint, accessKeyId, accessKeySecret, enabled } = body;
+          const { provider, bucket, region, endpoint, accessKeyId, accessKeySecret, enabled, retentionDays } = body;
           
           if (provider !== undefined && !['oss', 's3', 'minio'].includes(provider)) {
             throw new Error('provider 必须是 oss、s3 或 minio');
@@ -2377,6 +2377,9 @@ async function requestHandler(req, res) {
           if (enabled !== undefined && typeof enabled !== 'boolean') {
             throw new Error('enabled 必须是布尔值');
           }
+          if (retentionDays !== undefined && (typeof retentionDays !== 'number' || retentionDays < 1 || retentionDays > 365)) {
+            throw new Error('retentionDays 必须是 1-365 之间的数字');
+          }
 
           const currentConfig = cloudStorage.getCloudConfig();
           const newConfig = {
@@ -2387,7 +2390,8 @@ async function requestHandler(req, res) {
             endpoint: endpoint !== undefined ? endpoint : currentConfig.endpoint,
             accessKeyId: accessKeyId !== undefined ? accessKeyId : currentConfig.accessKeyId,
             accessKeySecret: accessKeySecret !== undefined ? accessKeySecret : currentConfig.accessKeySecret,
-            enabled: enabled !== undefined ? enabled : currentConfig.enabled
+            enabled: enabled !== undefined ? enabled : currentConfig.enabled,
+            retentionDays: retentionDays !== undefined ? retentionDays : (currentConfig.retentionDays || 30)
           };
 
           cloudStorage.saveCloudConfig(newConfig);
@@ -2397,10 +2401,38 @@ async function requestHandler(req, res) {
             changedBy: currentUser.name,
             provider: newConfig.provider,
             bucket: newConfig.bucket,
-            enabled: newConfig.enabled
+            enabled: newConfig.enabled,
+            retentionDays: newConfig.retentionDays
           }, currentUser.name, currentUser.id);
           
           return json(res, 200, { success: true, config: newConfig });
+        }
+
+        // Cloud Backup Lifecycle Management
+        if (req.method === 'GET' && adminPath === 'backup/cloud/lifecycle') {
+          const stats = await scheduledBackup.getLifecycleStats();
+          return json(res, 200, stats);
+        }
+
+        if (req.method === 'POST' && adminPath === 'backup/cloud/cleanup') {
+          const result = await scheduledBackup.executeCloudBackupCleanup();
+          
+          if (result && result.success) {
+            await addAuditEvent('cloud_backup.cleanup', {
+              scannedCount: result.scannedCount,
+              deletedCount: result.deletedCount,
+              deletedSize: result.deletedSize,
+              retentionDays: result.retentionDays,
+              triggeredBy: 'manual'
+            }, currentUser.name, currentUser.id);
+          } else if (result && !result.success) {
+            await addAuditEvent('cloud_backup.cleanup_failed', {
+              error: result.error,
+              triggeredBy: 'manual'
+            }, currentUser.name, currentUser.id);
+          }
+          
+          return json(res, 200, result || { success: false, error: 'Cleanup function not available' });
         }
 
         // Cloud Backup Operations
@@ -3331,6 +3363,9 @@ ensureData().then(async () => {
 
   scheduledBackup.setBackupCreateFunction(createBackupData);
   scheduledBackup.setCloudUploadFunction(cloudStorage.uploadFile);
+  scheduledBackup.setCloudDeleteFunction(cloudStorage.deleteFile);
+  scheduledBackup.setCloudListFunction(cloudStorage.listFiles);
+  scheduledBackup.setCloudGetConfigFunction(cloudStorage.getCloudConfig);
   await scheduledBackup.init();
   console.log('Scheduled backup initialized');
 

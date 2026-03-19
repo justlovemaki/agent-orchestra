@@ -3125,3 +3125,29 @@ button.ghost.tiny {
   display: block;
   margin-bottom: 4px;
 }
+
+.cloud-lifecycle-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.lifecycle-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lifecycle-stat .stat-label {
+  font-size: 11px;
+}
+
+.lifecycle-stat .stat-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}

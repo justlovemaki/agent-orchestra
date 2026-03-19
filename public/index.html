@@ -1043,6 +1043,13 @@
                   <input type="password" id="cloudStorageAccessKeySecret" class="filter-input" placeholder="••••••••" />
                 </label>
               </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">云端备份保留天数</span>
+                  <input type="number" id="cloudStorageRetentionDays" class="filter-input" min="1" max="365" value="30" />
+                  <span class="muted small">自动清理超过此天数的云端备份</span>
+                </label>
+              </div>
             </div>
             <div class="scheduled-backup-actions">
               <button id="saveCloudStorageConfigBtn" class="primary">保存配置</button>
@@ -1060,6 +1067,32 @@
           <div id="cloudBackupList" class="backup-history-list">
             <div class="muted small">暂无云端备份</div>
           </div>
+        </div>
+
+        <div class="backup-section">
+          <h4>云端备份生命周期</h4>
+          <div class="cloud-lifecycle-stats">
+            <div class="lifecycle-stat">
+              <span class="stat-label muted small">文件数量</span>
+              <span id="cloudBackupFileCount" class="stat-value">—</span>
+            </div>
+            <div class="lifecycle-stat">
+              <span class="stat-label muted small">总大小</span>
+              <span id="cloudBackupTotalSize" class="stat-value">—</span>
+            </div>
+            <div class="lifecycle-stat">
+              <span class="stat-label muted small">保留天数</span>
+              <span id="cloudBackupRetentionDays" class="stat-value">30</span>
+            </div>
+            <div class="lifecycle-stat">
+              <span class="stat-label muted small">下次自动清理</span>
+              <span id="nextCleanupTime" class="stat-value">—</span>
+            </div>
+          </div>
+          <div class="scheduled-backup-actions" style="margin-top: 15px;">
+            <button id="runCleanupNowBtn" class="ghost">立即清理过期备份</button>
+          </div>
+          <div id="cleanupMsg" class="form-msg" style="margin-top: 10px;"></div>
         </div>
       </div>
       <div id="backupMsg" class="form-msg"></div>

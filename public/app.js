@@ -2778,6 +2778,12 @@ function auditEventTypeLabel(type) {
     'scheduled_backup.failed': '定时备份失败',
     'scheduled_backup.config_changed': '定时备份配置变更',
     'scheduled_backup.notified': '定时备份通知',
+    'cloud_backup.uploaded': '云端备份上传',
+    'cloud_backup.downloaded': '云端备份下载',
+    'cloud_backup.deleted': '云端备份删除',
+    'cloud_backup.restored': '云端备份恢复',
+    'cloud_backup.cleanup': '云端备份清理',
+    'cloud_backup.cleanup_failed': '云端备份清理失败',
     'preset_admin_deleted': '预设删除',
     'preset_permissions_changed': '权限变更',
     'system': '系统事件'
@@ -3963,6 +3969,7 @@ const saveCloudStorageConfigBtn = document.getElementById('saveCloudStorageConfi
 const testCloudStorageBtn = document.getElementById('testCloudStorageBtn');
 const createCloudBackupBtn = document.getElementById('createCloudBackupBtn');
 const refreshCloudBackupListBtn = document.getElementById('refreshCloudBackupListBtn');
+const runCleanupNowBtn = document.getElementById('runCleanupNowBtn');
 const cloudBackupList = document.getElementById('cloudBackupList');
 
 let selectedBackupFile = null;
@@ -3975,6 +3982,7 @@ function showBackupModal() {
   loadScheduledBackupHistory();
   loadCloudStorageConfig();
   loadCloudBackupList();
+  loadLifecycleStats();
   backupModal.classList.remove('hidden');
 }
 
@@ -4293,6 +4301,10 @@ async function loadCloudStorageConfig() {
     cloudStorageEndpoint.value = res.endpoint || '';
     cloudStorageAccessKeyId.value = res.accessKeyId || '';
     cloudStorageAccessKeySecret.value = '';
+    const retentionDaysInput = document.getElementById('cloudStorageRetentionDays');
+    if (retentionDaysInput) {
+      retentionDaysInput.value = res.retentionDays || 30;
+    }
   } catch (err) {
     console.error('加载云存储配置失败:', err);
   }
@@ -4300,6 +4312,7 @@ async function loadCloudStorageConfig() {
 
 async function handleSaveCloudStorageConfig() {
   const msg = document.getElementById('backupMsg');
+  const retentionDaysInput = document.getElementById('cloudStorageRetentionDays');
   try {
     const config = {
       enabled: cloudStorageEnabled.checked,
@@ -4308,11 +4321,18 @@ async function handleSaveCloudStorageConfig() {
       region: cloudStorageRegion.value,
       endpoint: cloudStorageEndpoint.value,
       accessKeyId: cloudStorageAccessKeyId.value,
-      accessKeySecret: cloudStorageAccessKeySecret.value
+      accessKeySecret: cloudStorageAccessKeySecret.value,
+      retentionDays: parseInt(retentionDaysInput.value, 10) || 30
     };
 
     if (config.enabled && (!config.bucket || !config.accessKeyId || !config.accessKeySecret)) {
       msg.textContent = '启用云存储时，存储桶名称、Access Key ID 和 Secret 是必需的';
+      msg.className = 'form-msg error';
+      return;
+    }
+
+    if (config.retentionDays < 1 || config.retentionDays > 365) {
+      msg.textContent = '保留天数必须在 1-365 之间';
       msg.className = 'form-msg error';
       return;
     }
@@ -4329,6 +4349,7 @@ async function handleSaveCloudStorageConfig() {
     
     if (config.enabled) {
       loadCloudBackupList();
+      loadLifecycleStats();
     }
   } catch (err) {
     msg.textContent = '保存配置失败：' + err.message;
@@ -4444,6 +4465,62 @@ async function restoreCloudBackup(cloudKey) {
 
 window.restoreCloudBackup = restoreCloudBackup;
 
+async function loadLifecycleStats() {
+  try {
+    const res = await fetchJson('/api/admin/backup/cloud/lifecycle');
+    const fileCountEl = document.getElementById('cloudBackupFileCount');
+    const totalSizeEl = document.getElementById('cloudBackupTotalSize');
+    const retentionDaysEl = document.getElementById('cloudBackupRetentionDays');
+    const nextCleanupEl = document.getElementById('nextCleanupTime');
+    
+    if (fileCountEl) {
+      fileCountEl.textContent = res.cloudStats?.fileCount ?? '—';
+    }
+    if (totalSizeEl) {
+      totalSizeEl.textContent = res.cloudStats?.totalSize ? formatBytes(res.cloudStats.totalSize) : '—';
+    }
+    if (retentionDaysEl) {
+      retentionDaysEl.textContent = res.retentionDays || 30;
+      const retentionInput = document.getElementById('cloudStorageRetentionDays');
+      if (retentionInput) {
+        retentionInput.value = res.retentionDays || 30;
+      }
+    }
+    if (nextCleanupEl) {
+      nextCleanupEl.textContent = res.nextCleanupAt ? new Date(res.nextCleanupAt).toLocaleString('zh-CN') : '—';
+    }
+  } catch (err) {
+    console.error('加载生命周期统计失败:', err);
+  }
+}
+
+async function handleRunCleanupNow() {
+  const msg = document.getElementById('cleanupMsg') || document.getElementById('backupMsg');
+  try {
+    msg.textContent = '正在清理过期备份...';
+    msg.className = 'form-msg';
+    runCleanupNowBtn.disabled = true;
+    
+    const res = await fetchJson('/api/admin/backup/cloud/cleanup', { method: 'POST' });
+    
+    if (res.success) {
+      msg.textContent = `清理完成：扫描 ${res.scannedCount} 个文件，删除 ${res.deletedCount} 个，释放 ${formatBytes(res.deletedSize)}`;
+      msg.className = 'form-msg success';
+      loadLifecycleStats();
+      loadCloudBackupList();
+    } else {
+      msg.textContent = '清理失败：' + (res.error || '未知错误');
+      msg.className = 'form-msg error';
+    }
+  } catch (err) {
+    msg.textContent = '清理失败：' + err.message;
+    msg.className = 'form-msg error';
+  } finally {
+    runCleanupNowBtn.disabled = false;
+    setTimeout(() => { msg.textContent = ''; }, 5000);
+  }
+}
+
 async function handleSaveScheduledBackupConfig() {
   const channels = [];
   if (notifyFeishu.checked) channels.push('feishu');
@@ -4530,6 +4607,7 @@ saveCloudStorageConfigBtn.addEventListener('click', handleSaveCloudStorageConfig
 testCloudStorageBtn.addEventListener('click', handleTestCloudStorage);
 createCloudBackupBtn.addEventListener('click', handleCreateCloudBackup);
 refreshCloudBackupListBtn.addEventListener('click', loadCloudBackupList);
+runCleanupNowBtn.addEventListener('click', handleRunCleanupNow);
 
 const openBackupModalBtn = document.getElementById('openBackupModalBtn');
 if (openBackupModalBtn) {
