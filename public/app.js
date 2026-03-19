@@ -4016,32 +4016,316 @@ async function loadBackupStatus() {
   }
 }
 
+let selectedBackupIds = [];
+let currentBackupVersions = [];
+let currentTagBackupId = null;
+let pendingVersionTags = [];
+
 async function loadBackupHistory() {
   try {
-    const res = await fetchJson('/api/audit?eventType=backup.created&limit=10');
+    const res = await fetchJson('/api/audit?eventType=backup.created&limit=20');
+    const versionsRes = await fetchJson('/api/admin/backup/versions').catch(() => ({ backups: [] }));
     const list = document.getElementById('backupHistoryList');
+    const actionsDiv = document.getElementById('backupHistoryActions');
+
+    currentBackupVersions = versionsRes.backups || [];
+
     if (!res.events || res.events.length === 0) {
       list.innerHTML = '<div class="muted small">暂无备份记录</div>';
+      actionsDiv.classList.add('hidden');
       return;
     }
+
+    actionsDiv.classList.remove('hidden');
+
     list.innerHTML = res.events.map(e => {
       const size = e.details.size ? formatBytes(e.details.size) : '—';
       const taskCount = e.details.taskCount || 0;
       const userCount = e.details.userCount || 0;
+      const backupId = e.details.backupId || '';
+      const versionName = e.details.versionName || '';
+      const versionInfo = currentBackupVersions.find(v => v.id === backupId) || {};
+      const versionTags = versionInfo.versionTags || e.details.versionTags || [];
+
       return `
-        <div class="backup-history-item">
+        <div class="backup-history-item" data-backup-id="${backupId}">
+          <div class="backup-history-checkbox">
+            <input type="checkbox" class="backup-select-checkbox" data-backup-id="${backupId}" data-backup-at="${e.timestamp}" />
+          </div>
           <div class="backup-history-info">
-            <span class="backup-history-time">${new Date(e.timestamp).toLocaleString('zh-CN')}</span>
-            <span class="muted">${e.details.mode === 'incremental' ? '增量' : '完整'}备份</span>
+            <div class="backup-history-header">
+              <span class="backup-history-time">${new Date(e.timestamp).toLocaleString('zh-CN')}</span>
+              <span class="muted">${e.details.mode === 'incremental' ? '增量' : '完整'}备份</span>
+              ${versionName ? `<span class="backup-version-name">${escapeHtml(versionName)}</span>` : ''}
+            </div>
+            <div class="backup-history-tags">
+              ${versionTags.map(tag => `<span class="backup-tag">${escapeHtml(tag)}</span>`).join('')}
+            </div>
           </div>
           <div class="backup-history-meta muted small">
             大小: ${size} | 任务: ${taskCount} | 用户: ${userCount}
           </div>
+          <div class="backup-history-actions">
+            <button class="ghost tiny add-tag-btn" data-backup-id="${backupId}" title="添加标签">🏷️</button>
+          </div>
         </div>
       `;
     }).join('');
+
+    document.querySelectorAll('.backup-select-checkbox').forEach(cb => {
+      cb.addEventListener('change', updateBackupSelection);
+    });
+
+    document.querySelectorAll('.add-tag-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const backupId = btn.dataset.backupId;
+        showVersionTagModal(backupId);
+      });
+    });
+
+    updateBackupSelection();
   } catch (err) {
     console.error('加载备份历史失败:', err);
+  }
+}
+
+function updateBackupSelection() {
+  const checkboxes = document.querySelectorAll('.backup-select-checkbox:checked');
+  selectedBackupIds = Array.from(checkboxes).map(cb => cb.dataset.backupId);
+
+  const compareBtn = document.getElementById('compareVersionsBtn');
+  const selectiveBtn = document.getElementById('selectiveRestoreBtn');
+
+  if (selectedBackupIds.length >= 2) {
+    compareBtn.disabled = false;
+    compareBtn.textContent = `版本对比 (${selectedBackupIds.length})`;
+  } else {
+    compareBtn.disabled = true;
+    compareBtn.textContent = '版本对比';
+  }
+
+  if (selectedBackupIds.length === 1) {
+    selectiveBtn.disabled = false;
+  } else {
+    selectiveBtn.disabled = true;
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showVersionTagModal(backupId) {
+  currentTagBackupId = backupId;
+  const versionInfo = currentBackupVersions.find(v => v.id === backupId) || {};
+
+  document.getElementById('versionTagName').value = versionInfo.versionName || '';
+  pendingVersionTags = [...(versionInfo.versionTags || [])];
+  updateVersionTagsPreview();
+  document.getElementById('versionTagModal').classList.remove('hidden');
+  document.getElementById('versionTagMsg').textContent = '';
+}
+
+function updateVersionTagsPreview() {
+  const preview = document.getElementById('versionTagsPreview');
+  preview.innerHTML = pendingVersionTags.map((tag, idx) => `
+    <span class="version-tag-chip">
+      ${escapeHtml(tag)}
+      <button class="tag-remove-btn" data-idx="${idx}">&times;</button>
+    </span>
+  `).join('');
+
+  preview.querySelectorAll('.tag-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      pendingVersionTags.splice(idx, 1);
+      updateVersionTagsPreview();
+    });
+  });
+}
+
+async function handleSaveVersionTag() {
+  if (!currentTagBackupId) return;
+
+  const versionName = document.getElementById('versionTagName').value.trim() || null;
+  const msgEl = document.getElementById('versionTagMsg');
+  const saveBtn = document.getElementById('saveVersionTagBtn');
+
+  saveBtn.disabled = true;
+  msgEl.textContent = '正在保存...';
+
+  try {
+    const res = await fetchJson(`/api/admin/backup/${currentTagBackupId}/tag`, {
+      method: 'POST',
+      body: JSON.stringify({
+        versionName,
+        versionTags: pendingVersionTags
+      })
+    });
+
+    msgEl.textContent = '保存成功';
+    msgEl.style.color = 'var(--color-success, #10b981)';
+
+    setTimeout(() => {
+      document.getElementById('versionTagModal').classList.add('hidden');
+      loadBackupHistory();
+    }, 1000);
+  } catch (err) {
+    msgEl.textContent = err.message;
+    msgEl.style.color = 'var(--color-error, #ef4444)';
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function handleVersionCompare() {
+  if (selectedBackupIds.length < 2) return;
+
+  const fromId = selectedBackupIds[0];
+  const toId = selectedBackupIds[1];
+
+  const modal = document.getElementById('versionCompareModal');
+  const content = document.getElementById('versionCompareContent');
+
+  modal.classList.remove('hidden');
+  content.innerHTML = '<div class="muted small">正在加载对比数据...</div>';
+
+  try {
+    const res = await fetchJson(`/api/admin/backup/compare?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`);
+
+    const fromDate = new Date(res.from.backupAt).toLocaleString('zh-CN');
+    const toDate = new Date(res.to.backupAt).toLocaleString('zh-CN');
+
+    const formatChange = (change) => {
+      if (change > 0) return `<span class="diff-added">+${change}</span>`;
+      if (change < 0) return `<span class="diff-removed">${change}</span>`;
+      return '<span class="diff-unchanged">0</span>';
+    };
+
+    const DATA_TYPE_LABELS = {
+      users: '用户',
+      tasks: '任务',
+      templates: '模板',
+      'agent-groups': 'Agent 分组',
+      'shared-presets': '共享预设',
+      'user-presets': '用户预设',
+      'user-templates': '用户模板',
+      workflows: '工作流',
+      'workflow-runs': '工作流执行记录'
+    };
+
+    let diffTable = '';
+    for (const [type, diff] of Object.entries(res.diff)) {
+      const label = DATA_TYPE_LABELS[type] || type;
+      diffTable += `
+        <tr>
+          <td>${label}</td>
+          <td>${diff.from}</td>
+          <td>${diff.to}</td>
+          <td>${formatChange(diff.to - diff.from)}</td>
+        </tr>
+      `;
+    }
+
+    content.innerHTML = `
+      <div class="version-compare-header">
+        <div class="compare-version">
+          <h4>版本 1 (旧)</h4>
+          <p class="muted small">${fromDate}</p>
+          <p class="muted small">${res.from.backupMode === 'incremental' ? '增量' : '完整'}备份</p>
+          ${res.from.versionName ? `<p>名称: ${escapeHtml(res.from.versionName)}</p>` : ''}
+          ${res.from.versionTags?.length ? `<p>标签: ${res.from.versionTags.map(t => `<span class="backup-tag">${escapeHtml(t)}</span>`).join('')}</p>` : ''}
+        </div>
+        <div class="compare-arrow">→</div>
+        <div class="compare-version">
+          <h4>版本 2 (新)</h4>
+          <p class="muted small">${toDate}</p>
+          <p class="muted small">${res.to.backupMode === 'incremental' ? '增量' : '完整'}备份</p>
+          ${res.to.versionName ? `<p>名称: ${escapeHtml(res.to.versionName)}</p>` : ''}
+          ${res.to.versionTags?.length ? `<p>标签: ${res.to.versionTags.map(t => `<span class="backup-tag">${escapeHtml(t)}</span>`).join('')}</p>` : ''}
+        </div>
+      </div>
+      <h4>数据差异统计</h4>
+      <table class="version-compare-table">
+        <thead>
+          <tr>
+            <th>数据类型</th>
+            <th>旧版本</th>
+            <th>新版本</th>
+            <th>变化</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${diffTable}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    content.innerHTML = `<div class="error-text">加载失败: ${err.message}</div>`;
+  }
+}
+
+function showSelectiveRestoreModal() {
+  if (selectedBackupIds.length !== 1) return;
+
+  document.getElementById('selectiveRestoreModal').classList.remove('hidden');
+  document.getElementById('selectiveRestoreMsg').textContent = '';
+  document.querySelectorAll('input[name="selectiveType"]').forEach(cb => cb.checked = false);
+  document.querySelector('input[name="selectiveRestoreMode"][value="merge"]').checked = true;
+  document.getElementById('selectiveAutoSnapshot').checked = true;
+  updateSelectiveRestoreBtn();
+}
+
+function updateSelectiveRestoreBtn() {
+  const checked = document.querySelectorAll('input[name="selectiveType"]:checked');
+  document.getElementById('confirmSelectiveRestore').disabled = checked.length === 0;
+}
+
+async function handleSelectiveRestore() {
+  const selectedTypes = Array.from(document.querySelectorAll('input[name="selectiveType"]:checked')).map(cb => cb.value);
+  const restoreMode = document.querySelector('input[name="selectiveRestoreMode"]:checked').value;
+  const autoSnapshot = document.getElementById('selectiveAutoSnapshot').checked;
+  const msgEl = document.getElementById('selectiveRestoreMsg');
+  const confirmBtn = document.getElementById('confirmSelectiveRestore');
+
+  if (selectedTypes.length === 0) {
+    msgEl.textContent = '请至少选择一个数据类型';
+    return;
+  }
+
+  if (!confirm(`确定要恢复以下数据类型吗？\n${selectedTypes.join(', ')}\n\n恢复模式: ${restoreMode === 'merge' ? '合并（保留现有数据）' : '覆盖（清空现有数据）'}`)) {
+    return;
+  }
+
+  confirmBtn.disabled = true;
+  msgEl.textContent = '正在恢复数据...';
+
+  try {
+    const res = await fetchJson('/api/admin/restore/selective', {
+      method: 'POST',
+      body: JSON.stringify({
+        dataTypes: selectedTypes,
+        restoreMode,
+        autoSnapshot
+      })
+    });
+
+    if (res.success) {
+      msgEl.textContent = `恢复成功！已恢复: ${Object.entries(res.result.restored).map(([k, v]) => `${k}: ${v}`).join(', ')}`;
+      msgEl.style.color = 'var(--color-success, #10b981)';
+      setTimeout(() => {
+        document.getElementById('selectiveRestoreModal').classList.add('hidden');
+        loadBackupHistory();
+      }, 2000);
+    }
+  } catch (err) {
+    msgEl.textContent = err.message;
+    msgEl.style.color = 'var(--color-error, #ef4444)';
+  } finally {
+    confirmBtn.disabled = false;
   }
 }
 
@@ -4211,6 +4495,53 @@ createBackupBtn.addEventListener('click', handleCreateBackup);
 backupFileInput.addEventListener('change', handleBackupFileSelect);
 clearBackupFile.addEventListener('click', clearBackupFileSelection);
 restoreBackupBtn.addEventListener('click', handleRestoreBackup);
+
+document.getElementById('closeVersionCompareModal').addEventListener('click', () => {
+  document.getElementById('versionCompareModal').classList.add('hidden');
+});
+document.getElementById('versionCompareModal').querySelector('.modal-backdrop').addEventListener('click', () => {
+  document.getElementById('versionCompareModal').classList.add('hidden');
+});
+
+document.getElementById('closeSelectiveRestoreModal').addEventListener('click', () => {
+  document.getElementById('selectiveRestoreModal').classList.add('hidden');
+});
+document.getElementById('cancelSelectiveRestore').addEventListener('click', () => {
+  document.getElementById('selectiveRestoreModal').classList.add('hidden');
+});
+document.getElementById('selectiveRestoreModal').querySelector('.modal-backdrop').addEventListener('click', () => {
+  document.getElementById('selectiveRestoreModal').classList.add('hidden');
+});
+document.querySelectorAll('input[name="selectiveType"]').forEach(cb => {
+  cb.addEventListener('change', updateSelectiveRestoreBtn);
+});
+document.getElementById('confirmSelectiveRestore').addEventListener('click', handleSelectiveRestore);
+
+document.getElementById('closeVersionTagModal').addEventListener('click', () => {
+  document.getElementById('versionTagModal').classList.add('hidden');
+});
+document.getElementById('cancelVersionTagBtn').addEventListener('click', () => {
+  document.getElementById('versionTagModal').classList.add('hidden');
+});
+document.getElementById('versionTagModal').querySelector('.modal-backdrop').addEventListener('click', () => {
+  document.getElementById('versionTagModal').classList.add('hidden');
+});
+document.getElementById('saveVersionTagBtn').addEventListener('click', handleSaveVersionTag);
+document.getElementById('versionTagInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const input = e.target;
+    const tag = input.value.trim();
+    if (tag && !pendingVersionTags.includes(tag)) {
+      pendingVersionTags.push(tag);
+      updateVersionTagsPreview();
+      input.value = '';
+    }
+  }
+});
+
+document.getElementById('compareVersionsBtn').addEventListener('click', handleVersionCompare);
+document.getElementById('selectiveRestoreBtn').addEventListener('click', showSelectiveRestoreModal);
 
 async function loadScheduledBackupConfig() {
   try {

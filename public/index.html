@@ -878,8 +878,128 @@
 
         <div class="backup-section">
           <h4>备份历史</h4>
+          <div id="backupHistoryActions" class="backup-history-actions hidden">
+            <button id="compareVersionsBtn" class="ghost small" disabled>版本对比</button>
+            <button id="selectiveRestoreBtn" class="ghost small" disabled>选择性恢复</button>
+          </div>
           <div id="backupHistoryList" class="backup-history-list">
             <div class="muted small">暂无备份记录</div>
+          </div>
+        </div>
+
+        <div id="versionCompareModal" class="modal-backdrop hidden">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>版本对比</h3>
+              <button class="modal-close" id="closeVersionCompareModal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div id="versionCompareContent" class="version-compare-content">
+                <div class="muted small">正在加载对比数据...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="selectiveRestoreModal" class="modal-backdrop hidden">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>选择性恢复</h3>
+              <button class="modal-close" id="closeSelectiveRestoreModal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div id="selectiveRestoreContent" class="selective-restore-content">
+                <p class="muted small">选择要恢复的数据类型：</p>
+                <div id="dataTypeCheckboxes" class="data-type-checkboxes">
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="users" />
+                    <span>用户 (users)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="tasks" />
+                    <span>任务 (tasks)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="templates" />
+                    <span>模板 (templates)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="agent-groups" />
+                    <span>Agent 分组 (agent-groups)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="shared-presets" />
+                    <span>共享预设 (shared-presets)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="user-presets" />
+                    <span>用户预设 (user-presets)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="user-templates" />
+                    <span>用户模板 (user-templates)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="workflows" />
+                    <span>工作流 (workflows)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" name="selectiveType" value="workflow-runs" />
+                    <span>工作流执行记录 (workflow-runs)</span>
+                  </label>
+                </div>
+                <div class="restore-options" style="margin-top: 15px;">
+                  <label class="radio-label">
+                    <input type="radio" name="selectiveRestoreMode" value="merge" checked />
+                    <span>合并模式</span>
+                    <span class="muted small">保留现有数据，仅添加备份中的新数据</span>
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="selectiveRestoreMode" value="overwrite" />
+                    <span>覆盖模式</span>
+                    <span class="muted small">清空现有数据，完全使用备份数据（危险）</span>
+                  </label>
+                </div>
+                <label class="checkbox-label" style="margin-top: 15px;">
+                  <input type="checkbox" id="selectiveAutoSnapshot" checked />
+                  <span>恢复前自动创建当前数据快照</span>
+                </label>
+              </div>
+              <div id="selectiveRestoreMsg" class="form-msg"></div>
+              <div class="modal-actions">
+                <button id="confirmSelectiveRestore" class="warning" disabled>确认恢复</button>
+                <button id="cancelSelectiveRestore" class="ghost">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="versionTagModal" class="modal-backdrop hidden">
+          <div class="modal-content modal-small">
+            <div class="modal-header">
+              <h3>添加版本标签</h3>
+              <button class="modal-close" id="closeVersionTagModal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label>
+                  <span class="field-label">版本名称（可选）</span>
+                  <input type="text" id="versionTagName" class="filter-input" placeholder="如: before-upgrade-v2.0" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">版本标签</span>
+                  <input type="text" id="versionTagInput" class="filter-input" placeholder="输入标签后按回车添加" />
+                </label>
+                <div id="versionTagsPreview" class="version-tags-preview"></div>
+              </div>
+              <div id="versionTagMsg" class="form-msg"></div>
+              <div class="modal-actions">
+                <button id="saveVersionTagBtn" class="primary">保存</button>
+                <button id="cancelVersionTagBtn" class="ghost">取消</button>
+              </div>
+            </div>
           </div>
         </div>
 

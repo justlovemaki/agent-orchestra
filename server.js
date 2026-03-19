@@ -1777,6 +1777,8 @@ async function requestHandler(req, res) {
         }
 
         const BACKUP_METADATA_FILE = path.join(DATA_DIR, 'backup-metadata.json');
+        const BACKUP_VERSIONS_FILE = path.join(DATA_DIR, 'backup-versions.json');
+        const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
         async function getBackupMetadata() {
           try {
@@ -1791,8 +1793,67 @@ async function requestHandler(req, res) {
           await fsp.writeFile(BACKUP_METADATA_FILE, JSON.stringify(meta, null, 2) + '\n');
         }
 
+        async function getBackupVersions() {
+          try {
+            const data = await fsp.readFile(BACKUP_VERSIONS_FILE, 'utf8');
+            return JSON.parse(data);
+          } catch {
+            return { backups: [] };
+          }
+        }
+
+        async function saveBackupVersions(versions) {
+          await fsp.writeFile(BACKUP_VERSIONS_FILE, JSON.stringify(versions, null, 2) + '\n');
+        }
+
+        async function getBackupVersion(backupId) {
+          const versions = await getBackupVersions();
+          return versions.backups.find(b => b.id === backupId);
+        }
+
+        async function updateBackupVersion(backupId, updates) {
+          const versions = await getBackupVersions();
+          const idx = versions.backups.findIndex(b => b.id === backupId);
+          if (idx >= 0) {
+            versions.backups[idx] = { ...versions.backups[idx], ...updates, updatedAt: Date.now() };
+          } else {
+            versions.backups.push({
+              id: backupId,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              ...updates
+            });
+          }
+          await saveBackupVersions(versions);
+          return versions.backups[idx];
+        }
+
+        async function registerBackupVersion(backupId, metadata) {
+          const versions = await getBackupVersions();
+          const existingIdx = versions.backups.findIndex(b => b.id === backupId);
+          const entry = {
+            id: backupId,
+            backupAt: metadata.backupAt,
+            backupMode: metadata.backupMode,
+            versionName: metadata.versionName || null,
+            versionTags: metadata.versionTags || [],
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          if (existingIdx >= 0) {
+            versions.backups[existingIdx] = entry;
+          } else {
+            versions.backups.unshift(entry);
+          }
+          if (versions.backups.length > 100) {
+            versions.backups = versions.backups.slice(0, 100);
+          }
+          await saveBackupVersions(versions);
+          return entry;
+        }
+
         // Helper function to create backup data
-        async function createBackupData(mode, user) {
+        async function createBackupData(mode, user, options = {}) {
           const now = Date.now();
           const timestamp = new Date(now).toISOString().replace(/[:.]/g, '-');
           
@@ -1821,12 +1882,20 @@ async function requestHandler(req, res) {
             'audit-events': auditEvents
           };
 
-          return {
+          const backupData = {
             version: '1.0',
             backupAt: now,
             backupMode: mode,
+            versionName: options.versionName || null,
+            versionTags: options.versionTags || [],
             data: dataToBackup
           };
+
+          const backupId = `backup-${timestamp}`;
+          await registerBackupVersion(backupId, backupData);
+          backupData.id = backupId;
+
+          return backupData;
         }
 
         // Helper function to perform restore
@@ -1938,65 +2007,13 @@ async function requestHandler(req, res) {
 
         if (req.method === 'GET' && adminPath === 'backup') {
           const mode = parsed.query.mode || 'full';
-          const now = Date.now();
-          const timestamp = new Date(now).toISOString().replace(/[:.]/g, '-');
-
-          const users = await loadUsers();
-          const tokens = await loadTokens();
-          const tasks = await readTasks();
-          const templates = await readTemplates();
-          const agentGroups = await readAgentGroups();
-          const sharedPresets = await readSharedPresets();
-          const userPresets = await readUserPresets();
-          const userTemplates = await readUserTemplates();
-          const workflows = await loadWorkflows();
-          const workflowRuns = await readWorkflowRuns();
-          const auditEvents = await queryAuditEvents({});
-
-          let dataToBackup;
-          if (mode === 'incremental') {
-            const recentTasks = tasks.filter(t => !t.id.startsWith('temp-') && t.createdAt > now - 7 * 24 * 60 * 60 * 1000);
-            const recentAuditEvents = auditEvents.filter(e => e.timestamp > now - 7 * 24 * 60 * 60 * 1000);
-            dataToBackup = {
-              users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
-              tokens: {},
-              tasks: recentTasks,
-              templates,
-              'agent-groups': agentGroups,
-              'shared-presets': sharedPresets,
-              'user-presets': userPresets,
-              'user-templates': userTemplates,
-              workflows,
-              'workflow-runs': workflowRuns,
-              'audit-events': recentAuditEvents
-            };
-          } else {
-            dataToBackup = {
-              users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
-              tokens: {},
-              tasks: tasks.filter(t => !t.id.startsWith('temp-')),
-              templates,
-              'agent-groups': agentGroups,
-              'shared-presets': sharedPresets,
-              'user-presets': userPresets,
-              'user-templates': userTemplates,
-              workflows,
-              'workflow-runs': workflowRuns,
-              'audit-events': auditEvents
-            };
-          }
-
-          const backupData = {
-            version: '1.0',
-            backupAt: now,
-            backupMode: mode,
-            data: dataToBackup
-          };
+          const versionName = parsed.query.name || null;
+          const backupData = await createBackupData(mode, currentUser, { versionName });
 
           const backupJson = JSON.stringify(backupData, null, 2);
           const backupSize = Buffer.byteLength(backupJson, 'utf8');
           const meta = await getBackupMetadata();
-          meta.lastBackupAt = now;
+          meta.lastBackupAt = backupData.backupAt;
           meta.lastBackupSize = backupSize;
           meta.backupCount = (meta.backupCount || 0) + 1;
           await saveBackupMetadata(meta);
@@ -2004,14 +2021,16 @@ async function requestHandler(req, res) {
           await addAuditEvent('backup.created', {
             mode,
             size: backupSize,
-            timestamp,
-            taskCount: dataToBackup.tasks.length,
-            userCount: dataToBackup.users.length
+            timestamp: new Date(backupData.backupAt).toISOString().replace(/[:.]/g, '-'),
+            taskCount: backupData.data.tasks.length,
+            userCount: backupData.data.users.length,
+            versionName,
+            backupId: backupData.id
           }, currentUser.name, currentUser.id);
 
           res.writeHead(200, {
             'Content-Type': 'application/json; charset=utf-8',
-            'Content-Disposition': `attachment; filename="agent-orchestra-backup-${timestamp}.json"`
+            'Content-Disposition': `attachment; filename="agent-orchestra-backup-${new Date(backupData.backupAt).toISOString().slice(0, 10)}.json"`
           });
           return res.end(backupJson);
         }
@@ -2237,6 +2256,406 @@ async function requestHandler(req, res) {
             autoSnapshotCreated: autoSnapshot,
             result: restoreResult
           });
+        }
+
+        // Version Tag API - Add/update version tag
+        if (req.method === 'POST' && adminPath.startsWith('backup/') && adminPath.endsWith('/tag')) {
+          const backupId = adminPath.replace(/^\/api\/admin\/backup\//, '').replace('/tag', '');
+          if (!backupId) {
+            throw new Error('缺少备份 ID 参数');
+          }
+          const body = await readJson(req);
+          const { versionName, versionTags, action = 'set' } = body;
+
+          const existing = await getBackupVersion(backupId);
+          if (!existing) {
+            throw new Error(`备份版本 ${backupId} 不存在`);
+          }
+
+          let updates = { ...existing };
+          if (action === 'remove-tag' && versionTags) {
+            updates.versionTags = (existing.versionTags || []).filter(t => t !== versionTags);
+          } else if (action === 'clear-name') {
+            updates.versionName = null;
+          } else {
+            if (versionName !== undefined) {
+              updates.versionName = versionName;
+            }
+            if (versionTags !== undefined) {
+              if (Array.isArray(versionTags)) {
+                updates.versionTags = versionTags;
+              } else if (typeof versionTags === 'string') {
+                const currentTags = existing.versionTags || [];
+                if (!currentTags.includes(versionTags)) {
+                  updates.versionTags = [...currentTags, versionTags];
+                }
+              }
+            }
+          }
+
+          await updateBackupVersion(backupId, updates);
+
+          await addAuditEvent('backup.version_tagged', {
+            backupId,
+            action,
+            versionName: updates.versionName,
+            versionTags: updates.versionTags,
+            taggedBy: currentUser.name
+          }, currentUser.name, currentUser.id);
+
+          return json(res, 200, {
+            success: true,
+            backupId,
+            versionName: updates.versionName,
+            versionTags: updates.versionTags
+          });
+        }
+
+        // Backup Compare API - Compare two backup versions
+        if (req.method === 'GET' && adminPath === 'backup/compare') {
+          const fromId = parsed.query.from;
+          const toId = parsed.query.to;
+
+          if (!fromId || !toId) {
+            throw new Error('缺少 from 或 to 参数');
+          }
+
+          if (fromId === toId) {
+            throw new Error('不能比较相同的备份版本');
+          }
+
+          const fromBackup = await getBackupVersion(fromId);
+          const toBackup = await getBackupVersion(toId);
+
+          if (!fromBackup) {
+            throw new Error(`源备份版本 ${fromId} 不存在`);
+          }
+          if (!toBackup) {
+            throw new Error(`目标备份版本 ${toId} 不存在`);
+          }
+
+          const compareResult = {
+            from: {
+              id: fromBackup.id,
+              backupAt: fromBackup.backupAt,
+              backupMode: fromBackup.backupMode,
+              versionName: fromBackup.versionName,
+              versionTags: fromBackup.versionTags
+            },
+            to: {
+              id: toBackup.id,
+              backupAt: toBackup.backupAt,
+              backupMode: toBackup.backupMode,
+              versionName: toBackup.versionName,
+              versionTags: toBackup.versionTags
+            },
+            diff: {}
+          };
+
+          const DATA_TYPES = ['users', 'tasks', 'templates', 'agent-groups', 'shared-presets', 'user-presets', 'user-templates', 'workflows', 'workflow-runs'];
+
+          for (const dataType of DATA_TYPES) {
+            compareResult.diff[dataType] = {
+              from: 0,
+              to: 0,
+              added: 0,
+              removed: 0,
+              modified: 0
+            };
+          }
+
+          compareResult.diff.users.from = fromBackup.usersCount || 0;
+          compareResult.diff.users.to = toBackup.usersCount || 0;
+          compareResult.diff.tasks.from = fromBackup.tasksCount || 0;
+          compareResult.diff.tasks.to = toBackup.tasksCount || 0;
+          compareResult.diff.templates.from = fromBackup.templatesCount || 0;
+          compareResult.diff.templates.to = toBackup.templatesCount || 0;
+          compareResult.diff['agent-groups'].from = fromBackup.agentGroupsCount || 0;
+          compareResult.diff['agent-groups'].to = toBackup.agentGroupsCount || 0;
+          compareResult.diff['shared-presets'].from = fromBackup.sharedPresetsCount || 0;
+          compareResult.diff['shared-presets'].to = toBackup.sharedPresetsCount || 0;
+          compareResult.diff['user-presets'].from = fromBackup.userPresetsCount || 0;
+          compareResult.diff['user-presets'].to = toBackup.userPresetsCount || 0;
+          compareResult.diff['user-templates'].from = fromBackup.userTemplatesCount || 0;
+          compareResult.diff['user-templates'].to = toBackup.userTemplatesCount || 0;
+          compareResult.diff.workflows.from = fromBackup.workflowsCount || 0;
+          compareResult.diff.workflows.to = toBackup.workflowsCount || 0;
+          compareResult.diff['workflow-runs'].from = fromBackup.workflowRunsCount || 0;
+          compareResult.diff['workflow-runs'].to = toBackup.workflowRunsCount || 0;
+
+          for (const dataType of DATA_TYPES) {
+            compareResult.diff[dataType].added = Math.max(0, compareResult.diff[dataType].to - compareResult.diff[dataType].from);
+            compareResult.diff[dataType].removed = Math.max(0, compareResult.diff[dataType].from - compareResult.diff[dataType].to);
+          }
+
+          return json(res, 200, compareResult);
+        }
+
+        // Selective Restore API - Restore specific data types
+        if (req.method === 'POST' && adminPath === 'restore/selective') {
+          const contentType = req.headers['content-type'] || '';
+          let backupData;
+
+          if (contentType.includes('application/json')) {
+            backupData = await readJson(req);
+          } else {
+            const boundary = contentType.match(/boundary=(.+)/)?.[1];
+            if (!boundary) {
+              return json(res, 400, { error: '不支持的内容类型，请上传 JSON 文件' });
+            }
+            const body = await readBody(req);
+            const match = body.match(new RegExp(`--${boundary}[\\s\\S]*?filename="([^"]+)"[\\s\\S]*?\\r\\n\\r\\n([\\s\\S]*?)(?=\\r\\n--|--$)`));
+            if (!match) {
+              return json(res, 400, { error: '无法解析上传的文件' });
+            }
+            try {
+              backupData = JSON.parse(match[2]);
+            } catch {
+              return json(res, 400, { error: '备份文件格式错误，请上传有效的 JSON 文件' });
+            }
+          }
+
+          if (!backupData.version || !backupData.data) {
+            return json(res, 400, { error: '无效的备份文件格式，缺少必要字段' });
+          }
+
+          if (!['1.0'].includes(backupData.version)) {
+            return json(res, 400, { error: `不支持的备份版本: ${backupData.version}` });
+          }
+
+          const body = await readJson(req);
+          const { dataTypes = [], restoreMode = 'merge', autoSnapshot = true } = body;
+
+          const VALID_DATA_TYPES = ['users', 'tasks', 'templates', 'agent-groups', 'shared-presets', 'user-presets', 'user-templates', 'workflows', 'workflow-runs'];
+          const selectedTypes = Array.isArray(dataTypes) ? dataTypes.filter(t => VALID_DATA_TYPES.includes(t)) : [];
+
+          if (selectedTypes.length === 0) {
+            return json(res, 400, { error: '请至少选择一个数据类型进行恢复', validTypes: VALID_DATA_TYPES });
+          }
+
+          if (!['merge', 'overwrite'].includes(restoreMode)) {
+            return json(res, 400, { error: '无效的恢复模式，可选值: merge, overwrite' });
+          }
+
+          if (autoSnapshot) {
+            const autoNow = Date.now();
+            const autoTimestamp = new Date(autoNow).toISOString().replace(/[:.]/g, '-');
+            const autoUsers = await loadUsers();
+            const autoTasks = await readTasks();
+            const autoTemplates = await readTemplates();
+            const autoAgentGroups = await readAgentGroups();
+            const autoSharedPresets = await readSharedPresets();
+            const autoUserPresets = await readUserPresets();
+            const autoUserTemplates = await readUserTemplates();
+            const autoWorkflows = await loadWorkflows();
+            const autoWorkflowRuns = await readWorkflowRuns();
+
+            const autoSnapshotData = {
+              version: '1.0',
+              backupAt: autoNow,
+              backupMode: 'auto-snapshot',
+              data: {
+                users: autoUsers.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+                tokens: {},
+                tasks: autoTasks.filter(t => !t.id.startsWith('temp-')),
+                templates: autoTemplates,
+                'agent-groups': autoAgentGroups,
+                'shared-presets': autoSharedPresets,
+                'user-presets': autoUserPresets,
+                'user-templates': autoUserTemplates,
+                workflows: autoWorkflows,
+                'workflow-runs': autoWorkflowRuns
+              }
+            };
+            const snapshotFilename = `auto-snapshot-${autoTimestamp}.json`;
+            const snapshotPath = path.join(DATA_DIR, 'snapshots');
+            await fsp.mkdir(snapshotPath, { recursive: true });
+            await fsp.writeFile(path.join(snapshotPath, snapshotFilename), JSON.stringify(autoSnapshotData, null, 2) + '\n');
+            await addAuditEvent('backup.auto_snapshot_created', {
+              filename: snapshotFilename,
+              taskCount: autoSnapshotData.data.tasks.length,
+              reason: 'before-selective-restore'
+            }, currentUser.name, currentUser.id);
+          }
+
+          const { data } = backupData;
+          const restoreResult = { restored: {}, skipped: {} };
+
+          for (const dataType of selectedTypes) {
+            if (!data[dataType]) continue;
+
+            try {
+              if (restoreMode === 'overwrite') {
+                switch (dataType) {
+                  case 'users': {
+                    const usersToSave = await loadUsers();
+                    const newUsers = data.users.filter(u => !usersToSave.find(existing => existing.id === u.id));
+                    const updatedUsers = usersToSave.map(u => {
+                      const backupUser = data.users.find(bu => bu.id === u.id);
+                      return backupUser ? { ...u, role: backupUser.role, name: backupUser.name } : u;
+                    }).concat(newUsers);
+                    await saveUsers(updatedUsers);
+                    restoreResult.restored[dataType] = data.users.length;
+                    break;
+                  }
+                  case 'tasks': {
+                    await writeTasks(data.tasks);
+                    restoreResult.restored[dataType] = data.tasks.length;
+                    break;
+                  }
+                  case 'templates': {
+                    await writeTemplates(data.templates);
+                    restoreResult.restored[dataType] = data.templates.length;
+                    break;
+                  }
+                  case 'agent-groups': {
+                    await writeAgentGroups(data['agent-groups']);
+                    restoreResult.restored[dataType] = data['agent-groups'].length;
+                    break;
+                  }
+                  case 'shared-presets': {
+                    await writeSharedPresets(data['shared-presets']);
+                    restoreResult.restored[dataType] = data['shared-presets'].length;
+                    break;
+                  }
+                  case 'user-presets': {
+                    await writeUserPresets(data['user-presets']);
+                    restoreResult.restored[dataType] = data['user-presets'].length;
+                    break;
+                  }
+                  case 'user-templates': {
+                    await writeUserTemplates(data['user-templates']);
+                    restoreResult.restored[dataType] = data['user-templates'].length;
+                    break;
+                  }
+                  case 'workflows': {
+                    await saveWorkflows(data.workflows);
+                    restoreResult.restored[dataType] = data.workflows.length;
+                    break;
+                  }
+                  case 'workflow-runs': {
+                    await writeWorkflowRuns(data['workflow-runs']);
+                    restoreResult.restored[dataType] = data['workflow-runs'].length;
+                    break;
+                  }
+                }
+              } else {
+                switch (dataType) {
+                  case 'users': {
+                    const existingUsers = await loadUsers();
+                    let addedCount = 0;
+                    for (const bu of data.users) {
+                      if (!existingUsers.find(u => u.id === bu.id)) {
+                        const newUser = {
+                          id: bu.id,
+                          name: bu.name,
+                          passwordHash: crypto.createHash('sha256').update(bu.id + '-default-password').digest('hex'),
+                          role: bu.role || 'user',
+                          createdAt: bu.createdAt || Date.now(),
+                          lastLoginAt: bu.lastLoginAt
+                        };
+                        existingUsers.push(newUser);
+                        addedCount++;
+                      }
+                    }
+                    await saveUsers(existingUsers);
+                    restoreResult.restored[dataType] = addedCount;
+                    break;
+                  }
+                  case 'tasks': {
+                    const existingTasks = await readTasks();
+                    const existingIds = new Set(existingTasks.map(t => t.id));
+                    const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
+                    await writeTasks([...existingTasks, ...newTasks]);
+                    restoreResult.restored[dataType] = newTasks.length;
+                    break;
+                  }
+                  case 'templates': {
+                    const existingTemplates = await readTemplates();
+                    const existingIds = new Set(existingTemplates.map(t => t.id));
+                    const newTemplates = data.templates.filter(t => !existingIds.has(t.id));
+                    await writeTemplates([...existingTemplates, ...newTemplates]);
+                    restoreResult.restored[dataType] = newTemplates.length;
+                    break;
+                  }
+                  case 'agent-groups': {
+                    const existingGroups = await readAgentGroups();
+                    const existingIds = new Set(existingGroups.map(g => g.id));
+                    const newGroups = data['agent-groups'].filter(g => !existingIds.has(g.id));
+                    await writeAgentGroups([...existingGroups, ...newGroups]);
+                    restoreResult.restored[dataType] = newGroups.length;
+                    break;
+                  }
+                  case 'shared-presets': {
+                    const existingPresets = await readSharedPresets();
+                    const existingIds = new Set(existingPresets.map(p => p.id));
+                    const newPresets = data['shared-presets'].filter(p => !existingIds.has(p.id));
+                    await writeSharedPresets([...existingPresets, ...newPresets]);
+                    restoreResult.restored[dataType] = newPresets.length;
+                    break;
+                  }
+                  case 'user-presets': {
+                    const existingPresets = await readUserPresets();
+                    const existingIds = new Set(existingPresets.map(p => p.id));
+                    const newPresets = data['user-presets'].filter(p => !existingIds.has(p.id));
+                    await writeUserPresets([...existingPresets, ...newPresets]);
+                    restoreResult.restored[dataType] = newPresets.length;
+                    break;
+                  }
+                  case 'user-templates': {
+                    const existingTemplates = await readUserTemplates();
+                    const existingIds = new Set(existingTemplates.map(t => t.id));
+                    const newTemplates = data['user-templates'].filter(t => !existingIds.has(t.id));
+                    await writeUserTemplates([...existingTemplates, ...newTemplates]);
+                    restoreResult.restored[dataType] = newTemplates.length;
+                    break;
+                  }
+                  case 'workflows': {
+                    const existingWorkflows = await loadWorkflows();
+                    const existingIds = new Set(existingWorkflows.map(w => w.id));
+                    const newWorkflows = data.workflows.filter(w => !existingIds.has(w.id));
+                    await saveWorkflows([...existingWorkflows, ...newWorkflows]);
+                    restoreResult.restored[dataType] = newWorkflows.length;
+                    break;
+                  }
+                  case 'workflow-runs': {
+                    const existingRuns = await readWorkflowRuns();
+                    const existingIds = new Set(existingRuns.map(r => r.id));
+                    const newRuns = data['workflow-runs'].filter(r => !existingIds.has(r.id));
+                    await writeWorkflowRuns([...existingRuns, ...newRuns]);
+                    restoreResult.restored[dataType] = newRuns.length;
+                    break;
+                  }
+                }
+              }
+            } catch (err) {
+              restoreResult.errors = restoreResult.errors || {};
+              restoreResult.errors[dataType] = err.message;
+            }
+          }
+
+          await addAuditEvent('backup.selective_restored', {
+            restoreMode,
+            dataTypes: selectedTypes,
+            backupAt: backupData.backupAt,
+            result: restoreResult,
+            autoSnapshotCreated: autoSnapshot
+          }, currentUser.name, currentUser.id);
+
+          invalidateOverviewCache();
+          return json(res, 200, {
+            success: true,
+            mode: restoreMode,
+            dataTypes: selectedTypes,
+            autoSnapshotCreated: autoSnapshot,
+            result: restoreResult
+          });
+        }
+
+        // Get backup versions list
+        if (req.method === 'GET' && adminPath === 'backup/versions') {
+          const versions = await getBackupVersions();
+          return json(res, 200, versions);
         }
 
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {
