@@ -989,6 +989,78 @@
             <div class="muted small">暂无自动备份记录</div>
           </div>
         </div>
+
+        <div class="backup-section">
+          <h4>云存储备份</h4>
+          <p class="muted small">将备份上传到 S3 兼容存储（阿里云 OSS / AWS S3 / MinIO），解决本地磁盘空间限制</p>
+          
+          <div class="cloud-storage-config">
+            <h5>云存储配置</h5>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>
+                  <span class="field-label">启用云存储</span>
+                  <input type="checkbox" id="cloudStorageEnabled" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">存储提供商</span>
+                  <select id="cloudStorageProvider" class="filter-select">
+                    <option value="oss">阿里云 OSS</option>
+                    <option value="s3">AWS S3</option>
+                    <option value="minio">MinIO</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">存储桶名称</span>
+                  <input type="text" id="cloudStorageBucket" class="filter-input" placeholder="my-backup-bucket" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">区域</span>
+                  <input type="text" id="cloudStorageRegion" class="filter-input" placeholder="oss-cn-hangzhou" />
+                </label>
+              </div>
+              <div class="form-group full-width">
+                <label>
+                  <span class="field-label">Endpoint（可选，用于 OSS/MinIO）</span>
+                  <input type="text" id="cloudStorageEndpoint" class="filter-input" placeholder="https://oss-cn-hangzhou.aliyuncs.com" />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">Access Key ID</span>
+                  <input type="text" id="cloudStorageAccessKeyId" class="filter-input" placeholder="LTAI5t..." />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span class="field-label">Access Key Secret</span>
+                  <input type="password" id="cloudStorageAccessKeySecret" class="filter-input" placeholder="••••••••" />
+                </label>
+              </div>
+            </div>
+            <div class="scheduled-backup-actions">
+              <button id="saveCloudStorageConfigBtn" class="primary">保存配置</button>
+              <button id="testCloudStorageBtn" class="ghost">测试连接</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="backup-section">
+          <h4>云端备份管理</h4>
+          <div class="scheduled-backup-actions" style="margin-bottom: 15px;">
+            <button id="createCloudBackupBtn" class="primary">创建并上传云备份</button>
+            <button id="refreshCloudBackupListBtn" class="ghost">刷新列表</button>
+          </div>
+          <div id="cloudBackupList" class="backup-history-list">
+            <div class="muted small">暂无云端备份</div>
+          </div>
+        </div>
       </div>
       <div id="backupMsg" class="form-msg"></div>
     </div>

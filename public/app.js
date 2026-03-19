@@ -3951,6 +3951,20 @@ const notifyDingtalk = document.getElementById('notifyDingtalk');
 const notifyWecom = document.getElementById('notifyWecom');
 const notifySlack = document.getElementById('notifySlack');
 
+// Cloud Storage elements
+const cloudStorageEnabled = document.getElementById('cloudStorageEnabled');
+const cloudStorageProvider = document.getElementById('cloudStorageProvider');
+const cloudStorageBucket = document.getElementById('cloudStorageBucket');
+const cloudStorageRegion = document.getElementById('cloudStorageRegion');
+const cloudStorageEndpoint = document.getElementById('cloudStorageEndpoint');
+const cloudStorageAccessKeyId = document.getElementById('cloudStorageAccessKeyId');
+const cloudStorageAccessKeySecret = document.getElementById('cloudStorageAccessKeySecret');
+const saveCloudStorageConfigBtn = document.getElementById('saveCloudStorageConfigBtn');
+const testCloudStorageBtn = document.getElementById('testCloudStorageBtn');
+const createCloudBackupBtn = document.getElementById('createCloudBackupBtn');
+const refreshCloudBackupListBtn = document.getElementById('refreshCloudBackupListBtn');
+const cloudBackupList = document.getElementById('cloudBackupList');
+
 let selectedBackupFile = null;
 let selectedBackupData = null;
 
@@ -3959,6 +3973,8 @@ function showBackupModal() {
   loadBackupHistory();
   loadScheduledBackupConfig();
   loadScheduledBackupHistory();
+  loadCloudStorageConfig();
+  loadCloudBackupList();
   backupModal.classList.remove('hidden');
 }
 
@@ -4266,6 +4282,168 @@ async function loadScheduledBackupHistory() {
   }
 }
 
+// Cloud Storage Functions
+async function loadCloudStorageConfig() {
+  try {
+    const res = await fetchJson('/api/admin/cloud-storage/config');
+    cloudStorageEnabled.checked = res.enabled || false;
+    cloudStorageProvider.value = res.provider || 'oss';
+    cloudStorageBucket.value = res.bucket || '';
+    cloudStorageRegion.value = res.region || '';
+    cloudStorageEndpoint.value = res.endpoint || '';
+    cloudStorageAccessKeyId.value = res.accessKeyId || '';
+    cloudStorageAccessKeySecret.value = '';
+  } catch (err) {
+    console.error('加载云存储配置失败:', err);
+  }
+}
+
+async function handleSaveCloudStorageConfig() {
+  const msg = document.getElementById('backupMsg');
+  try {
+    const config = {
+      enabled: cloudStorageEnabled.checked,
+      provider: cloudStorageProvider.value,
+      bucket: cloudStorageBucket.value,
+      region: cloudStorageRegion.value,
+      endpoint: cloudStorageEndpoint.value,
+      accessKeyId: cloudStorageAccessKeyId.value,
+      accessKeySecret: cloudStorageAccessKeySecret.value
+    };
+
+    if (config.enabled && (!config.bucket || !config.accessKeyId || !config.accessKeySecret)) {
+      msg.textContent = '启用云存储时，存储桶名称、Access Key ID 和 Secret 是必需的';
+      msg.className = 'form-msg error';
+      return;
+    }
+
+    await fetch('/api/admin/cloud-storage/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+
+    msg.textContent = '云存储配置已保存';
+    msg.className = 'form-msg success';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+    
+    if (config.enabled) {
+      loadCloudBackupList();
+    }
+  } catch (err) {
+    msg.textContent = '保存配置失败：' + err.message;
+    msg.className = 'form-msg error';
+  }
+}
+
+async function handleTestCloudStorage() {
+  const msg = document.getElementById('backupMsg');
+  try {
+    msg.textContent = '正在测试连接...';
+    msg.className = 'form-msg';
+    
+    const res = await fetch('/api/admin/backup/cloud/test', { method: 'POST' });
+    const result = await res.json();
+    
+    if (result.success) {
+      msg.textContent = '云存储连接测试成功！';
+      msg.className = 'form-msg success';
+    } else {
+      msg.textContent = '连接测试失败：' + (result.error || '未知错误');
+      msg.className = 'form-msg error';
+    }
+  } catch (err) {
+    msg.textContent = '测试连接失败：' + err.message;
+    msg.className = 'form-msg error';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 5000);
+}
+
+async function handleCreateCloudBackup() {
+  const msg = document.getElementById('backupMsg');
+  try {
+    msg.textContent = '正在创建备份并上传到云存储...';
+    msg.className = 'form-msg';
+    
+    const res = await fetch('/api/admin/backup/cloud?mode=full', { method: 'POST' });
+    const result = await res.json();
+    
+    if (result.success) {
+      msg.textContent = '云备份创建成功：' + result.fileName;
+      msg.className = 'form-msg success';
+      loadCloudBackupList();
+    } else {
+      msg.textContent = '创建云备份失败：' + (result.error || '未知错误');
+      msg.className = 'form-msg error';
+    }
+  } catch (err) {
+    msg.textContent = '创建云备份失败：' + err.message;
+    msg.className = 'form-msg error';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 5000);
+}
+
+async function loadCloudBackupList() {
+  try {
+    const res = await fetchJson('/api/admin/backup/cloud/list');
+    const list = cloudBackupList;
+    
+    if (!res.success || !res.files || res.files.length === 0) {
+      list.innerHTML = '<div class="muted small">暂无云端备份</div>';
+      return;
+    }
+    
+    list.innerHTML = res.files.map(f => `
+      <div class="backup-history-item">
+        <div class="backup-history-info">
+          <span class="backup-history-time">${new Date(f.lastModified).toLocaleString('zh-CN')}</span>
+          <span class="success">云端</span>
+        </div>
+        <div class="backup-history-meta muted small">
+          文件：${f.key} | 大小：${formatBytes(f.size)}
+          <button class="ghost small" onclick="restoreCloudBackup('${f.key}')" style="margin-left: 10px;">从此备份恢复</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('加载云端备份列表失败:', err);
+    cloudBackupList.innerHTML = '<div class="muted small">加载失败：' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function restoreCloudBackup(cloudKey) {
+  const msg = document.getElementById('backupMsg');
+  if (!confirm('确定要从云端备份恢复吗？\n\n文件：' + cloudKey + '\n\n这将创建自动快照并恢复数据。')) {
+    return;
+  }
+  
+  try {
+    msg.textContent = '正在从云存储下载并恢复备份...';
+    msg.className = 'form-msg';
+    
+    const res = await fetch('/api/admin/backup/cloud/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cloudKey, restoreMode: 'merge' })
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      msg.textContent = '云备份恢复成功！';
+      msg.className = 'form-msg success';
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      msg.textContent = '恢复失败：' + (result.error || '未知错误');
+      msg.className = 'form-msg error';
+    }
+  } catch (err) {
+    msg.textContent = '恢复失败：' + err.message;
+    msg.className = 'form-msg error';
+  }
+}
+
+window.restoreCloudBackup = restoreCloudBackup;
+
 async function handleSaveScheduledBackupConfig() {
   const channels = [];
   if (notifyFeishu.checked) channels.push('feishu');
@@ -4346,6 +4524,12 @@ scheduledBackupFrequency.addEventListener('change', updateDayOfWeekVisibility);
 scheduledBackupNotifyEnabled.addEventListener('change', updateNotificationChannelsVisibility);
 saveScheduledBackupConfigBtn.addEventListener('click', handleSaveScheduledBackupConfig);
 runScheduledBackupNowBtn.addEventListener('click', handleRunScheduledBackupNow);
+
+// Cloud Storage event listeners
+saveCloudStorageConfigBtn.addEventListener('click', handleSaveCloudStorageConfig);
+testCloudStorageBtn.addEventListener('click', handleTestCloudStorage);
+createCloudBackupBtn.addEventListener('click', handleCreateCloudBackup);
+refreshCloudBackupListBtn.addEventListener('click', loadCloudBackupList);
 
 const openBackupModalBtn = document.getElementById('openBackupModalBtn');
 if (openBackupModalBtn) {
