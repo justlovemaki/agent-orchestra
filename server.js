@@ -1773,7 +1773,338 @@ async function requestHandler(req, res) {
             permissions: presets[idx].permissions
           });
         }
-        
+
+        const BACKUP_METADATA_FILE = path.join(DATA_DIR, 'backup-metadata.json');
+
+        async function getBackupMetadata() {
+          try {
+            const data = await fsp.readFile(BACKUP_METADATA_FILE, 'utf8');
+            return JSON.parse(data);
+          } catch {
+            return { lastBackupAt: null, lastBackupSize: null, backupCount: 0 };
+          }
+        }
+
+        async function saveBackupMetadata(meta) {
+          await fsp.writeFile(BACKUP_METADATA_FILE, JSON.stringify(meta, null, 2) + '\n');
+        }
+
+        if (req.method === 'GET' && adminPath === 'backup/status') {
+          const meta = await getBackupMetadata();
+          const tasks = await readTasks();
+          const filteredTasks = tasks.filter(t => !t.id.startsWith('temp-'));
+          return json(res, 200, {
+            lastBackupAt: meta.lastBackupAt,
+            lastBackupSize: meta.lastBackupSize,
+            backupCount: meta.backupCount || 0,
+            totalTasks: filteredTasks.length,
+            totalTasksIncludingTemp: tasks.length
+          });
+        }
+
+        if (req.method === 'GET' && adminPath === 'backup') {
+          const mode = parsed.query.mode || 'full';
+          const now = Date.now();
+          const timestamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+
+          const users = await loadUsers();
+          const tokens = await loadTokens();
+          const tasks = await readTasks();
+          const templates = await readTemplates();
+          const agentGroups = await readAgentGroups();
+          const sharedPresets = await readSharedPresets();
+          const userPresets = await readUserPresets();
+          const userTemplates = await readUserTemplates();
+          const workflows = await loadWorkflows();
+          const workflowRuns = await readWorkflowRuns();
+          const auditEvents = await queryAuditEvents({});
+
+          let dataToBackup;
+          if (mode === 'incremental') {
+            const recentTasks = tasks.filter(t => !t.id.startsWith('temp-') && t.createdAt > now - 7 * 24 * 60 * 60 * 1000);
+            const recentAuditEvents = auditEvents.filter(e => e.timestamp > now - 7 * 24 * 60 * 60 * 1000);
+            dataToBackup = {
+              users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+              tokens: {},
+              tasks: recentTasks,
+              templates,
+              'agent-groups': agentGroups,
+              'shared-presets': sharedPresets,
+              'user-presets': userPresets,
+              'user-templates': userTemplates,
+              workflows,
+              'workflow-runs': workflowRuns,
+              'audit-events': recentAuditEvents
+            };
+          } else {
+            dataToBackup = {
+              users: users.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+              tokens: {},
+              tasks: tasks.filter(t => !t.id.startsWith('temp-')),
+              templates,
+              'agent-groups': agentGroups,
+              'shared-presets': sharedPresets,
+              'user-presets': userPresets,
+              'user-templates': userTemplates,
+              workflows,
+              'workflow-runs': workflowRuns,
+              'audit-events': auditEvents
+            };
+          }
+
+          const backupData = {
+            version: '1.0',
+            backupAt: now,
+            backupMode: mode,
+            data: dataToBackup
+          };
+
+          const backupJson = JSON.stringify(backupData, null, 2);
+          const backupSize = Buffer.byteLength(backupJson, 'utf8');
+          const meta = await getBackupMetadata();
+          meta.lastBackupAt = now;
+          meta.lastBackupSize = backupSize;
+          meta.backupCount = (meta.backupCount || 0) + 1;
+          await saveBackupMetadata(meta);
+
+          await addAuditEvent('backup.created', {
+            mode,
+            size: backupSize,
+            timestamp,
+            taskCount: dataToBackup.tasks.length,
+            userCount: dataToBackup.users.length
+          }, currentUser.name, currentUser.id);
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Disposition': `attachment; filename="agent-orchestra-backup-${timestamp}.json"`
+          });
+          return res.end(backupJson);
+        }
+
+        if (req.method === 'POST' && adminPath === 'restore') {
+          const contentType = req.headers['content-type'] || '';
+          let backupData;
+
+          if (contentType.includes('application/json')) {
+            backupData = await readJson(req);
+          } else {
+            const boundary = contentType.match(/boundary=(.+)/)?.[1];
+            if (!boundary) {
+              return json(res, 400, { error: '不支持的内容类型，请上传 JSON 文件' });
+            }
+            const body = await readBody(req);
+            const match = body.match(new RegExp(`--${boundary}[\\s\\S]*?filename="([^"]+)"[\\s\\S]*?\\r\\n\\r\\n([\\s\\S]*?)(?=\\r\\n--|--$)`));
+            if (!match) {
+              return json(res, 400, { error: '无法解析上传的文件' });
+            }
+            try {
+              backupData = JSON.parse(match[2]);
+            } catch {
+              return json(res, 400, { error: '备份文件格式错误，请上传有效的 JSON 文件' });
+            }
+          }
+
+          if (!backupData.version || !backupData.data) {
+            return json(res, 400, { error: '无效的备份文件格式，缺少必要字段' });
+          }
+
+          if (!['1.0'].includes(backupData.version)) {
+            return json(res, 400, { error: `不支持的备份版本: ${backupData.version}` });
+          }
+
+          const body = await readJson(req);
+          const restoreMode = body.mode || 'merge';
+          const { autoSnapshot = true } = body;
+
+          if (!['merge', 'overwrite'].includes(restoreMode)) {
+            return json(res, 400, { error: '无效的恢复模式，可选值: merge, overwrite' });
+          }
+
+          if (autoSnapshot) {
+            const autoNow = Date.now();
+            const autoTimestamp = new Date(autoNow).toISOString().replace(/[:.]/g, '-');
+            const autoUsers = await loadUsers();
+            const autoTasks = await readTasks();
+            const autoTemplates = await readTemplates();
+            const autoAgentGroups = await readAgentGroups();
+            const autoSharedPresets = await readSharedPresets();
+            const autoUserPresets = await readUserPresets();
+            const autoUserTemplates = await readUserTemplates();
+            const autoWorkflows = await loadWorkflows();
+            const autoWorkflowRuns = await readWorkflowRuns();
+            const autoAuditEvents = await queryAuditEvents({});
+
+            const autoSnapshotData = {
+              version: '1.0',
+              backupAt: autoNow,
+              backupMode: 'auto-snapshot',
+              data: {
+                users: autoUsers.map(u => ({ id: u.id, name: u.name, role: u.role, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt })),
+                tokens: {},
+                tasks: autoTasks.filter(t => !t.id.startsWith('temp-')),
+                templates: autoTemplates,
+                'agent-groups': autoAgentGroups,
+                'shared-presets': autoSharedPresets,
+                'user-presets': autoUserPresets,
+                'user-templates': autoUserTemplates,
+                workflows: autoWorkflows,
+                'workflow-runs': autoWorkflowRuns,
+                'audit-events': autoAuditEvents
+              }
+            };
+            const snapshotFilename = `auto-snapshot-${autoTimestamp}.json`;
+            const snapshotPath = path.join(DATA_DIR, 'snapshots');
+            await fsp.mkdir(snapshotPath, { recursive: true });
+            await fsp.writeFile(path.join(snapshotPath, snapshotFilename), JSON.stringify(autoSnapshotData, null, 2) + '\n');
+            await addAuditEvent('backup.auto_snapshot_created', {
+              filename: snapshotFilename,
+              taskCount: autoSnapshotData.data.tasks.length
+            }, currentUser.name, currentUser.id);
+          }
+
+          const { data } = backupData;
+          const restoreResult = { restored: {}, skipped: {} };
+
+          if (restoreMode === 'overwrite') {
+            if (data.users) {
+              const usersToSave = await loadUsers();
+              const newUsers = data.users.filter(u => !usersToSave.find(existing => existing.id === u.id));
+              const updatedUsers = usersToSave.map(u => {
+                const backupUser = data.users.find(bu => bu.id === u.id);
+                return backupUser ? { ...u, role: backupUser.role, name: backupUser.name } : u;
+              }).concat(newUsers);
+              await saveUsers(updatedUsers);
+              restoreResult.restored.users = data.users.length;
+            }
+            if (data.tasks) {
+              await writeTasks(data.tasks);
+              restoreResult.restored.tasks = data.tasks.length;
+            }
+            if (data.templates) {
+              await writeTemplates(data.templates);
+              restoreResult.restored.templates = data.templates.length;
+            }
+            if (data['agent-groups']) {
+              await writeAgentGroups(data['agent-groups']);
+              restoreResult.restored['agent-groups'] = data['agent-groups'].length;
+            }
+            if (data['shared-presets']) {
+              await writeSharedPresets(data['shared-presets']);
+              restoreResult.restored['shared-presets'] = data['shared-presets'].length;
+            }
+            if (data['user-presets']) {
+              await writeUserPresets(data['user-presets']);
+              restoreResult.restored['user-presets'] = data['user-presets'].length;
+            }
+            if (data['user-templates']) {
+              await writeUserTemplates(data['user-templates']);
+              restoreResult.restored['user-templates'] = data['user-templates'].length;
+            }
+            if (data.workflows) {
+              await saveWorkflows(data.workflows);
+              restoreResult.restored.workflows = data.workflows.length;
+            }
+            if (data['workflow-runs']) {
+              await writeWorkflowRuns(data['workflow-runs']);
+              restoreResult.restored['workflow-runs'] = data['workflow-runs'].length;
+            }
+          } else {
+            if (data.users) {
+              const existingUsers = await loadUsers();
+              let addedCount = 0;
+              for (const bu of data.users) {
+                if (!existingUsers.find(u => u.id === bu.id)) {
+                  const newUser = {
+                    id: bu.id,
+                    name: bu.name,
+                    passwordHash: crypto.createHash('sha256').update(bu.id + '-default-password').digest('hex'),
+                    role: bu.role || 'user',
+                    createdAt: bu.createdAt || Date.now(),
+                    lastLoginAt: bu.lastLoginAt
+                  };
+                  existingUsers.push(newUser);
+                  addedCount++;
+                }
+              }
+              await saveUsers(existingUsers);
+              restoreResult.restored.users = addedCount;
+            }
+            if (data.tasks) {
+              const existingTasks = await readTasks();
+              const existingIds = new Set(existingTasks.map(t => t.id));
+              const newTasks = data.tasks.filter(t => !existingIds.has(t.id));
+              await writeTasks([...existingTasks, ...newTasks]);
+              restoreResult.restored.tasks = newTasks.length;
+              restoreResult.skipped.tasks = existingTasks.length;
+            }
+            if (data.templates) {
+              const existingTemplates = await readTemplates();
+              const existingIds = new Set(existingTemplates.map(t => t.id));
+              const newTemplates = data.templates.filter(t => !existingIds.has(t.id));
+              await writeTemplates([...existingTemplates, ...newTemplates]);
+              restoreResult.restored.templates = newTemplates.length;
+            }
+            if (data['agent-groups']) {
+              const existingGroups = await readAgentGroups();
+              const existingIds = new Set(existingGroups.map(g => g.id));
+              const newGroups = data['agent-groups'].filter(g => !existingIds.has(g.id));
+              await writeAgentGroups([...existingGroups, ...newGroups]);
+              restoreResult.restored['agent-groups'] = newGroups.length;
+            }
+            if (data['shared-presets']) {
+              const existingPresets = await readSharedPresets();
+              const existingIds = new Set(existingPresets.map(p => p.id));
+              const newPresets = data['shared-presets'].filter(p => !existingIds.has(p.id));
+              await writeSharedPresets([...existingPresets, ...newPresets]);
+              restoreResult.restored['shared-presets'] = newPresets.length;
+            }
+            if (data['user-presets']) {
+              const existingPresets = await readUserPresets();
+              const existingIds = new Set(existingPresets.map(p => p.id));
+              const newPresets = data['user-presets'].filter(p => !existingIds.has(p.id));
+              await writeUserPresets([...existingPresets, ...newPresets]);
+              restoreResult.restored['user-presets'] = newPresets.length;
+            }
+            if (data['user-templates']) {
+              const existingTemplates = await readUserTemplates();
+              const existingIds = new Set(existingTemplates.map(t => t.id));
+              const newTemplates = data['user-templates'].filter(t => !existingIds.has(t.id));
+              await writeUserTemplates([...existingTemplates, ...newTemplates]);
+              restoreResult.restored['user-templates'] = newTemplates.length;
+            }
+            if (data.workflows) {
+              const existingWorkflows = await loadWorkflows();
+              const existingIds = new Set(existingWorkflows.map(w => w.id));
+              const newWorkflows = data.workflows.filter(w => !existingIds.has(w.id));
+              await saveWorkflows([...existingWorkflows, ...newWorkflows]);
+              restoreResult.restored.workflows = newWorkflows.length;
+            }
+            if (data['workflow-runs']) {
+              const existingRuns = await readWorkflowRuns();
+              const existingIds = new Set(existingRuns.map(r => r.id));
+              const newRuns = data['workflow-runs'].filter(r => !existingIds.has(r.id));
+              await writeWorkflowRuns([...existingRuns, ...newRuns]);
+              restoreResult.restored['workflow-runs'] = newRuns.length;
+            }
+          }
+
+          await addAuditEvent('backup.restored', {
+            mode: restoreMode,
+            backupAt: backupData.backupAt,
+            result: restoreResult,
+            autoSnapshotCreated: autoSnapshot
+          }, currentUser.name, currentUser.id);
+
+          invalidateOverviewCache();
+          return json(res, 200, {
+            success: true,
+            mode: restoreMode,
+            autoSnapshotCreated: autoSnapshot,
+            result: restoreResult
+          });
+        }
+
         return json(res, 404, { error: '管理员接口不存在' });
       }
       if (req.method === 'POST' && pathname === '/api/audit') {

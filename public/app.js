@@ -3916,3 +3916,258 @@ shareToWecomBtn.addEventListener('click', handleShareToWecom);
 shareToWecomCheckbox.addEventListener('change', updateWecomButtonVisibility);
 shareToSlackBtn.addEventListener('click', handleShareToSlack);
 shareToSlackCheckbox.addEventListener('change', updateSlackButtonVisibility);
+
+const backupModal = document.getElementById('backupModal');
+const closeBackupModal = document.getElementById('closeBackupModal');
+const backupMsg = document.getElementById('backupMsg');
+const createBackupBtn = document.getElementById('createBackupBtn');
+const restoreBackupBtn = document.getElementById('restoreBackupBtn');
+const backupFileInput = document.getElementById('backupFileInput');
+const backupFileArea = document.getElementById('backupFileArea');
+const backupFileInfo = document.getElementById('backupFileInfo');
+const backupFileName = document.getElementById('backupFileName');
+const backupFilePlaceholder = document.getElementById('backupFilePlaceholder');
+const clearBackupFile = document.getElementById('clearBackupFile');
+const backupPreviewSection = document.getElementById('backupPreviewSection');
+const backupPreviewContent = document.getElementById('backupPreviewContent');
+const autoSnapshotCheckbox = document.getElementById('autoSnapshotCheckbox');
+
+let selectedBackupFile = null;
+let selectedBackupData = null;
+
+function showBackupModal() {
+  loadBackupStatus();
+  loadBackupHistory();
+  backupModal.classList.remove('hidden');
+}
+
+function hideBackupModal() {
+  backupModal.classList.add('hidden');
+  clearBackupFileSelection();
+}
+
+function clearBackupFileSelection() {
+  selectedBackupFile = null;
+  selectedBackupData = null;
+  backupFileInput.value = '';
+  backupFileInfo.classList.add('hidden');
+  backupFilePlaceholder.classList.remove('hidden');
+  backupPreviewSection.classList.add('hidden');
+  restoreBackupBtn.disabled = true;
+}
+
+async function loadBackupStatus() {
+  try {
+    const res = await fetchJson('/api/admin/backup/status');
+    document.getElementById('lastBackupTime').textContent = res.lastBackupAt
+      ? new Date(res.lastBackupAt).toLocaleString('zh-CN')
+      : '—';
+    document.getElementById('lastBackupSize').textContent = res.lastBackupSize
+      ? formatBytes(res.lastBackupSize)
+      : '—';
+    document.getElementById('backupCount').textContent = res.backupCount || 0;
+  } catch (err) {
+    console.error('加载备份状态失败:', err);
+  }
+}
+
+async function loadBackupHistory() {
+  try {
+    const res = await fetchJson('/api/audit?eventType=backup.created&limit=10');
+    const list = document.getElementById('backupHistoryList');
+    if (!res.events || res.events.length === 0) {
+      list.innerHTML = '<div class="muted small">暂无备份记录</div>';
+      return;
+    }
+    list.innerHTML = res.events.map(e => {
+      const size = e.details.size ? formatBytes(e.details.size) : '—';
+      const taskCount = e.details.taskCount || 0;
+      const userCount = e.details.userCount || 0;
+      return `
+        <div class="backup-history-item">
+          <div class="backup-history-info">
+            <span class="backup-history-time">${new Date(e.timestamp).toLocaleString('zh-CN')}</span>
+            <span class="muted">${e.details.mode === 'incremental' ? '增量' : '完整'}备份</span>
+          </div>
+          <div class="backup-history-meta muted small">
+            大小: ${size} | 任务: ${taskCount} | 用户: ${userCount}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('加载备份历史失败:', err);
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function handleCreateBackup() {
+  const mode = document.querySelector('input[name="backupMode"]:checked').value;
+  backupMsg.textContent = '正在创建备份...';
+  createBackupBtn.disabled = true;
+  try {
+    const response = await fetch(`/api/admin/backup?mode=${mode}`);
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '创建备份失败');
+    }
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `agent-orchestra-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="([^"]+)"/);
+      if (match) filename = match[1];
+    }
+    downloadBlob(blob, filename);
+    backupMsg.textContent = '备份创建成功';
+    await loadBackupStatus();
+    await loadBackupHistory();
+  } catch (err) {
+    backupMsg.textContent = err.message;
+  } finally {
+    createBackupBtn.disabled = false;
+  }
+}
+
+function handleBackupFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!file.name.endsWith('.json')) {
+    backupMsg.textContent = '请选择 JSON 格式的备份文件';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    try {
+      selectedBackupData = JSON.parse(event.target.result);
+      if (!selectedBackupData.version || !selectedBackupData.data) {
+        backupMsg.textContent = '无效的备份文件格式';
+        return;
+      }
+      selectedBackupFile = file;
+      backupFileName.textContent = file.name;
+      backupFileInfo.classList.remove('hidden');
+      backupFilePlaceholder.classList.add('hidden');
+      restoreBackupBtn.disabled = false;
+      backupMsg.textContent = '';
+      showBackupPreview();
+    } catch {
+      backupMsg.textContent = '无法解析备份文件';
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showBackupPreview() {
+  if (!selectedBackupData) return;
+  const { data, backupAt, backupMode } = selectedBackupData;
+  const summary = [];
+  if (data.users) summary.push(`用户: ${data.users.length}`);
+  if (data.tasks) summary.push(`任务: ${data.tasks.length}`);
+  if (data.templates) summary.push(`模板: ${data.templates.length}`);
+  if (data.workflows) summary.push(`工作流: ${data.workflows.length}`);
+  if (data['shared-presets']) summary.push(`共享预设: ${data['shared-presets'].length}`);
+  if (data['agent-groups']) summary.push(`Agent分组: ${data['agent-groups'].length}`);
+  backupPreviewContent.innerHTML = `
+    <div class="backup-preview-meta">
+      <span>备份时间: ${backupAt ? new Date(backupAt).toLocaleString('zh-CN') : '—'}</span>
+      <span>备份模式: ${backupMode === 'incremental' ? '增量' : '完整'}</span>
+      <span>版本: ${selectedBackupData.version}</span>
+    </div>
+    <div class="backup-preview-summary">${summary.join(' | ')}</div>
+  `;
+  backupPreviewSection.classList.remove('hidden');
+}
+
+async function handleRestoreBackup() {
+  if (!selectedBackupFile || !selectedBackupData) {
+    backupMsg.textContent = '请先选择备份文件';
+    return;
+  }
+  const restoreMode = document.querySelector('input[name="restoreMode"]:checked').value;
+  const autoSnapshot = autoSnapshotCheckbox.checked;
+  const modeText = restoreMode === 'overwrite' ? '覆盖模式' : '合并模式';
+  const confirmMsg = autoSnapshot
+    ? `确定要恢复数据吗？\n\n恢复模式: ${modeText}\n\n恢复前将自动创建当前数据的快照。`
+    : `警告：恢复前不会创建快照！\n\n确定要恢复数据吗？\n\n恢复模式: ${modeText}`;
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+  backupMsg.textContent = '正在恢复数据...';
+  restoreBackupBtn.disabled = true;
+  createBackupBtn.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', selectedBackupFile);
+    formData.append('mode', restoreMode);
+    formData.append('autoSnapshot', autoSnapshot);
+    const response = await fetch('/api/admin/restore', {
+      method: 'POST',
+      body: formData
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || '恢复失败');
+    }
+    const result = await response.json();
+    const resultSummary = [];
+    if (result.result?.restored) {
+      for (const [key, val] of Object.entries(result.result.restored)) {
+        resultSummary.push(`${key}: ${val}`);
+      }
+    }
+    backupMsg.textContent = `恢复成功！已恢复: ${resultSummary.join(', ') || '无'}`;
+    setTimeout(() => {
+      hideBackupModal();
+      loadTasks();
+      loadTemplates();
+      loadSharedPresets();
+      loadWorkflows();
+      loadAgentGroups();
+    }, 1500);
+  } catch (err) {
+    backupMsg.textContent = err.message;
+  } finally {
+    restoreBackupBtn.disabled = false;
+    createBackupBtn.disabled = false;
+  }
+}
+
+backupFileArea.addEventListener('click', () => backupFileInput.click());
+backupFileArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  backupFileArea.classList.add('drag-over');
+});
+backupFileArea.addEventListener('dragleave', () => {
+  backupFileArea.classList.remove('drag-over');
+});
+backupFileArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  backupFileArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    backupFileInput.files = dt.files;
+    handleBackupFileSelect({ target: backupFileInput });
+  }
+});
+
+closeBackupModal.addEventListener('click', hideBackupModal);
+backupModal.querySelector('.modal-backdrop').addEventListener('click', hideBackupModal);
+createBackupBtn.addEventListener('click', handleCreateBackup);
+backupFileInput.addEventListener('change', handleBackupFileSelect);
+clearBackupFile.addEventListener('click', clearBackupFileSelection);
+restoreBackupBtn.addEventListener('click', handleRestoreBackup);
+
+const openBackupModalBtn = document.getElementById('openBackupModalBtn');
+if (openBackupModalBtn) {
+  openBackupModalBtn.addEventListener('click', showBackupModal);
+}

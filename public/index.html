@@ -363,6 +363,9 @@
             </div>
           </div>
           <div id="userList" class="user-list"></div>
+          <div class="admin-actions">
+            <button id="openBackupModalBtn" class="ghost">数据备份与恢复</button>
+          </div>
         </section>
       </section>
 
@@ -795,6 +798,92 @@
           <button id="cancelExportBtn" class="ghost">取消</button>
         </div>
       </div>
+    </div>
+
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>数据备份与恢复</h3>
+        <button class="modal-close" id="closeBackupModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="backupStatusSection" class="backup-status-section">
+          <div class="backup-status-grid">
+            <div class="backup-status-item">
+              <div class="backup-status-label">上次备份时间</div>
+              <div id="lastBackupTime" class="backup-status-value">—</div>
+            </div>
+            <div class="backup-status-item">
+              <div class="backup-status-label">上次备份大小</div>
+              <div id="lastBackupSize" class="backup-status-value">—</div>
+            </div>
+            <div class="backup-status-item">
+              <div class="backup-status-label">备份次数</div>
+              <div id="backupCount" class="backup-status-value">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="backup-section">
+          <h4>创建备份</h4>
+          <p class="muted small">导出完整数据备份，包含所有用户、任务、模板、工作流等数据</p>
+          <div class="backup-mode-selector">
+            <label class="radio-label">
+              <input type="radio" name="backupMode" value="full" checked />
+              <span>完整备份</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="backupMode" value="incremental" />
+              <span>增量备份（最近7天）</span>
+            </label>
+          </div>
+          <button id="createBackupBtn" class="primary">下载备份文件</button>
+        </div>
+
+        <div class="backup-section">
+          <h4>恢复数据</h4>
+          <p class="muted small">从备份文件恢复数据，支持合并或覆盖现有数据</p>
+          <div class="file-upload-area" id="backupFileArea">
+            <input type="file" id="backupFileInput" accept=".json" class="file-input-hidden" />
+            <div id="backupFileInfo" class="file-info hidden">
+              <span id="backupFileName"></span>
+              <button id="clearBackupFile" class="ghost tiny">&times;</button>
+            </div>
+            <div id="backupFilePlaceholder">
+              <span class="muted">拖拽 JSON 备份文件到此处或点击选择</span>
+            </div>
+          </div>
+          <div id="backupPreviewSection" class="hidden">
+            <h5>备份文件预览</h5>
+            <div id="backupPreviewContent" class="backup-preview-content"></div>
+          </div>
+          <div class="restore-options">
+            <label class="radio-label">
+              <input type="radio" name="restoreMode" value="merge" checked />
+              <span>合并模式</span>
+              <span class="muted small">保留现有数据，仅添加备份中的新数据</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="restoreMode" value="overwrite" />
+              <span>覆盖模式</span>
+              <span class="muted small">清空现有数据，完全使用备份数据（危险）</span>
+            </label>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="autoSnapshotCheckbox" checked />
+            <span>恢复前自动创建当前数据快照</span>
+          </label>
+          <button id="restoreBackupBtn" class="warning" disabled>恢复数据</button>
+        </div>
+
+        <div class="backup-section">
+          <h4>备份历史</h4>
+          <div id="backupHistoryList" class="backup-history-list">
+            <div class="muted small">暂无备份记录</div>
+          </div>
+        </div>
+      </div>
+      <div id="backupMsg" class="form-msg"></div>
     </div>
   </div>
 
