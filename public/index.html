@@ -340,6 +340,10 @@
               <option value="session_end">会话结束</option>
               <option value="workflow_run">工作流执行</option>
               <option value="system">系统事件</option>
+              <option value="user_registered">用户注册</option>
+              <option value="user_logged_in">用户登录</option>
+              <option value="user_logged_out">用户登出</option>
+              <option value="user_role_changed">角色变更</option>
             </select>
             <input type="datetime-local" id="auditTimeFrom" class="filter-input filter-time" placeholder="从..." />
             <input type="datetime-local" id="auditTimeTo" class="filter-input filter-time" placeholder="到..." />
@@ -349,6 +353,16 @@
           <div id="auditFilterChips" class="filter-chips"></div>
           <div id="auditEventsList" class="audit-events-list"></div>
           <div id="auditResultCount" class="filter-result-count muted small"></div>
+        </section>
+
+        <section id="adminPanel" class="panel section-panel hidden">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Admin</div>
+              <h2>用户管理</h2>
+            </div>
+          </div>
+          <div id="userList" class="user-list"></div>
         </section>
       </section>
 

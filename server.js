@@ -9,7 +9,7 @@ const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
-const { register, login, logout, verifyToken, getCurrentUser, getUsers } = require('./lib/users');
+const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, getUserById, getUserPermissions } = require('./lib/users');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -1188,13 +1188,18 @@ async function requestHandler(req, res) {
       if (req.method === 'PUT' && pathname.startsWith('/api/presets/')) {
         const presetId = pathname.split('/')[3];
         const body = await readJson(req);
+        const currentUser = await verifyTokenFromRequest(req);
         const presets = await readSharedPresets();
         const idx = presets.findIndex(p => p.id === presetId);
         if (idx === -1) throw new Error('预设不存在');
         const preset = presets[idx];
         const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
         const requestUser = body.userId || 'Master';
-        if (!permissions.canEdit.includes(requestUser) && requestUser !== 'Master') {
+        const requestUserId = currentUser?.id;
+        const isRequesterAdmin = requestUserId ? await isAdmin(requestUserId) : false;
+        const isCreator = preset.createdBy === requestUser || preset.createdBy === requestUserId;
+        const isAuthorized = isCreator || permissions.canEdit.includes(requestUser) || permissions.canEdit.includes(requestUserId);
+        if (!isAuthorized && !isRequesterAdmin && requestUser !== 'Master') {
           throw new Error('您没有编辑此预设的权限');
         }
         if (body.name != null) preset.name = body.name.trim();
@@ -1205,13 +1210,17 @@ async function requestHandler(req, res) {
       }
       if (req.method === 'DELETE' && pathname.startsWith('/api/presets/')) {
         const presetId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
         const presets = await readSharedPresets();
         const idx = presets.findIndex(p => p.id === presetId);
         if (idx === -1) throw new Error('预设不存在');
         const preset = presets[idx];
         const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
-        const requestUser = preset.createdBy;
-        if (!permissions.canDelete.includes(requestUser) && requestUser !== 'Master') {
+        const requestUserId = currentUser?.id;
+        const isRequesterAdmin = requestUserId ? await isAdmin(requestUserId) : false;
+        const isCreator = preset.createdBy === requestUserId;
+        const isAuthorized = isCreator || permissions.canDelete.includes(requestUserId);
+        if (!isAuthorized && !isRequesterAdmin && preset.createdBy !== 'Master') {
           throw new Error('您没有删除此预设的权限');
         }
         presets.splice(idx, 1);
@@ -1220,20 +1229,24 @@ async function requestHandler(req, res) {
       }
       if ((req.method === 'GET' || req.method === 'PUT') && pathname.match(/^\/api\/presets\/[\w-]+\/permissions$/)) {
         const presetId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
         const presets = await readSharedPresets();
         const preset = presets.find(p => p.id === presetId);
         if (!preset) throw new Error('预设不存在');
         if (req.method === 'GET') {
           return json(res, 200, {
             presetId: preset.id,
+            presetName: preset.name,
             createdBy: preset.createdBy,
             permissions: preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] }
           });
         }
         if (req.method === 'PUT') {
           const body = await readJson(req);
-          const requestUser = body.userId || 'Master';
-          if (preset.createdBy !== requestUser && requestUser !== 'Master') {
+          const requestUserId = currentUser?.id;
+          const isRequesterAdmin = requestUserId ? await isAdmin(requestUserId) : false;
+          const isCreator = preset.createdBy === requestUserId;
+          if (!isCreator && !isRequesterAdmin && body.userId !== 'Master') {
             throw new Error('只有创建者或管理员可以修改权限');
           }
           const newPermissions = body.permissions;
@@ -1252,8 +1265,15 @@ async function requestHandler(req, res) {
             presets[idx].permissions.canDelete.push(preset.createdBy);
           }
           await writeSharedPresets(presets);
+          await addAuditEvent('preset.permissions_changed', {
+            presetId: preset.id,
+            presetName: preset.name,
+            changedBy: currentUser?.name || 'Master',
+            permissions: presets[idx].permissions
+          }, currentUser?.name || 'Master', requestUserId);
           return json(res, 200, {
             presetId: preset.id,
+            presetName: preset.name,
             createdBy: preset.createdBy,
             permissions: presets[idx].permissions
           });
@@ -1618,6 +1638,143 @@ async function requestHandler(req, res) {
         }
         const users = await getUsers();
         return json(res, 200, { users });
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/users\/[^/]+\/role$/)) {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const userId = pathname.split('/')[3];
+        const role = await getUserRole(userId);
+        if (!role) {
+          return json(res, 404, { error: '用户不存在' });
+        }
+        return json(res, 200, { userId, role });
+      }
+      if (req.method === 'PUT' && pathname.match(/^\/api\/users\/[^/]+\/role$/)) {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const isCurrentAdmin = await isAdmin(currentUser.id);
+        if (!isCurrentAdmin) {
+          return json(res, 403, { error: '只有管理员可以修改用户角色' });
+        }
+        const userId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const { role } = body;
+        if (!role || !['admin', 'user'].includes(role)) {
+          return json(res, 400, { error: '无效的角色，可选值: admin, user' });
+        }
+        try {
+          const updatedUser = await setRole(userId, role, currentUser.id);
+          await addAuditEvent('user.role_changed', {
+            targetUserId: userId,
+            targetUserName: updatedUser.name,
+            oldRole: null,
+            newRole: role
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, { user: updatedUser });
+        } catch (err) {
+          return json(res, 400, { error: err.message });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/users/me/permissions') {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const permissions = getUserPermissions(currentUser.role || 'user');
+        return json(res, 200, {
+          userId: currentUser.id,
+          role: currentUser.role || 'user',
+          permissions
+        });
+      }
+      if (pathname.startsWith('/api/admin/')) {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const isCurrentAdmin = await isAdmin(currentUser.id);
+        if (!isCurrentAdmin) {
+          return json(res, 403, { error: '需要管理员权限才能访问此接口' });
+        }
+        const adminPath = pathname.slice('/api/admin/'.length);
+        
+        if (req.method === 'GET' && adminPath === 'users') {
+          const users = await getUsers();
+          return json(res, 200, { users });
+        }
+        
+        if (req.method === 'GET' && adminPath === 'stats') {
+          const users = await getUsers();
+          const presets = await readSharedPresets();
+          const tasks = await readTasks();
+          return json(res, 200, {
+            totalUsers: users.length,
+            adminCount: users.filter(u => u.role === 'admin').length,
+            userCount: users.filter(u => u.role === 'user').length,
+            totalPresets: presets.length,
+            totalTasks: tasks.length,
+            recentUsers: users.slice(-5).reverse()
+          });
+        }
+        
+        if (req.method === 'DELETE' && adminPath.match(/^presets\/[\w-]+$/)) {
+          const presetId = adminPath.split('/')[1];
+          const presets = await readSharedPresets();
+          const idx = presets.findIndex(p => p.id === presetId);
+          if (idx === -1) {
+            return json(res, 404, { error: '预设不存在' });
+          }
+          const preset = presets[idx];
+          presets.splice(idx, 1);
+          await writeSharedPresets(presets);
+          await addAuditEvent('preset.admin_deleted', {
+            presetId,
+            presetName: preset.name,
+            createdBy: preset.createdBy
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, { success: true });
+        }
+        
+        if (req.method === 'PUT' && adminPath.match(/^presets\/[\w-]+\/permissions$/)) {
+          const presetId = adminPath.split('/')[1];
+          const presets = await readSharedPresets();
+          const idx = presets.findIndex(p => p.id === presetId);
+          if (idx === -1) {
+            return json(res, 404, { error: '预设不存在' });
+          }
+          const body = await readJson(req);
+          const newPermissions = body.permissions;
+          if (!newPermissions || typeof newPermissions !== 'object') {
+            return json(res, 400, { error: '无效的权限配置' });
+          }
+          presets[idx].permissions = {
+            canEdit: Array.isArray(newPermissions.canEdit) ? newPermissions.canEdit : [presets[idx].createdBy],
+            canDelete: Array.isArray(newPermissions.canDelete) ? newPermissions.canDelete : [presets[idx].createdBy]
+          };
+          if (!presets[idx].permissions.canEdit.includes(presets[idx].createdBy)) {
+            presets[idx].permissions.canEdit.push(presets[idx].createdBy);
+          }
+          if (!presets[idx].permissions.canDelete.includes(presets[idx].createdBy)) {
+            presets[idx].permissions.canDelete.push(presets[idx].createdBy);
+          }
+          await writeSharedPresets(presets);
+          await addAuditEvent('preset.permissions_changed', {
+            presetId,
+            presetName: presets[idx].name,
+            permissions: presets[idx].permissions
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, {
+            presetId: presets[idx].id,
+            createdBy: presets[idx].createdBy,
+            permissions: presets[idx].permissions
+          });
+        }
+        
+        return json(res, 404, { error: '管理员接口不存在' });
       }
       if (req.method === 'POST' && pathname === '/api/audit') {
         const body = await readJson(req);

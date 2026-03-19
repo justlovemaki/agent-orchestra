@@ -29,7 +29,10 @@ const state = {
   authToken: localStorage.getItem('authToken'),
   syncStatus: 'idle',
   lastSyncTime: null,
-  isSyncing: false
+  isSyncing: false,
+  allUsers: [],
+  userPermissions: null,
+  isAdmin: false
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -127,6 +130,9 @@ const confirmReassignBtn = document.getElementById('confirmReassignBtn');
 const cancelReassignBtn = document.getElementById('cancelReassignBtn');
 
 let reassignTaskId = null;
+let currentPermissions = {};
+let currentEditingPresetId = null;
+let currentEditingPresetName = null;
 
 const auditFilterKeywordEl = document.getElementById('auditFilterKeyword');
 const auditEventTypeEl = document.getElementById('auditEventType');
@@ -383,28 +389,127 @@ function renderAuthUI() {
   if (state.currentUser) {
     userInfo.classList.remove('hidden');
     loginBtnContainer.classList.add('hidden');
-    currentUserName.textContent = state.currentUser.name;
+    const roleBadge = state.isAdmin ? '<span class="user-role-badge admin">管理员</span>' : '<span class="user-role-badge user">用户</span>';
+    currentUserName.innerHTML = `${escapeHtml(state.currentUser.name)} ${roleBadge}`;
   } else {
     userInfo.classList.add('hidden');
     loginBtnContainer.classList.remove('hidden');
   }
 }
 
+function renderAdminUI() {
+  const adminPanel = document.getElementById('adminPanel');
+  if (!adminPanel) return;
+  
+  if (state.isAdmin) {
+    adminPanel.classList.remove('hidden');
+    loadAllUsers();
+  } else {
+    adminPanel.classList.add('hidden');
+  }
+}
+
+async function loadAllUsers() {
+  try {
+    const res = await fetchJson('/api/admin/users');
+    state.allUsers = res.users || [];
+    renderUserManagementPanel();
+  } catch (err) {
+    console.error('加载用户列表失败:', err);
+  }
+}
+
+function renderUserManagementPanel() {
+  const userListEl = document.getElementById('userList');
+  if (!userListEl) return;
+  
+  if (state.allUsers.length === 0) {
+    userListEl.innerHTML = '<div class="muted small">暂无用户</div>';
+    return;
+  }
+  
+  userListEl.innerHTML = state.allUsers.map(user => {
+    const isCurrentUser = user.id === state.currentUser?.id;
+    const roleClass = user.role === 'admin' ? 'admin' : 'user';
+    const roleLabel = user.role === 'admin' ? '管理员' : '普通用户';
+    const createdAt = user.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : '—';
+    const lastLoginAt = user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '从未登录';
+    
+    return `
+      <div class="user-item" data-user-id="${user.id}">
+        <div class="user-item-info">
+          <div class="user-item-name">${escapeHtml(user.name)} ${isCurrentUser ? '<span class="muted">(本人)</span>' : ''}</div>
+          <div class="user-item-meta">
+            <span class="user-role-badge ${roleClass}">${roleLabel}</span>
+            <span>注册: ${createdAt}</span>
+            <span>最后登录: ${lastLoginAt}</span>
+          </div>
+        </div>
+        <div class="user-item-actions">
+          ${!isCurrentUser ? `
+            <select class="user-role-select" data-user-id="${user.id}">
+              <option value="user" ${user.role !== 'admin' ? 'selected' : ''}>普通用户</option>
+              <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
+            </select>
+            <button class="ghost tiny update-role-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name)}">更新角色</button>
+          ` : '<span class="muted small">当前用户</span>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  userListEl.querySelectorAll('.update-role-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const userId = btn.dataset.userId;
+      const userName = btn.dataset.userName;
+      const select = userListEl.querySelector(`.user-role-select[data-user-id="${userId}"]`);
+      const newRole = select.value;
+      
+      if (!confirm(`确定要将用户 "${userName}" 的角色修改为 ${newRole === 'admin' ? '管理员' : '普通用户'} 吗？`)) {
+        return;
+      }
+      
+      try {
+        await fetchJson(`/api/users/${userId}/role`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: newRole })
+        });
+        alert('角色已更新');
+        await loadAllUsers();
+      } catch (err) {
+        alert('更新失败: ' + err.message);
+      }
+    });
+  });
+}
+
 async function checkAuthStatus() {
   if (!state.authToken) {
     state.currentUser = null;
+    state.userPermissions = null;
+    state.isAdmin = false;
     renderAuthUI();
+    renderAdminUI();
     return;
   }
   try {
     const res = await fetchJson('/api/auth/me');
     state.currentUser = res.user;
+    state.isAdmin = res.user.role === 'admin';
+    try {
+      const permRes = await fetchJson('/api/users/me/permissions');
+      state.userPermissions = permRes.permissions;
+    } catch {}
   } catch (err) {
     state.currentUser = null;
+    state.userPermissions = null;
+    state.isAdmin = false;
     state.authToken = null;
     localStorage.removeItem(AUTH_TOKEN_KEY);
   }
   renderAuthUI();
+  renderAdminUI();
 }
 
 async function handleAuthSubmit() {
@@ -456,11 +561,17 @@ async function handleAuthSubmit() {
       });
       state.authToken = res.token;
       state.currentUser = res.user;
+      state.isAdmin = res.user.role === 'admin';
       localStorage.setItem(AUTH_TOKEN_KEY, res.token);
-      authMsg.textContent = '注册成功';
-      setTimeout(() => {
+      authMsg.textContent = '登录成功';
+      setTimeout(async () => {
         hideAuthModal();
         renderAuthUI();
+        renderAdminUI();
+        try {
+          const permRes = await fetchJson('/api/users/me/permissions');
+          state.userPermissions = permRes.permissions;
+        } catch {}
         syncUserData();
       }, 500);
     }
@@ -477,8 +588,12 @@ async function handleLogout() {
   } catch {}
   state.currentUser = null;
   state.authToken = null;
+  state.isAdmin = false;
+  state.userPermissions = null;
+  state.allUsers = [];
   localStorage.removeItem(AUTH_TOKEN_KEY);
   renderAuthUI();
+  renderAdminUI();
 }
 
 loginBtn.addEventListener('click', () => showAuthModal('login'));
@@ -891,15 +1006,16 @@ function renderSharedPresets() {
     sharedPresetListEl.innerHTML = state.sharedPresets.map((preset) => {
       const active = areFiltersEqual(state.filters, preset.filters);
       const permissions = preset.permissions || { canEdit: [preset.createdBy], canDelete: [preset.createdBy] };
-      const canEdit = permissions.canEdit.includes('Master') || permissions.canEdit.includes('*') || permissions.canEdit.includes(preset.createdBy);
-      const canDelete = permissions.canDelete.includes('Master') || permissions.canDelete.includes(preset.createdBy);
-      const isOwner = preset.createdBy === 'Master';
+      const canEdit = state.isAdmin || permissions.canEdit.includes('Master') || permissions.canEdit.includes('*') || permissions.canEdit.includes(preset.createdBy) || permissions.canEdit.includes(state.currentUser?.id);
+      const canDelete = state.isAdmin || permissions.canDelete.includes('Master') || permissions.canDelete.includes(preset.createdBy) || permissions.canDelete.includes(state.currentUser?.id);
+      const isOwner = preset.createdBy === 'Master' || preset.createdBy === state.currentUser?.id;
+      const canManagePermissions = state.isAdmin || isOwner;
       return `
         <span class="preset-chip preset-chip-shared ${active ? 'is-active' : ''}" data-shared-preset-id="${preset.id}">
           <button type="button" class="preset-chip-name" data-action="apply" data-shared-preset-id="${preset.id}">${escapeHtml(preset.name)}</button>
           <span class="preset-chip-meta muted small">by ${escapeHtml(preset.createdBy)}</span>
           <span class="preset-chip-actions">
-            <button type="button" data-action="permissions" data-shared-preset-id="${preset.id}" title="管理权限" ${!isOwner ? '' : ''}>权限</button>
+            <button type="button" data-action="permissions" data-shared-preset-id="${preset.id}" title="管理权限" ${canManagePermissions ? '' : 'disabled'}>权限</button>
             <button type="button" data-action="edit" data-shared-preset-id="${preset.id}" title="编辑共享预设" ${canEdit ? '' : 'disabled'}>编辑</button>
             <button type="button" data-action="delete" data-shared-preset-id="${preset.id}" title="删除共享预设" ${canDelete ? '' : 'disabled'}>删除</button>
           </span>
@@ -2644,15 +2760,29 @@ function auditEventTypeLabel(type) {
     'task_completed': '任务完成',
     'task_failed': '任务失败',
     'task_canceled': '任务取消',
+    'task_retried': '任务重试',
+    'task_paused': '任务暂停',
+    'task_resumed': '任务恢复',
+    'task_reassigned': '任务重指派',
     'agent_start': 'Agent启动',
     'agent_stop': 'Agent停止',
     'agent_error': 'Agent错误',
     'session_start': '会话开始',
     'session_end': '会话结束',
+    'session_message_sent': '会话消息',
+    'session_spawned': 'Subagent启动',
     'workflow_run': '工作流执行',
+    'workflow_executed': '工作流执行',
+    'agent_called': 'Agent调用',
+    'user_registered': '用户注册',
+    'user_logged_in': '用户登录',
+    'user_logged_out': '用户登出',
+    'user_role_changed': '角色变更',
+    'preset_admin_deleted': '预设删除',
+    'preset_permissions_changed': '权限变更',
     'system': '系统事件'
   };
-  return labels[type] || type;
+  return labels[type] || labels[type.replace(/_/g, '.')] || type;
 }
 
 function renderAuditFilterChips() {
@@ -2902,7 +3032,6 @@ const savePresetPermissionsBtn = document.getElementById('savePresetPermissionsB
 const cancelPresetPermissionsBtn = document.getElementById('cancelPresetPermissionsBtn');
 const presetPermissionsMsg = document.getElementById('presetPermissionsMsg');
 
-let currentEditingPresetId = null;
 let currentPresetPermissions = null;
 let currentPresetCreatedBy = null;
 
