@@ -945,6 +945,35 @@
                 <span class="muted small">下次备份时间：</span>
                 <span id="nextScheduledBackupTime" class="scheduled-backup-next">—</span>
               </div>
+
+              <div class="scheduled-backup-notification">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="scheduledBackupNotifyEnabled" />
+                  <span>启用备份通知</span>
+                </label>
+                <div id="scheduledBackupNotifyChannels" class="notification-channels hidden">
+                  <span class="field-label-small muted">选择通知渠道：</span>
+                  <div class="notification-channels-list">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="notifyFeishu" value="feishu" />
+                      <span>飞书</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="notifyDingtalk" value="dingtalk" />
+                      <span>钉钉</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="notifyWecom" value="wecom" />
+                      <span>企业微信</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="notifySlack" value="slack" />
+                      <span>Slack</span>
+                    </label>
+                  </div>
+                  <span class="muted small">请先在 IM 配置中设置渠道 ID 或 Webhook</span>
+                </div>
+              </div>
               
               <div class="scheduled-backup-actions">
                 <button id="saveScheduledBackupConfigBtn" class="primary">保存配置</button>

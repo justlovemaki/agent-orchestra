@@ -2755,34 +2755,34 @@ function renderAuditEvents() {
 
 function auditEventTypeLabel(type) {
   const labels = {
-    'task_created': '任务创建',
-    'task_started': '任务开始',
-    'task_completed': '任务完成',
-    'task_failed': '任务失败',
-    'task_canceled': '任务取消',
-    'task_retried': '任务重试',
-    'task_paused': '任务暂停',
-    'task_resumed': '任务恢复',
-    'task_reassigned': '任务重指派',
-    'agent_start': 'Agent启动',
-    'agent_stop': 'Agent停止',
-    'agent_error': 'Agent错误',
-    'session_start': '会话开始',
-    'session_end': '会话结束',
-    'session_message_sent': '会话消息',
-    'session_spawned': 'Subagent启动',
-    'workflow_run': '工作流执行',
-    'workflow_executed': '工作流执行',
-    'agent_called': 'Agent调用',
-    'user_registered': '用户注册',
-    'user_logged_in': '用户登录',
-    'user_logged_out': '用户登出',
-    'user_role_changed': '角色变更',
+    'task.created': '任务创建',
+    'task.completed': '任务完成',
+    'task.failed': '任务失败',
+    'task.cancelled': '任务取消',
+    'task.retried': '任务重试',
+    'task.paused': '任务暂停',
+    'task.resumed': '任务恢复',
+    'task.reassigned': '任务重指派',
+    'session.message_sent': '会话消息',
+    'session.spawned': 'Subagent启动',
+    'workflow.executed': '工作流执行',
+    'agent.called': 'Agent调用',
+    'user.registered': '用户注册',
+    'user.logged_in': '用户登录',
+    'user.logged_out': '用户登出',
+    'user.role_changed': '角色变更',
+    'backup.created': '备份创建',
+    'backup.restored': '备份恢复',
+    'backup.auto_snapshot_created': '自动快照',
+    'scheduled_backup.created': '定时备份',
+    'scheduled_backup.failed': '定时备份失败',
+    'scheduled_backup.config_changed': '定时备份配置变更',
+    'scheduled_backup.notified': '定时备份通知',
     'preset_admin_deleted': '预设删除',
     'preset_permissions_changed': '权限变更',
     'system': '系统事件'
   };
-  return labels[type] || labels[type.replace(/_/g, '.')] || type;
+  return labels[type] || labels[type.replace(/\./g, '_')] || type;
 }
 
 function renderAuditFilterChips() {
@@ -3944,6 +3944,12 @@ const nextScheduledBackupTime = document.getElementById('nextScheduledBackupTime
 const saveScheduledBackupConfigBtn = document.getElementById('saveScheduledBackupConfigBtn');
 const runScheduledBackupNowBtn = document.getElementById('runScheduledBackupNowBtn');
 const scheduledBackupHistoryList = document.getElementById('scheduledBackupHistoryList');
+const scheduledBackupNotifyEnabled = document.getElementById('scheduledBackupNotifyEnabled');
+const scheduledBackupNotifyChannels = document.getElementById('scheduledBackupNotifyChannels');
+const notifyFeishu = document.getElementById('notifyFeishu');
+const notifyDingtalk = document.getElementById('notifyDingtalk');
+const notifyWecom = document.getElementById('notifyWecom');
+const notifySlack = document.getElementById('notifySlack');
 
 let selectedBackupFile = null;
 let selectedBackupData = null;
@@ -4192,6 +4198,13 @@ async function loadScheduledBackupConfig() {
     scheduledBackupMode.value = res.mode || 'full';
     scheduledBackupRetention.value = res.retentionCount || 5;
     
+    const notification = res.notification || {};
+    scheduledBackupNotifyEnabled.checked = notification.enabled || false;
+    notifyFeishu.checked = notification.channels?.includes('feishu') || false;
+    notifyDingtalk.checked = notification.channels?.includes('dingtalk') || false;
+    notifyWecom.checked = notification.channels?.includes('wecom') || false;
+    notifySlack.checked = notification.channels?.includes('slack') || false;
+    
     if (res.enabled) {
       scheduledBackupOptions.classList.remove('hidden');
       if (res.nextRunTime) {
@@ -4205,6 +4218,7 @@ async function loadScheduledBackupConfig() {
     }
     
     updateDayOfWeekVisibility();
+    updateNotificationChannelsVisibility();
   } catch (err) {
     console.error('加载定时备份配置失败:', err);
   }
@@ -4215,6 +4229,14 @@ function updateDayOfWeekVisibility() {
     dayOfWeekField.style.display = 'block';
   } else {
     dayOfWeekField.style.display = 'none';
+  }
+}
+
+function updateNotificationChannelsVisibility() {
+  if (scheduledBackupNotifyEnabled.checked) {
+    scheduledBackupNotifyChannels.classList.remove('hidden');
+  } else {
+    scheduledBackupNotifyChannels.classList.add('hidden');
   }
 }
 
@@ -4245,13 +4267,23 @@ async function loadScheduledBackupHistory() {
 }
 
 async function handleSaveScheduledBackupConfig() {
+  const channels = [];
+  if (notifyFeishu.checked) channels.push('feishu');
+  if (notifyDingtalk.checked) channels.push('dingtalk');
+  if (notifyWecom.checked) channels.push('wecom');
+  if (notifySlack.checked) channels.push('slack');
+  
   const config = {
     enabled: scheduledBackupEnabled.checked,
     frequency: scheduledBackupFrequency.value,
     time: scheduledBackupTime.value,
     dayOfWeek: parseInt(scheduledBackupDayOfWeek.value, 10),
     mode: scheduledBackupMode.value,
-    retentionCount: parseInt(scheduledBackupRetention.value, 10)
+    retentionCount: parseInt(scheduledBackupRetention.value, 10),
+    notification: {
+      enabled: scheduledBackupNotifyEnabled.checked,
+      channels
+    }
   };
   
   try {
@@ -4311,6 +4343,7 @@ scheduledBackupEnabled.addEventListener('change', () => {
 });
 
 scheduledBackupFrequency.addEventListener('change', updateDayOfWeekVisibility);
+scheduledBackupNotifyEnabled.addEventListener('change', updateNotificationChannelsVisibility);
 saveScheduledBackupConfigBtn.addEventListener('click', handleSaveScheduledBackupConfig);
 runScheduledBackupNowBtn.addEventListener('click', handleRunScheduledBackupNow);
 

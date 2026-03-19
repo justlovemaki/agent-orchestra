@@ -3047,3 +3047,27 @@ button.ghost.tiny {
 .backup-history-failed {
   border-left: 3px solid var(--danger);
 }
+
+.scheduled-backup-notification {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.notification-channels {
+  margin-top: 12px;
+  margin-left: 24px;
+}
+
+.notification-channels-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.field-label-small {
+  font-size: 12px;
+  display: block;
+  margin-bottom: 4px;
+}

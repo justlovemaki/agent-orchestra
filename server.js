@@ -2113,7 +2113,7 @@ async function requestHandler(req, res) {
 
         if (req.method === 'PUT' && adminPath === 'scheduled-backup/config') {
           const body = await readJson(req);
-          const { enabled, frequency, time, dayOfWeek, retentionCount, mode } = body;
+          const { enabled, frequency, time, dayOfWeek, retentionCount, mode, notification } = body;
           
           if (enabled !== undefined && typeof enabled !== 'boolean') {
             throw new Error('enabled 必须是布尔值');
@@ -2141,15 +2141,40 @@ async function requestHandler(req, res) {
           if (mode !== undefined && !['full', 'incremental'].includes(mode)) {
             throw new Error('mode 必须是 full 或 incremental');
           }
+          if (notification !== undefined) {
+            if (typeof notification !== 'object' || notification === null) {
+              throw new Error('notification 必须是对象');
+            }
+            if (notification.enabled !== undefined && typeof notification.enabled !== 'boolean') {
+              throw new Error('notification.enabled 必须是布尔值');
+            }
+            if (notification.channels !== undefined) {
+              if (!Array.isArray(notification.channels)) {
+                throw new Error('notification.channels 必须是数组');
+              }
+              const validChannels = ['feishu', 'dingtalk', 'wecom', 'slack'];
+              for (const ch of notification.channels) {
+                if (!validChannels.includes(ch)) {
+                  throw new Error(`无效的通知渠道: ${ch}，有效值为: ${validChannels.join(', ')}`);
+                }
+              }
+            }
+          }
           
-          const result = await scheduledBackup.updateConfig({
+          const configUpdate = {
             enabled,
             frequency,
             time,
             dayOfWeek,
             retentionCount,
             mode
-          });
+          };
+          
+          if (notification !== undefined) {
+            configUpdate.notification = notification;
+          }
+          
+          const result = await scheduledBackup.updateConfig(configUpdate);
           
           await addAuditEvent('scheduled_backup.config_changed', {
             changedBy: currentUser.name,
@@ -3295,3 +3320,166 @@ async function sendSlackImageMessage(config, channelId, imageBase64, title) {
 
   return { messageId: uploadData.file?.id || 'uploaded' };
 }
+
+async function sendFeishuTextMessage(config, channelId, text) {
+  const accessToken = await getFeishuAccessToken(config);
+  const receiveIdType = channelId.startsWith('oc_') ? 'open_id' : 'chat_id';
+  
+  const response = await fetch('https://open.feishu.cn/open-apis/im/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({
+      receive_id: channelId,
+      receive_id_type: receiveIdType,
+      msg_type: 'text',
+      content: JSON.stringify({ text })
+    })
+  });
+
+  const data = await response.json();
+  if (data.code !== 0) {
+    throw new Error(`发送飞书文本消息失败: ${data.msg}`);
+  }
+  return data.data;
+}
+
+async function sendDingTalkTextMessage(webhook, text) {
+  const messagePayload = {
+    msgtype: 'text',
+    text: { content: text }
+  };
+
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(messagePayload)
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`发送钉钉文本消息失败: ${data.errmsg}`);
+  }
+  return { messageId: data.errcode };
+}
+
+async function sendWecomTextMessage(webhook, text) {
+  const messagePayload = {
+    msgtype: 'text',
+    text: { content: text }
+  };
+
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(messagePayload)
+  });
+  const data = await response.json();
+  if (data.errcode !== 0) {
+    throw new Error(`发送企业微信文本消息失败: ${data.errmsg}`);
+  }
+  return { messageId: data.msgid };
+}
+
+async function sendSlackTextMessage(config, channelId, text) {
+  const payload = {
+    channel: channelId,
+    text: text
+  };
+
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.botToken}`,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(`发送 Slack 文本消息失败: ${data.error}`);
+  }
+  return { messageId: data.ts };
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+async function handleScheduledBackupNotification(params) {
+  const { success, type, fileName, fileSize, duration, error, channels } = params;
+  const modeText = type === 'incremental' ? '增量备份' : '完整备份';
+  const statusText = success ? '成功' : '失败';
+  const timeText = new Date().toLocaleString('zh-CN');
+  
+  let message = `📦 Agent Orchestra 定时备份通知\n`;
+  message += `━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `⏰ 时间: ${timeText}\n`;
+  message += `📋 类型: ${modeText}\n`;
+  message += `📊 状态: ${statusText}\n`;
+  
+  if (success) {
+    message += `📁 文件: ${fileName}\n`;
+    message += `💾 大小: ${formatBytes(fileSize)}\n`;
+    if (duration) {
+      message += `⏱️ 耗时: ${(duration / 1000).toFixed(1)}秒\n`;
+    }
+  } else {
+    message += `❌ 错误: ${error}\n`;
+  }
+  message += `━━━━━━━━━━━━━━━━━━━━`;
+
+  const results = { sent: [], failed: [] };
+  
+  for (const channel of channels) {
+    try {
+      if (channel === 'feishu') {
+        const feishuConfig = getFeishuConfig();
+        if (feishuConfig && feishuConfig.channelId) {
+          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, message);
+          results.sent.push('feishu');
+        }
+      } else if (channel === 'dingtalk') {
+        const dingtalkConfig = getDingTalkConfig();
+        if (dingtalkConfig && dingtalkConfig.webhook) {
+          await sendDingTalkTextMessage(dingtalkConfig.webhook, message);
+          results.sent.push('dingtalk');
+        }
+      } else if (channel === 'wecom') {
+        const wecomConfig = getWecomConfig();
+        if (wecomConfig && wecomConfig.webhook) {
+          await sendWecomTextMessage(wecomConfig.webhook, message);
+          results.sent.push('wecom');
+        }
+      } else if (channel === 'slack') {
+        const slackConfig = getSlackConfig();
+        if (slackConfig && slackConfig.channelId) {
+          await sendSlackTextMessage(slackConfig, slackConfig.channelId, message);
+          results.sent.push('slack');
+        }
+      }
+    } catch (err) {
+      console.error(`[ScheduledBackup] 发送${channel}通知失败:`, err.message);
+      results.failed.push({ channel, error: err.message });
+    }
+  }
+
+  await addAuditEvent('scheduled_backup.notified', {
+    success,
+    channels: results.sent,
+    failed: results.failed,
+    backupType: type,
+    fileName,
+    fileSize,
+    error
+  }, 'system');
+
+  return results;
+}
+
+scheduledBackup.setNotificationFunction(handleScheduledBackupNotification);
