@@ -3397,3 +3397,53 @@ button.ghost.tiny {
   width: 100% !important;
   height: 100% !important;
 }
+
+.trend-detail-container {
+  position: absolute;
+  z-index: 100;
+  background: rgba(11, 20, 36, 0.98);
+  border: 1px solid rgba(144, 168, 220, 0.24);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 180px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.trend-detail-popup {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.trend-detail-header {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(144, 168, 220, 0.15);
+}
+
+.trend-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.trend-detail-label {
+  color: #95a5c6;
+}
+
+.trend-detail-value {
+  font-weight: 500;
+  color: #eff4ff;
+}
+
+.trend-detail-footer {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(144, 168, 220, 0.15);
+  font-size: 10px;
+  color: #6f81a8;
+  text-align: center;
+}

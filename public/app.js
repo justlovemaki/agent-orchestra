@@ -49,9 +49,11 @@ const trends14dBtn = document.getElementById('trends14d');
 const agentUsageLoadingEl = document.getElementById('agentUsageLoading');
 const agentUsageEmptyEl = document.getElementById('agentUsageEmpty');
 const agentUsageChartEl = document.getElementById('agentUsageChart');
+const taskFilterBarEl = document.getElementById('taskFilterBar');
 
 let trendsChartInstance = null;
 let agentUsageChartInstance = null;
+let trendDetailPopup = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -677,6 +679,91 @@ async function loadTrends(days = state.trendsDays) {
   }
 }
 
+function handleLegendToggle(event, legendItem, legend) {
+  const index = legendItem.datasetIndex;
+  const ci = legend.chart;
+  const meta = ci.getDatasetMeta(index);
+  
+  meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+  ci.update();
+}
+
+function handleTrendsChartClick(event, elements) {
+  if (elements.length === 0) return;
+  
+  const element = elements[0];
+  const dataIndex = element.index;
+  const trend = state.trends[dataIndex];
+  if (!trend) return;
+  
+  const date = new Date(trend.date);
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  
+  const completionRate = trend.total > 0 ? ((trend.completed / trend.total) * 100).toFixed(1) : '0.0';
+  const failRate = trend.total > 0 ? ((trend.failed / trend.total) * 100).toFixed(1) : '0.0';
+  
+  const popupContent = `
+    <div class="trend-detail-popup">
+      <div class="trend-detail-header">${dateStr} 详细统计</div>
+      <div class="trend-detail-row">
+        <span class="trend-detail-label">总任务</span>
+        <span class="trend-detail-value">${trend.total}</span>
+      </div>
+      <div class="trend-detail-row">
+        <span class="trend-detail-label" style="color: #44d19f;">完成</span>
+        <span class="trend-detail-value">${trend.completed} (${completionRate}%)</span>
+      </div>
+      <div class="trend-detail-row">
+        <span class="trend-detail-label" style="color: #ff718d;">失败</span>
+        <span class="trend-detail-value">${trend.failed} (${failRate}%)</span>
+      </div>
+      <div class="trend-detail-row">
+        <span class="trend-detail-label" style="color: #7aa2ff;">进行中</span>
+        <span class="trend-detail-value">${trend.running || 0}</span>
+      </div>
+      <div class="trend-detail-footer">点击图例可显示/隐藏对应数据线</div>
+    </div>
+  `;
+  
+  showTrendDetailPopup(event, popupContent);
+}
+
+function showTrendDetailPopup(event, content) {
+  removeTrendDetailPopup();
+  
+  const popup = document.createElement('div');
+  popup.id = 'trendDetailPopup';
+  popup.className = 'trend-detail-container';
+  popup.innerHTML = content;
+  
+  const chartRect = trendsChartEl.getBoundingClientRect();
+  const x = event.clientX - chartRect.left + 10;
+  const y = event.clientY - chartRect.top - 10;
+  
+  popup.style.left = `${Math.min(x, chartRect.width - 200)}px`;
+  popup.style.top = `${Math.max(y - 100, 0)}px`;
+  
+  trendsChartEl.parentElement.appendChild(popup);
+  trendDetailPopup = popup;
+  
+  setTimeout(() => {
+    document.addEventListener('click', handlePopupOutsideClick, { once: true });
+  }, 10);
+}
+
+function removeTrendDetailPopup() {
+  if (trendDetailPopup) {
+    trendDetailPopup.remove();
+    trendDetailPopup = null;
+  }
+}
+
+function handlePopupOutsideClick(event) {
+  if (trendDetailPopup && !trendDetailPopup.contains(event.target) && !trendsChartEl.contains(event.target)) {
+    removeTrendDetailPopup();
+  }
+}
+
 function renderTrends() {
   trendsLoadingEl.classList.add('hidden');
   
@@ -751,6 +838,7 @@ function renderTrends() {
         mode: 'index',
         intersect: false
       },
+      onClick: handleTrendsChartClick,
       plugins: {
         legend: {
           position: 'top',
@@ -758,7 +846,8 @@ function renderTrends() {
             color: '#95a5c6',
             usePointStyle: true,
             padding: 16
-          }
+          },
+          onClick: handleLegendToggle
         },
         tooltip: {
           backgroundColor: 'rgba(11, 20, 36, 0.95)',
@@ -793,6 +882,29 @@ function renderTrends() {
         }
       }
     }
+  });
+}
+
+function handleAgentChartClick(event, elements) {
+  if (elements.length === 0) return;
+  const dataIndex = elements[0].index;
+  const agent = state.agentUsage[dataIndex];
+  if (!agent) return;
+  
+  const agentName = agent.agentName;
+  
+  state.filters = { ...state.filters, agent: agentName };
+  populateFilterInputs(state.filters);
+  saveFiltersToStorage(state.filters);
+  syncFiltersToUrl(state.filters);
+  
+  taskFilterBarEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  
+  loadTasks().then(() => {
+    renderTaskBoard();
+    renderFilterChips();
+    renderFilterPresets();
+    renderFilterSummary();
   });
 }
 
@@ -862,6 +974,7 @@ function renderAgentUsage() {
         mode: 'index',
         intersect: false
       },
+      onClick: handleAgentChartClick,
       plugins: {
         legend: {
           position: 'top',
