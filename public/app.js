@@ -34,7 +34,8 @@ const state = {
   userPermissions: null,
   isAdmin: false,
   trends: null,
-  trendsDays: 14
+  trendsDays: 14,
+  agentUsage: null
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -45,8 +46,12 @@ const trendsEmptyEl = document.getElementById('trendsEmpty');
 const trendsChartEl = document.getElementById('trendsChart');
 const trends7dBtn = document.getElementById('trends7d');
 const trends14dBtn = document.getElementById('trends14d');
+const agentUsageLoadingEl = document.getElementById('agentUsageLoading');
+const agentUsageEmptyEl = document.getElementById('agentUsageEmpty');
+const agentUsageChartEl = document.getElementById('agentUsageChart');
 
 let trendsChartInstance = null;
+let agentUsageChartInstance = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -653,15 +658,22 @@ async function loadTrends(days = state.trendsDays) {
   trendsLoadingEl.classList.remove('hidden');
   trendsEmptyEl.classList.add('hidden');
   trendsChartEl.style.display = 'none';
+  agentUsageLoadingEl.classList.remove('hidden');
+  agentUsageEmptyEl.classList.add('hidden');
+  agentUsageChartEl.style.display = 'none';
   
   try {
     const res = await fetchJson(`/api/stats/trends?days=${days}`);
     state.trends = res.trends || [];
     state.trendsDays = res.days || days;
+    state.agentUsage = res.agentUsage || [];
     renderTrends();
+    renderAgentUsage();
   } catch (err) {
     state.trends = [];
+    state.agentUsage = [];
     renderTrends();
+    renderAgentUsage();
   }
 }
 
@@ -784,6 +796,135 @@ function renderTrends() {
   });
 }
 
+async function loadAgentUsage() {
+  agentUsageLoadingEl.classList.remove('hidden');
+  agentUsageEmptyEl.classList.add('hidden');
+  agentUsageChartEl.style.display = 'none';
+  
+  try {
+    const res = await fetchJson(`/api/stats/trends?days=${state.trendsDays}`);
+    state.agentUsage = res.agentUsage || [];
+    renderAgentUsage();
+  } catch (err) {
+    state.agentUsage = [];
+    renderAgentUsage();
+  }
+}
+
+function renderAgentUsage() {
+  agentUsageLoadingEl.classList.add('hidden');
+  
+  if (!state.agentUsage || state.agentUsage.length === 0) {
+    agentUsageEmptyEl.classList.remove('hidden');
+    agentUsageChartEl.style.display = 'none';
+    if (agentUsageChartInstance) {
+      agentUsageChartInstance.destroy();
+      agentUsageChartInstance = null;
+    }
+    return;
+  }
+  
+  agentUsageEmptyEl.classList.add('hidden');
+  agentUsageChartEl.style.display = 'block';
+  
+  const labels = state.agentUsage.map(a => a.agentName);
+  const successData = state.agentUsage.map(a => a.successCount);
+  const failData = state.agentUsage.map(a => a.failCount);
+  
+  if (agentUsageChartInstance) {
+    agentUsageChartInstance.destroy();
+  }
+  
+  const ctx = agentUsageChartEl.getContext('2d');
+  agentUsageChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '成功',
+          data: successData,
+          backgroundColor: '#44d19f',
+          borderRadius: 4
+        },
+        {
+          label: '失败',
+          data: failData,
+          backgroundColor: '#ff718d',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              const dataIndex = context.dataIndex;
+              const agent = state.agentUsage[dataIndex];
+              const total = agent.taskCount;
+              const percentage = ((context.raw / total) * 100).toFixed(1);
+              return `${context.dataset.label}: ${context.raw} (${percentage}%)`;
+            },
+            footer: function(tooltipItems) {
+              const dataIndex = tooltipItems[0].dataIndex;
+              const agent = state.agentUsage[dataIndex];
+              return `总计: ${agent.taskCount} 次`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            maxRotation: 45,
+            minRotation: 0
+          }
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1
+          }
+        }
+      }
+    }
+  });
+}
+
 function render() {
   renderStats();
   renderAgents();
@@ -804,6 +945,7 @@ function render() {
   renderAuditEvents();
   renderAuditFilterChips();
   renderAuditResultCount();
+  renderAgentUsage();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 

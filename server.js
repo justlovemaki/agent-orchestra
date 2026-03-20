@@ -446,6 +446,12 @@ function parseAgentsList(text) {
   return agents;
 }
 
+async function listAgents() {
+  const result = await runOpenClaw(['agents', 'list'], 30000);
+  const agentsList = parseAgentsList(result.stdout);
+  return agentsList;
+}
+
 function humanAge(ms) {
   if (ms == null) return '未知';
   const sec = Math.floor(ms / 1000);
@@ -1015,7 +1021,14 @@ async function requestHandler(req, res) {
       if (req.method === 'GET' && pathname === '/api/stats/trends') {
         const days = parseInt(parsed.query?.days) || 14;
         const tasks = await listTasks({});
+        const agentsList = await listAgents();
+        const agentNameMap = new Map(agentsList.map(a => [a.id, a.identity || a.id]));
+        
         const trends = [];
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        cutoffDate.setHours(0, 0, 0, 0);
+        
         for (let i = days - 1; i >= 0; i--) {
           const date = new Date();
           date.setDate(date.getDate() - i);
@@ -1036,7 +1049,35 @@ async function requestHandler(req, res) {
             failed
           });
         }
-        return json(res, 200, { ok: true, trends, days });
+        
+        const agentStats = new Map();
+        const recentTasks = tasks.filter(t => new Date(t.createdAt) >= cutoffDate);
+        for (const task of recentTasks) {
+          const runs = task.runs || [];
+          for (const run of runs) {
+            if (!run.agentId) continue;
+            if (!agentStats.has(run.agentId)) {
+              agentStats.set(run.agentId, {
+                agentId: run.agentId,
+                agentName: agentNameMap.get(run.agentId) || run.agentId,
+                taskCount: 0,
+                successCount: 0,
+                failCount: 0
+              });
+            }
+            const stats = agentStats.get(run.agentId);
+            stats.taskCount++;
+            if (run.status === 'completed') {
+              stats.successCount++;
+            } else if (run.status === 'failed' || run.status === 'error') {
+              stats.failCount++;
+            }
+          }
+        }
+        
+        const agentUsage = Array.from(agentStats.values()).sort((a, b) => b.taskCount - a.taskCount);
+        
+        return json(res, 200, { ok: true, trends, days, agentUsage });
       }
       if (req.method === 'GET' && pathname === '/api/tasks') {
         const filters = parseTaskFilters(parsed.query || {});

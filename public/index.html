@@ -63,6 +63,25 @@
           </div>
         </section>
 
+        <section class="panel section-panel agent-usage-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Agent Usage</div>
+              <h2>Agent 使用率</h2>
+            </div>
+          </div>
+          <div id="agentUsageChartContainer" class="trends-chart-container">
+            <div id="agentUsageLoading" class="trends-loading">
+              <div class="loading-spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <div id="agentUsageEmpty" class="trends-empty hidden">
+              <span class="muted">暂无 Agent 使用数据</span>
+            </div>
+            <canvas id="agentUsageChart"></canvas>
+          </div>
+        </section>
+
         <section class="panel section-panel">
           <div class="panel-head panel-head-tight">
             <div>

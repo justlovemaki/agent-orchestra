@@ -3388,3 +3388,12 @@ button.ghost.tiny {
     height: 180px;
   }
 }
+
+.agent-usage-panel {
+  margin-top: 16px;
+}
+
+#agentUsageChart {
+  width: 100% !important;
+  height: 100% !important;
+}
