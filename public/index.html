@@ -409,6 +409,11 @@
           <div class="admin-actions">
             <button id="openBackupModalBtn" class="ghost">数据备份与恢复</button>
           </div>
+          <div class="panel-subtitle" style="margin-top: 24px;">用户组管理</div>
+          <div class="admin-actions" style="margin-bottom: 12px;">
+            <button id="createUserGroupBtn" class="primary">创建用户组</button>
+          </div>
+          <div id="userGroupList" class="user-group-list"></div>
         </section>
       </section>
 
@@ -1259,6 +1264,42 @@
         </div>
       </div>
       <div id="backupMsg" class="form-msg"></div>
+    </div>
+  </div>
+
+  <div id="userGroupModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3 id="userGroupModalTitle">创建用户组</h3>
+        <button class="modal-close" data-close-modal="userGroupModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="userGroupForm">
+          <input type="hidden" id="userGroupId" />
+          <div class="form-group">
+            <label>
+              <span class="field-label">用户组名称</span>
+              <input type="text" id="userGroupName" class="filter-input" placeholder="例如：开发组" required />
+            </label>
+          </div>
+          <div class="form-group full-width">
+            <label>
+              <span class="field-label">描述</span>
+              <textarea id="userGroupDescription" class="filter-input" rows="3" placeholder="用户组描述（可选）"></textarea>
+            </label>
+          </div>
+          <div class="form-group full-width">
+            <span class="field-label">成员</span>
+            <div id="userGroupMembers" class="checkbox-list" style="max-height: 200px; overflow-y: auto;"></div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="ghost" data-close-modal="userGroupModal">取消</button>
+            <button type="submit" class="primary">保存</button>
+          </div>
+        </form>
+        <div id="userGroupFormMsg" class="form-msg"></div>
+      </div>
     </div>
   </div>
 

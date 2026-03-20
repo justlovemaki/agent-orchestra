@@ -420,6 +420,8 @@ function renderAdminUI() {
   if (state.isAdmin) {
     adminPanel.classList.remove('hidden');
     loadAllUsers();
+    loadUserGroups();
+    initUserGroupUI();
   } else {
     adminPanel.classList.add('hidden');
   }
@@ -454,7 +456,7 @@ function renderUserManagementPanel() {
     return `
       <div class="user-item" data-user-id="${user.id}">
         <div class="user-item-info">
-          <div class="user-item-name">${escapeHtml(user.name)} ${isCurrentUser ? '<span class="muted">(本人)</span>' : ''}</div>
+          <div class="user-item-name">${escapeHtml(user.name)} ${isCurrentUser ? '<span class="muted">(本人)</span>' : ''} ${user.groupId ? `<span class="user-group-badge">${escapeHtml(allUserGroups.find(g => g.id === user.groupId)?.name || '未知组')}</span>` : ''}</div>
           <div class="user-item-meta">
             <span class="user-role-badge ${roleClass}">${roleLabel}</span>
             <span>注册: ${createdAt}</span>
@@ -467,7 +469,12 @@ function renderUserManagementPanel() {
               <option value="user" ${user.role !== 'admin' ? 'selected' : ''}>普通用户</option>
               <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
             </select>
-            <button class="ghost tiny update-role-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name)}">更新角色</button>
+            <select class="user-group-select" data-user-id="${user.id}" style="margin-left: 8px;">
+              <option value="">无</option>
+              ${allUserGroups.map(g => `<option value="${g.id}" ${user.groupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+            </select>
+            <button class="ghost tiny update-role-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name)}" style="margin-left: 8px;">更新角色</button>
+            <button class="ghost tiny update-group-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name)}">更新组</button>
           ` : '<span class="muted small">当前用户</span>'}
         </div>
       </div>
@@ -498,6 +505,214 @@ function renderUserManagementPanel() {
       }
     });
   });
+  
+  userListEl.querySelectorAll('.update-group-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const userId = btn.dataset.userId;
+      const userName = btn.dataset.userName;
+      const select = userListEl.querySelector(`.user-group-select[data-user-id="${userId}"]`);
+      const groupId = select.value || null;
+      
+      const groupName = groupId ? (allUserGroups.find(g => g.id === groupId)?.name || '未知组') : '无';
+      if (!confirm(`确定要将用户 "${userName}" 的组别修改为 ${groupName} 吗？`)) {
+        return;
+      }
+      
+      try {
+        await fetchJson(`/api/admin/users/${userId}/group`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId })
+        });
+        alert('用户组已更新');
+        await loadAllUsers();
+        await loadUserGroups();
+      } catch (err) {
+        alert('更新失败：' + err.message);
+      }
+    });
+  });
+}
+
+// User Group Management
+let allUserGroups = [];
+
+async function loadUserGroups() {
+  try {
+    const res = await fetchJson('/api/admin/user-groups');
+    allUserGroups = res.groups || [];
+    renderUserGroupList();
+  } catch (err) {
+    console.error('加载用户组列表失败:', err);
+  }
+}
+
+function renderUserGroupList() {
+  const listEl = document.getElementById('userGroupList');
+  if (!listEl) return;
+  
+  if (allUserGroups.length === 0) {
+    listEl.innerHTML = '<div class="muted small">暂无用户组</div>';
+    return;
+  }
+  
+  listEl.innerHTML = allUserGroups.map(group => `
+    <div class="user-group-item" data-group-id="${group.id}">
+      <div class="user-group-item-info">
+        <div class="user-group-item-name">
+          ${escapeHtml(group.name)}
+          <span class="user-group-badge">${group.memberCount || 0} 名成员</span>
+        </div>
+        <div class="user-group-item-meta">
+          ${group.description ? escapeHtml(group.description) : '<span class="muted">无描述</span>'}
+        </div>
+      </div>
+      <div class="user-group-item-actions">
+        <button class="ghost tiny edit-group-btn" data-group-id="${group.id}">编辑</button>
+        <button class="danger tiny delete-group-btn" data-group-id="${group.id}">删除</button>
+      </div>
+    </div>
+  `).join('');
+  
+  listEl.querySelectorAll('.edit-group-btn').forEach(btn => {
+    btn.addEventListener('click', () => openUserGroupModal(btn.dataset.groupId));
+  });
+  
+  listEl.querySelectorAll('.delete-group-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.groupId;
+      const group = allUserGroups.find(g => g.id === groupId);
+      if (!confirm(`确定要删除用户组 "${group.name}" 吗？`)) return;
+      
+      try {
+        await fetchJson(`/api/admin/user-groups/${groupId}`, { method: 'DELETE' });
+        await loadUserGroups();
+        await loadAllUsers();
+      } catch (err) {
+        alert('删除失败：' + err.message);
+      }
+    });
+  });
+}
+
+function openUserGroupModal(groupId = null) {
+  const modal = document.getElementById('userGroupModal');
+  const title = document.getElementById('userGroupModalTitle');
+  const form = document.getElementById('userGroupForm');
+  const idInput = document.getElementById('userGroupId');
+  const nameInput = document.getElementById('userGroupName');
+  const descInput = document.getElementById('userGroupDescription');
+  const membersDiv = document.getElementById('userGroupMembers');
+  
+  form.reset();
+  idInput.value = '';
+  
+  if (groupId) {
+    title.textContent = '编辑用户组';
+    const group = allUserGroups.find(g => g.id === groupId);
+    if (group) {
+      idInput.value = group.id;
+      nameInput.value = group.name;
+      descInput.value = group.description || '';
+    }
+  } else {
+    title.textContent = '创建用户组';
+  }
+  
+  // Render member checkboxes
+  if (state.allUsers && state.allUsers.length > 0) {
+    const groupMemberIds = groupId ? (allUserGroups.find(g => g.id === groupId)?.memberIds || []) : [];
+    membersDiv.innerHTML = state.allUsers.map(user => `
+      <label style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+        <input type="checkbox" value="${user.id}" ${groupMemberIds.includes(user.id) ? 'checked' : ''} />
+        <span>${escapeHtml(user.name)}${user.id === state.currentUser?.id ? ' (本人)' : ''}</span>
+      </label>
+    `).join('');
+  }
+  
+  modal.classList.remove('hidden');
+}
+
+async function initUserGroupUI() {
+  const createBtn = document.getElementById('createUserGroupBtn');
+  if (createBtn) {
+    createBtn.addEventListener('click', () => openUserGroupModal());
+  }
+  
+  const form = document.getElementById('userGroupForm');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msgEl = document.getElementById('userGroupFormMsg');
+      const groupId = document.getElementById('userGroupId').value;
+      const name = document.getElementById('userGroupName').value;
+      const description = document.getElementById('userGroupDescription').value;
+      
+      // Get selected members
+      const memberCheckboxes = document.querySelectorAll('#userGroupMembers input[type="checkbox"]:checked');
+      const memberIds = Array.from(memberCheckboxes).map(cb => cb.value);
+      
+      try {
+        if (groupId) {
+          // Update existing group
+          await fetchJson(`/api/admin/user-groups/${groupId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+          });
+          
+          // Update members (remove all then add selected)
+          const group = allUserGroups.find(g => g.id === groupId);
+          const oldMemberIds = group?.memberIds || [];
+          
+          // Remove members not in selection
+          for (const oldId of oldMemberIds) {
+            if (!memberIds.includes(oldId)) {
+              await fetchJson(`/api/admin/user-groups/${groupId}/members/${oldId}`, { method: 'DELETE' });
+            }
+          }
+          
+          // Add new members
+          for (const newId of memberIds) {
+            if (!oldMemberIds.includes(newId)) {
+              await fetchJson(`/api/admin/user-groups/${groupId}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: newId })
+              });
+            }
+          }
+          
+          msgEl.textContent = '用户组已更新';
+        } else {
+          // Create new group
+          const group = await fetchJson('/api/admin/user-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+          });
+          
+          // Add members
+          for (const memberId of memberIds) {
+            await fetchJson(`/api/admin/user-groups/${group.id}/members`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: memberId })
+            });
+          }
+          
+          msgEl.textContent = '用户组已创建';
+        }
+        
+        setTimeout(() => { msgEl.textContent = ''; }, 3000);
+        document.getElementById('userGroupModal').classList.add('hidden');
+        await loadUserGroups();
+        await loadAllUsers();
+      } catch (err) {
+        msgEl.textContent = '操作失败：' + err.message;
+      }
+    });
+  }
 }
 
 async function checkAuthStatus() {

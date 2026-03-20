@@ -9,7 +9,8 @@ const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
-const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
+const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, setUserGroupId, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
+const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
 const cloudStorage = require('./lib/cloud-storage');
 
@@ -1770,6 +1771,31 @@ async function requestHandler(req, res) {
           return json(res, 400, { error: err.message });
         }
       }
+      if (req.method === 'PUT' && pathname.match(/^\/api\/admin\/users\/[\w-]+\/group$/)) {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '需要登录才能访问' });
+        }
+        const isCurrentAdmin = await isAdmin(currentUser.id);
+        if (!isCurrentAdmin) {
+          return json(res, 403, { error: '只有管理员可以修改用户组' });
+        }
+        const userId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const { groupId } = body;
+        try {
+          const updatedUser = await setUserGroupId(userId, groupId, currentUser.id);
+          await addAuditEvent('user.group_changed', {
+            targetUserId: userId,
+            targetUserName: updatedUser.name,
+            oldGroupId: null,
+            newGroupId: groupId
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, { user: updatedUser });
+        } catch (err) {
+          return json(res, 400, { error: err.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/users/me/permissions') {
         const currentUser = await verifyTokenFromRequest(req);
         if (!currentUser) {
@@ -1781,6 +1807,11 @@ async function requestHandler(req, res) {
           role: currentUser.role || 'user',
           permissions
         });
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/users\/[\w-]+\/groups$/)) {
+        const userId = pathname.split('/')[3];
+        const userGroupsList = await userGroups.getUserGroupsByUserId(userId);
+        return json(res, 200, { groups: userGroupsList });
       }
       if (pathname.startsWith('/api/admin/')) {
         const currentUser = await verifyTokenFromRequest(req);
@@ -1863,6 +1894,101 @@ async function requestHandler(req, res) {
             createdBy: presets[idx].createdBy,
             permissions: presets[idx].permissions
           });
+        }
+
+        // User Group Management APIs
+        if (req.method === 'GET' && adminPath === 'user-groups') {
+          const groups = await userGroups.getUserGroups();
+          const users = await getUsers();
+          const groupsWithMembers = groups.map(g => ({
+            ...g,
+            memberCount: g.memberIds.length,
+            members: g.memberIds.map(id => users.find(u => u.id === id)).filter(Boolean)
+          }));
+          return json(res, 200, { groups: groupsWithMembers });
+        }
+
+        if (req.method === 'POST' && adminPath === 'user-groups') {
+          const body = await readJson(req);
+          const { name, description } = body;
+          try {
+            const group = await userGroups.createUserGroup(name, description, currentUser.id);
+            await addAuditEvent('user_group.created', {
+              groupId: group.id,
+              groupName: group.name,
+              description: group.description
+            }, currentUser.name, currentUser.id);
+            return json(res, 201, group);
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'PUT' && adminPath.match(/^user-groups\/[\w-]+$/)) {
+          const groupId = adminPath.split('/')[1];
+          const body = await readJson(req);
+          try {
+            const group = await userGroups.updateUserGroup(groupId, body);
+            await addAuditEvent('user_group.updated', {
+              groupId: group.id,
+              groupName: group.name,
+              changes: body
+            }, currentUser.name, currentUser.id);
+            return json(res, 200, group);
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'DELETE' && adminPath.match(/^user-groups\/[\w-]+$/)) {
+          const groupId = adminPath.split('/')[1];
+          try {
+            const group = await userGroups.deleteUserGroup(groupId);
+            await addAuditEvent('user_group.deleted', {
+              groupId: group.id,
+              groupName: group.name
+            }, currentUser.name, currentUser.id);
+            return json(res, 200, { success: true, groupId });
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'POST' && adminPath.match(/^user-groups\/[\w-]+\/members$/)) {
+          const groupId = adminPath.split('/')[1];
+          const body = await readJson(req);
+          const { userId } = body;
+          if (!userId) {
+            return json(res, 400, { error: 'userId 是必需的' });
+          }
+          try {
+            const group = await userGroups.addMember(groupId, userId);
+            await addAuditEvent('user_group.member_added', {
+              groupId: group.id,
+              groupName: group.name,
+              userId
+            }, currentUser.name, currentUser.id);
+            return json(res, 200, group);
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'DELETE' && adminPath.match(/^user-groups\/[\w-]+\/members\/[\w-]+$/)) {
+          const parts = adminPath.split('/');
+          const groupId = parts[1];
+          const userId = parts[3];
+          try {
+            const group = await userGroups.removeMember(groupId, userId);
+            await addAuditEvent('user_group.member_removed', {
+              groupId: group.id,
+              groupName: group.name,
+              userId
+            }, currentUser.name, currentUser.id);
+            return json(res, 200, group);
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
         }
 
         const BACKUP_METADATA_FILE = path.join(DATA_DIR, 'backup-metadata.json');
