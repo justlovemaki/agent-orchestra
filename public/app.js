@@ -917,6 +917,9 @@ function handleTrendsChartClick(event, elements) {
   const completionRate = trend.total > 0 ? ((trend.completed / trend.total) * 100).toFixed(1) : '0.0';
   const failRate = trend.total > 0 ? ((trend.failed / trend.total) * 100).toFixed(1) : '0.0';
   
+  const timeFromValue = `${dateStr}T00:00`;
+  const timeToValue = `${dateStr}T23:59`;
+  
   const popupContent = `
     <div class="trend-detail-popup">
       <div class="trend-detail-header">${dateStr} 详细统计</div>
@@ -935,6 +938,9 @@ function handleTrendsChartClick(event, elements) {
       <div class="trend-detail-row">
         <span class="trend-detail-label" style="color: #7aa2ff;">进行中</span>
         <span class="trend-detail-value">${trend.running || 0}</span>
+      </div>
+      <div class="trend-detail-actions">
+        <button class="trend-detail-btn" data-time-from="${timeFromValue}" data-time-to="${timeToValue}">查看该日期任务</button>
       </div>
       <div class="trend-detail-footer">点击图例可显示/隐藏对应数据线</div>
     </div>
@@ -960,6 +966,20 @@ function showTrendDetailPopup(event, content) {
   
   trendsChartEl.parentElement.appendChild(popup);
   trendDetailPopup = popup;
+  
+  const viewTasksBtn = popup.querySelector('.trend-detail-btn');
+  if (viewTasksBtn) {
+    viewTasksBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const timeFrom = viewTasksBtn.dataset.timeFrom;
+      const timeTo = viewTasksBtn.dataset.timeTo;
+      filterTimeFromEl.value = timeFrom;
+      filterTimeToEl.value = timeTo;
+      removeTrendDetailPopup();
+      taskFilterBarEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      await applyFilters();
+    });
+  }
   
   setTimeout(() => {
     document.addEventListener('click', handlePopupOutsideClick, { once: true });
