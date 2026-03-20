@@ -35,7 +35,8 @@ const state = {
   isAdmin: false,
   trends: null,
   trendsDays: 14,
-  agentUsage: null
+  agentUsage: null,
+  taskStatusDistribution: null
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -49,10 +50,14 @@ const trends14dBtn = document.getElementById('trends14d');
 const agentUsageLoadingEl = document.getElementById('agentUsageLoading');
 const agentUsageEmptyEl = document.getElementById('agentUsageEmpty');
 const agentUsageChartEl = document.getElementById('agentUsageChart');
+const taskStatusLoadingEl = document.getElementById('taskStatusLoading');
+const taskStatusEmptyEl = document.getElementById('taskStatusEmpty');
+const taskStatusChartEl = document.getElementById('taskStatusChart');
 const taskFilterBarEl = document.getElementById('taskFilterBar');
 
 let trendsChartInstance = null;
 let agentUsageChartInstance = null;
+let taskStatusChartInstance = null;
 let trendDetailPopup = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
@@ -878,19 +883,26 @@ async function loadTrends(days = state.trendsDays) {
   agentUsageLoadingEl.classList.remove('hidden');
   agentUsageEmptyEl.classList.add('hidden');
   agentUsageChartEl.style.display = 'none';
+  taskStatusLoadingEl.classList.remove('hidden');
+  taskStatusEmptyEl.classList.add('hidden');
+  taskStatusChartEl.style.display = 'none';
   
   try {
     const res = await fetchJson(`/api/stats/trends?days=${days}`);
     state.trends = res.trends || [];
     state.trendsDays = res.days || days;
     state.agentUsage = res.agentUsage || [];
+    state.taskStatusDistribution = res.taskStatusDistribution || [];
     renderTrends();
     renderAgentUsage();
+    renderTaskStatusDistribution();
   } catch (err) {
     state.trends = [];
     state.agentUsage = [];
+    state.taskStatusDistribution = [];
     renderTrends();
     renderAgentUsage();
+    renderTaskStatusDistribution();
   }
 }
 
@@ -1273,6 +1285,165 @@ function renderAgentUsage() {
   });
 }
 
+function handleTaskStatusChartClick(event, elements) {
+  if (elements.length === 0) return;
+  
+  const dataIndex = elements[0].index;
+  const statusData = state.taskStatusDistribution[dataIndex];
+  if (!statusData) return;
+  
+  const statusMap = {
+    pending: 'queued',
+    running: 'running',
+    completed: 'completed',
+    failed: 'failed',
+    paused: 'paused',
+    cancelled: 'canceled'
+  };
+  const statusValue = statusMap[statusData.status] || statusData.status;
+  
+  state.filters = { ...state.filters, status: statusValue };
+  filterStatusEl.value = statusValue;
+  populateFilterInputs(state.filters);
+  saveFiltersToStorage(state.filters);
+  syncFiltersToUrl(state.filters);
+  
+  taskFilterBarEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  
+  loadTasks().then(() => {
+    renderTaskBoard();
+    renderFilterChips();
+    renderFilterPresets();
+    renderFilterSummary();
+  });
+}
+
+function renderTaskStatusDistribution() {
+  taskStatusLoadingEl.classList.add('hidden');
+  
+  if (!state.taskStatusDistribution || state.taskStatusDistribution.length === 0) {
+    taskStatusEmptyEl.classList.remove('hidden');
+    taskStatusChartEl.style.display = 'none';
+    if (taskStatusChartInstance) {
+      taskStatusChartInstance.destroy();
+      taskStatusChartInstance = null;
+    }
+    return;
+  }
+  
+  const hasData = state.taskStatusDistribution.some(s => s.count > 0);
+  if (!hasData) {
+    taskStatusEmptyEl.classList.remove('hidden');
+    taskStatusChartEl.style.display = 'none';
+    if (taskStatusChartInstance) {
+      taskStatusChartInstance.destroy();
+      taskStatusChartInstance = null;
+    }
+    return;
+  }
+  
+  taskStatusEmptyEl.classList.add('hidden');
+  taskStatusChartEl.style.display = 'block';
+  
+  const statusLabels = {
+    pending: '待执行',
+    running: '执行中',
+    completed: '已完成',
+    failed: '失败',
+    paused: '已暂停',
+    cancelled: '已取消'
+  };
+  
+  const statusColors = {
+    pending: '#7aa2ff',
+    running: '#f5c66a',
+    completed: '#44d19f',
+    failed: '#ff718d',
+    paused: '#8a7dff',
+    cancelled: '#6b7280'
+  };
+  
+  const labels = state.taskStatusDistribution.map(s => statusLabels[s.status] || s.status);
+  const data = state.taskStatusDistribution.map(s => s.count);
+  const backgroundColors = state.taskStatusDistribution.map(s => statusColors[s.status] || '#7aa2ff');
+  
+  if (taskStatusChartInstance) {
+    taskStatusChartInstance.destroy();
+  }
+  
+  const ctx = taskStatusChartEl.getContext('2d');
+  taskStatusChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: backgroundColors,
+        borderColor: 'rgba(11, 20, 36, 0.86)',
+        borderWidth: 2,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      onClick: handleTaskStatusChartClick,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16,
+            font: {
+              size: 13
+            },
+            generateLabels: function(chart) {
+              const data = chart.data;
+              if (data.labels.length && data.datasets.length) {
+                return data.labels.map((label, i) => {
+                  const dataset = data.datasets[0];
+                  const value = dataset.data[i];
+                  const total = dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                  return {
+                    text: `${label}: ${value} (${percentage}%)`,
+                    fillStyle: dataset.backgroundColor[i],
+                    hidden: false,
+                    index: i
+                  };
+                });
+              }
+              return [];
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+              return `${value} 个任务 (${percentage}%)`;
+            },
+            afterLabel: function(context) {
+              return '点击查看该状态的任务';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 function render() {
   renderStats();
   renderAgents();
@@ -1294,6 +1465,7 @@ function render() {
   renderAuditFilterChips();
   renderAuditResultCount();
   renderAgentUsage();
+  renderTaskStatusDistribution();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 

@@ -82,6 +82,25 @@
           </div>
         </section>
 
+        <section class="panel section-panel task-status-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Task Status</div>
+              <h2>任务状态分布</h2>
+            </div>
+          </div>
+          <div id="taskStatusChartContainer" class="pie-chart-container">
+            <div id="taskStatusLoading" class="trends-loading">
+              <div class="loading-spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <div id="taskStatusEmpty" class="trends-empty hidden">
+              <span class="muted">暂无任务数据</span>
+            </div>
+            <canvas id="taskStatusChart"></canvas>
+          </div>
+        </section>
+
         <section class="panel section-panel">
           <div class="panel-head panel-head-tight">
             <div>

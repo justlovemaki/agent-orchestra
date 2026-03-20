@@ -1078,7 +1078,23 @@ async function requestHandler(req, res) {
         
         const agentUsage = Array.from(agentStats.values()).sort((a, b) => b.taskCount - a.taskCount);
         
-        return json(res, 200, { ok: true, trends, days, agentUsage });
+        const statusCounts = { pending: 0, running: 0, completed: 0, failed: 0, paused: 0, cancelled: 0 };
+        for (const task of tasks) {
+          const s = task.status || 'pending';
+          if (statusCounts.hasOwnProperty(s)) {
+            statusCounts[s]++;
+          } else {
+            statusCounts.pending++;
+          }
+        }
+        const totalTasks = tasks.length;
+        const taskStatusDistribution = Object.entries(statusCounts).map(([status, count]) => ({
+          status,
+          count,
+          percentage: totalTasks > 0 ? parseFloat(((count / totalTasks) * 100).toFixed(1)) : 0
+        }));
+        
+        return json(res, 200, { ok: true, trends, days, agentUsage, taskStatusDistribution });
       }
       if (req.method === 'GET' && pathname === '/api/tasks') {
         const filters = parseTaskFilters(parsed.query || {});

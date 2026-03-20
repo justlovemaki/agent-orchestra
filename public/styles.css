@@ -3522,3 +3522,27 @@ button.ghost.tiny {
   background: linear-gradient(135deg, #8db3ff 0%, #6b9bff 100%);
   transform: translateY(-1px);
 }
+
+.pie-chart-container {
+  position: relative;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .pie-chart-container {
+    height: 240px;
+  }
+  .task-status-panel .panel-head {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pie-chart-container {
+    height: 200px;
+  }
+}
