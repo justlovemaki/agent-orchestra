@@ -990,6 +990,28 @@ async function requestHandler(req, res) {
           status: 'healthy'
         });
       }
+      if (req.method === 'GET' && pathname === '/api/stats') {
+        const tasks = await listTasks({});
+        const now = Date.now();
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - 7);
+        const todayTasks = tasks.filter(t => t.createdAt >= todayStart.getTime());
+        const weekTasks = tasks.filter(t => t.createdAt >= weekStart.getTime());
+        const agents = await listAgents();
+        const activeAgents = agents.filter(a => a.status === 'active' || a.status === 'running');
+        return json(res, 200, {
+          ok: true,
+          stats: {
+            totalTasks: tasks.length,
+            todayTasks: todayTasks.length,
+            weekTasks: weekTasks.length,
+            activeAgents: activeAgents.length,
+            totalAgents: agents.length
+          }
+        });
+      }
       if (req.method === 'GET' && pathname === '/api/tasks') {
         const filters = parseTaskFilters(parsed.query || {});
         return json(res, 200, { tasks: await listTasks(filters) });

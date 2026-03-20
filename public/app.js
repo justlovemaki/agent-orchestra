@@ -613,9 +613,10 @@ async function loadTasks(force = false) {
 }
 
 async function refreshAll(force = false) {
-  const [overview, runtimeRes] = await Promise.all([
+  const [overview, runtimeRes, statsRes] = await Promise.all([
     fetchJson(`/api/overview${force ? '?force=1' : ''}`),
     fetchJson('/api/runtime').catch(() => null),
+    fetchJson('/api/stats').catch(() => null),
     checkAuthStatus(),
     loadTasks(force),
     loadTemplates(),
@@ -627,6 +628,7 @@ async function refreshAll(force = false) {
   ]);
   state.overview = overview;
   state.runtime = runtimeRes;
+  state.stats = statsRes?.stats || null;
   render();
   if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
     await loadTaskDetail(state.selectedTaskId);
@@ -670,6 +672,11 @@ function renderStats() {
     ['运行中', t.taskRunning],
     ['完成/失败', `${t.taskDone}/${t.taskFailed}`]
   ];
+  if (state.stats) {
+    items.push(['今日任务', state.stats.todayTasks]);
+    items.push(['本周任务', state.stats.weekTasks]);
+    items.push(['总任务', state.stats.totalTasks]);
+  }
   statsEl.innerHTML = items.map(([k, v]) => `<div class="stat"><div class="muted">${k}</div><div class="v">${v}</div></div>`).join('');
 }
 
