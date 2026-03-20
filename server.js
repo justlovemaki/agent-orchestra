@@ -1093,8 +1093,37 @@ async function requestHandler(req, res) {
           count,
           percentage: totalTasks > 0 ? parseFloat(((count / totalTasks) * 100).toFixed(1)) : 0
         }));
+
+        const agentWorkloadMap = new Map();
+        for (const task of tasks) {
+          if (task.status !== 'running' && task.status !== 'queued') continue;
+          const runs = task.runs || [];
+          for (const run of runs) {
+            if (!run.agentId) continue;
+            if (run.status !== 'running' && run.status !== 'queued') continue;
+            const current = agentWorkloadMap.get(run.agentId) || { agentId: run.agentId, workloadCount: 0 };
+            current.workloadCount += 1;
+            agentWorkloadMap.set(run.agentId, current);
+          }
+        }
+
+        for (const [agentId, data] of agentWorkloadMap) {
+          data.agentName = agentNameMap.get(agentId) || agentId;
+        }
+
+        const activeWorkload = Array.from(agentWorkloadMap.values())
+          .filter(d => d.workloadCount > 0)
+          .sort((a, b) => b.workloadCount - a.workloadCount);
+
+        const totalWorkload = activeWorkload.reduce((sum, d) => sum + d.workloadCount, 0);
+        const agentWorkloadDistribution = activeWorkload.map(d => ({
+          agentId: d.agentId,
+          agentName: d.agentName,
+          workloadCount: d.workloadCount,
+          percentage: totalWorkload > 0 ? parseFloat(((d.workloadCount / totalWorkload) * 100).toFixed(1)) : 0
+        }));
         
-        return json(res, 200, { ok: true, trends, days, agentUsage, taskStatusDistribution });
+        return json(res, 200, { ok: true, trends, days, agentUsage, taskStatusDistribution, agentWorkloadDistribution });
       }
       if (req.method === 'GET' && pathname === '/api/tasks') {
         const filters = parseTaskFilters(parsed.query || {});

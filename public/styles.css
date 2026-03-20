@@ -3546,3 +3546,36 @@ button.ghost.tiny {
     height: 200px;
   }
 }
+
+.agent-workload-pie-container {
+  position: relative;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-workload-panel {
+  margin-top: 16px;
+}
+
+#agentWorkloadChart {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 768px) {
+  .agent-workload-pie-container {
+    height: 240px;
+  }
+  .agent-workload-panel .panel-head {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-workload-pie-container {
+    height: 200px;
+  }
+}

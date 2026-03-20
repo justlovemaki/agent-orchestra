@@ -36,7 +36,8 @@ const state = {
   trends: null,
   trendsDays: 14,
   agentUsage: null,
-  taskStatusDistribution: null
+  taskStatusDistribution: null,
+  agentWorkloadDistribution: null
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -53,11 +54,15 @@ const agentUsageChartEl = document.getElementById('agentUsageChart');
 const taskStatusLoadingEl = document.getElementById('taskStatusLoading');
 const taskStatusEmptyEl = document.getElementById('taskStatusEmpty');
 const taskStatusChartEl = document.getElementById('taskStatusChart');
+const agentWorkloadLoadingEl = document.getElementById('agentWorkloadLoading');
+const agentWorkloadEmptyEl = document.getElementById('agentWorkloadEmpty');
+const agentWorkloadChartEl = document.getElementById('agentWorkloadChart');
 const taskFilterBarEl = document.getElementById('taskFilterBar');
 
 let trendsChartInstance = null;
 let agentUsageChartInstance = null;
 let taskStatusChartInstance = null;
+let agentWorkloadChartInstance = null;
 let trendDetailPopup = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
@@ -886,6 +891,9 @@ async function loadTrends(days = state.trendsDays) {
   taskStatusLoadingEl.classList.remove('hidden');
   taskStatusEmptyEl.classList.add('hidden');
   taskStatusChartEl.style.display = 'none';
+  agentWorkloadLoadingEl.classList.remove('hidden');
+  agentWorkloadEmptyEl.classList.add('hidden');
+  agentWorkloadChartEl.style.display = 'none';
   
   try {
     const res = await fetchJson(`/api/stats/trends?days=${days}`);
@@ -893,16 +901,20 @@ async function loadTrends(days = state.trendsDays) {
     state.trendsDays = res.days || days;
     state.agentUsage = res.agentUsage || [];
     state.taskStatusDistribution = res.taskStatusDistribution || [];
+    state.agentWorkloadDistribution = res.agentWorkloadDistribution || [];
     renderTrends();
     renderAgentUsage();
     renderTaskStatusDistribution();
+    renderAgentWorkloadDistribution();
   } catch (err) {
     state.trends = [];
     state.agentUsage = [];
     state.taskStatusDistribution = [];
+    state.agentWorkloadDistribution = [];
     renderTrends();
     renderAgentUsage();
     renderTaskStatusDistribution();
+    renderAgentWorkloadDistribution();
   }
 }
 
@@ -1444,6 +1456,135 @@ function renderTaskStatusDistribution() {
   });
 }
 
+function handleAgentWorkloadChartClick(event, elements) {
+  if (elements.length === 0) return;
+
+  const dataIndex = elements[0].index;
+  const agentData = state.agentWorkloadDistribution[dataIndex];
+  if (!agentData) return;
+
+  const agentName = agentData.agentName;
+
+  state.filters = { ...state.filters, agent: agentName };
+  filterAgentEl.value = agentName;
+  populateFilterInputs(state.filters);
+  saveFiltersToStorage(state.filters);
+  syncFiltersToUrl(state.filters);
+
+  taskFilterBarEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  loadTasks().then(() => {
+    renderTaskBoard();
+    renderFilterChips();
+    renderFilterPresets();
+    renderFilterSummary();
+  });
+}
+
+function renderAgentWorkloadDistribution() {
+  agentWorkloadLoadingEl.classList.add('hidden');
+
+  if (!state.agentWorkloadDistribution || state.agentWorkloadDistribution.length === 0) {
+    agentWorkloadEmptyEl.classList.remove('hidden');
+    agentWorkloadChartEl.style.display = 'none';
+    if (agentWorkloadChartInstance) {
+      agentWorkloadChartInstance.destroy();
+      agentWorkloadChartInstance = null;
+    }
+    return;
+  }
+
+  agentWorkloadEmptyEl.classList.add('hidden');
+  agentWorkloadChartEl.style.display = 'block';
+
+  const labels = state.agentWorkloadDistribution.map(a => a.agentName);
+  const data = state.agentWorkloadDistribution.map(a => a.workloadCount);
+
+  const colors = [
+    '#7aa2ff', '#44d19f', '#f5c66a', '#ff718d', '#8a7dff',
+    '#64d2ff', '#ffd666', '#ff85c0', '#5cdd72', '#ff9c6e'
+  ];
+
+  const backgroundColors = labels.map((_, i) => colors[i % colors.length]);
+
+  if (agentWorkloadChartInstance) {
+    agentWorkloadChartInstance.destroy();
+  }
+
+  const ctx = agentWorkloadChartEl.getContext('2d');
+  agentWorkloadChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: backgroundColors,
+        borderColor: 'rgba(11, 20, 36, 0.86)',
+        borderWidth: 2,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      onClick: handleAgentWorkloadChartClick,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16,
+            font: {
+              size: 13
+            },
+            generateLabels: function(chart) {
+              const data = chart.data;
+              if (data.labels.length && data.datasets.length) {
+                return data.labels.map((label, i) => {
+                  const dataset = data.datasets[0];
+                  const value = dataset.data[i];
+                  const total = dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                  return {
+                    text: `${label}: ${value} (${percentage}%)`,
+                    fillStyle: dataset.backgroundColor[i],
+                    hidden: false,
+                    index: i
+                  };
+                });
+              }
+              return [];
+            }
+          },
+          onClick: handleLegendToggle
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              const value = context.raw;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+              return `${value} 个任务 (${percentage}%)`;
+            },
+            afterLabel: function(context) {
+              return '点击查看该 Agent 的任务';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 function render() {
   renderStats();
   renderAgents();
@@ -1466,6 +1607,7 @@ function render() {
   renderAuditResultCount();
   renderAgentUsage();
   renderTaskStatusDistribution();
+  renderAgentWorkloadDistribution();
   lastUpdatedEl.textContent = `最近刷新：${new Date().toLocaleString('zh-CN')}`;
 }
 

@@ -101,6 +101,25 @@
           </div>
         </section>
 
+        <section class="panel section-panel agent-workload-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Agent Workload</div>
+              <h2>Agent 负载占比</h2>
+            </div>
+          </div>
+          <div id="agentWorkloadChartContainer" class="agent-workload-pie-container">
+            <div id="agentWorkloadLoading" class="trends-loading">
+              <div class="loading-spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <div id="agentWorkloadEmpty" class="trends-empty hidden">
+              <span class="muted">暂无负载数据</span>
+            </div>
+            <canvas id="agentWorkloadChart"></canvas>
+          </div>
+        </section>
+
         <section class="panel section-panel">
           <div class="panel-head panel-head-tight">
             <div>
