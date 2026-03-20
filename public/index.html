@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="shell">
@@ -38,6 +39,29 @@
     <main class="workspace">
       <section class="content-column">
         <section id="stats" class="stats"></section>
+
+        <section class="panel section-panel trends-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Trends</div>
+              <h2>任务趋势</h2>
+            </div>
+            <div class="trends-controls">
+              <button id="trends7d" class="filter-btn">7天</button>
+              <button id="trends14d" class="filter-btn filter-btn-active">14天</button>
+            </div>
+          </div>
+          <div id="trendsChartContainer" class="trends-chart-container">
+            <div id="trendsLoading" class="trends-loading">
+              <div class="loading-spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <div id="trendsEmpty" class="trends-empty hidden">
+              <span class="muted">暂无任务数据</span>
+            </div>
+            <canvas id="trendsChart"></canvas>
+          </div>
+        </section>
 
         <section class="panel section-panel">
           <div class="panel-head panel-head-tight">

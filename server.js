@@ -1012,6 +1012,32 @@ async function requestHandler(req, res) {
           }
         });
       }
+      if (req.method === 'GET' && pathname === '/api/stats/trends') {
+        const days = parseInt(parsed.query?.days) || 14;
+        const tasks = await listTasks({});
+        const trends = [];
+        for (let i = days - 1; i >= 0; i--) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          date.setHours(0, 0, 0, 0);
+          const nextDate = new Date(date);
+          nextDate.setDate(nextDate.getDate() + 1);
+          const dayTasks = tasks.filter(t => {
+            const createdAt = new Date(t.createdAt);
+            return createdAt >= date && createdAt < nextDate;
+          });
+          const total = dayTasks.length;
+          const completed = dayTasks.filter(t => t.status === 'completed').length;
+          const failed = dayTasks.filter(t => t.status === 'failed').length;
+          trends.push({
+            date: date.toISOString().split('T')[0],
+            total,
+            completed,
+            failed
+          });
+        }
+        return json(res, 200, { ok: true, trends, days });
+      }
       if (req.method === 'GET' && pathname === '/api/tasks') {
         const filters = parseTaskFilters(parsed.query || {});
         return json(res, 200, { tasks: await listTasks(filters) });

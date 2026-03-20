@@ -32,12 +32,21 @@ const state = {
   isSyncing: false,
   allUsers: [],
   userPermissions: null,
-  isAdmin: false
+  isAdmin: false,
+  trends: null,
+  trendsDays: 14
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
 
 const statsEl = document.getElementById('stats');
+const trendsLoadingEl = document.getElementById('trendsLoading');
+const trendsEmptyEl = document.getElementById('trendsEmpty');
+const trendsChartEl = document.getElementById('trendsChart');
+const trends7dBtn = document.getElementById('trends7d');
+const trends14dBtn = document.getElementById('trends14d');
+
+let trendsChartInstance = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -630,6 +639,7 @@ async function refreshAll(force = false) {
   state.runtime = runtimeRes;
   state.stats = statsRes?.stats || null;
   render();
+  await loadTrends();
   if (state.selectedTaskId && state.tasks.some(task => task.id === state.selectedTaskId)) {
     await loadTaskDetail(state.selectedTaskId);
   } else if (state.selectedTaskId) {
@@ -637,6 +647,141 @@ async function refreshAll(force = false) {
     logEmptyEl.classList.remove('hidden');
     detailBodyEl.classList.add('hidden');
   }
+}
+
+async function loadTrends(days = state.trendsDays) {
+  trendsLoadingEl.classList.remove('hidden');
+  trendsEmptyEl.classList.add('hidden');
+  trendsChartEl.style.display = 'none';
+  
+  try {
+    const res = await fetchJson(`/api/stats/trends?days=${days}`);
+    state.trends = res.trends || [];
+    state.trendsDays = res.days || days;
+    renderTrends();
+  } catch (err) {
+    state.trends = [];
+    renderTrends();
+  }
+}
+
+function renderTrends() {
+  trendsLoadingEl.classList.add('hidden');
+  
+  if (!state.trends || state.trends.length === 0) {
+    trendsEmptyEl.classList.remove('hidden');
+    trendsChartEl.style.display = 'none';
+    if (trendsChartInstance) {
+      trendsChartInstance.destroy();
+      trendsChartInstance = null;
+    }
+    return;
+  }
+  
+  trendsEmptyEl.classList.add('hidden');
+  trendsChartEl.style.display = 'block';
+  
+  const labels = state.trends.map(t => {
+    const d = new Date(t.date);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+  
+  const totalData = state.trends.map(t => t.total);
+  const completedData = state.trends.map(t => t.completed);
+  const failedData = state.trends.map(t => t.failed);
+  
+  if (trendsChartInstance) {
+    trendsChartInstance.destroy();
+  }
+  
+  const ctx = trendsChartEl.getContext('2d');
+  trendsChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '总任务',
+          data: totalData,
+          borderColor: '#7aa2ff',
+          backgroundColor: 'rgba(122, 162, 255, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        },
+        {
+          label: '完成',
+          data: completedData,
+          borderColor: '#44d19f',
+          backgroundColor: 'rgba(68, 209, 159, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        },
+        {
+          label: '失败',
+          data: failedData,
+          borderColor: '#ff718d',
+          backgroundColor: 'rgba(255, 113, 141, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1
+          }
+        }
+      }
+    }
+  });
 }
 
 function render() {
@@ -4951,3 +5096,17 @@ const openBackupModalBtn = document.getElementById('openBackupModalBtn');
 if (openBackupModalBtn) {
   openBackupModalBtn.addEventListener('click', showBackupModal);
 }
+
+trends7dBtn.addEventListener('click', async () => {
+  trends7dBtn.classList.add('filter-btn-active');
+  trends14dBtn.classList.remove('filter-btn-active');
+  await loadTrends(7);
+});
+
+trends14dBtn.addEventListener('click', async () => {
+  trends14dBtn.classList.add('filter-btn-active');
+  trends7dBtn.classList.remove('filter-btn-active');
+  await loadTrends(14);
+});
+
+loadTrends();
