@@ -4,3 +4,4 @@ data/tasks.json
 data/task-logs/
 .opencode-cache/
 .opencode-config/
+node_modules/

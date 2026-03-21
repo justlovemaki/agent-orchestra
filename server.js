@@ -1361,6 +1361,77 @@ async function requestHandler(req, res) {
         }, userName, currentUser?.id);
         return json(res, 200, { success: true });
       }
+      if (req.method === 'GET' && pathname === '/api/agent-combinations/export') {
+        const combinations = await agentCombinations.getAgentCombinations();
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const exportData = {
+          version: '1.0',
+          exportedAt: new Date().toISOString(),
+          combinations: combinations
+        };
+        await addAuditEvent('agent_combination.exported', {
+          combinationCount: combinations.length
+        }, userName, currentUser?.id);
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="agent-combinations.json"'
+        });
+        return res.end(JSON.stringify(exportData, null, 2));
+      }
+      if (req.method === 'POST' && pathname === '/api/agent-combinations/import') {
+        const body = await readJson(req);
+        if (!body.data || !body.data.version || !Array.isArray(body.data.combinations)) {
+          throw new Error('无效的导入文件格式');
+        }
+        const { data } = body;
+        const mode = body.mode || 'merge';
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const results = { imported: 0, skipped: 0, errors: [] };
+
+        if (mode === 'overwrite') {
+          const importedCombinations = data.combinations.map(c => ({
+            id: crypto.randomUUID(),
+            name: c.name,
+            description: c.description || '',
+            color: c.color || '#6b7280',
+            agentIds: c.agentIds || [],
+            createdAt: Date.now()
+          }));
+          await agentCombinations.overwriteAgentCombinations(importedCombinations);
+          results.imported = importedCombinations.length;
+        } else {
+          const existingCombinations = await agentCombinations.getAgentCombinations();
+          for (const combo of data.combinations) {
+            if (!combo.name) {
+              results.skipped++;
+              continue;
+            }
+            const existingByName = existingCombinations.find(c => c.name === combo.name);
+            if (existingByName) {
+              results.skipped++;
+              continue;
+            }
+            existingCombinations.push({
+              id: crypto.randomUUID(),
+              name: combo.name,
+              description: combo.description || '',
+              color: combo.color || '#6b7280',
+              agentIds: combo.agentIds || [],
+              createdAt: Date.now()
+            });
+            results.imported++;
+          }
+          await agentCombinations.overwriteAgentCombinations(existingCombinations);
+        }
+        await addAuditEvent('agent_combination.imported', {
+          mode,
+          imported: results.imported,
+          skipped: results.skipped
+        }, userName, currentUser?.id);
+        return json(res, 200, results);
+      }
       if (req.method === 'GET' && pathname === '/api/presets') {
         return json(res, 200, { presets: await readSharedPresets() });
       }

@@ -3288,6 +3288,114 @@ confirmSelectCombinationBtn.addEventListener('click', () => {
   selectCombinationMsg.textContent = '';
 });
 
+const importCombinationsModal = document.getElementById('importCombinationsModal');
+const closeImportCombinationsModal = document.getElementById('closeImportCombinationsModal');
+const combinationFileInput = document.getElementById('combinationFileInput');
+const importCombinationInfo = document.getElementById('importCombinationInfo');
+const importCombinationMsg = document.getElementById('importCombinationMsg');
+const confirmImportCombinationsBtn = document.getElementById('confirmImportCombinationsBtn');
+const cancelImportCombinationsBtn = document.getElementById('cancelImportCombinationsBtn');
+const exportCombinationsBtn = document.getElementById('exportCombinationsBtn');
+const importCombinationsBtn = document.getElementById('importCombinationsBtn');
+
+let importedCombinationData = null;
+
+function showImportCombinationsModal() {
+  importedCombinationData = null;
+  combinationFileInput.value = '';
+  importCombinationInfo.textContent = '';
+  importCombinationMsg.textContent = '';
+  confirmImportCombinationsBtn.disabled = true;
+  importCombinationsModal.classList.remove('hidden');
+}
+
+function hideImportCombinationsModal() {
+  importCombinationsModal.classList.add('hidden');
+  importedCombinationData = null;
+  combinationFileInput.value = '';
+}
+
+async function handleExportCombinations() {
+  try {
+    const response = await fetch('/api/agent-combinations/export');
+    if (!response.ok) throw new Error('导出失败');
+    const data = await response.blob();
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'agent-combinations.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('导出失败：' + err.message);
+  }
+}
+
+function handleCombinationFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) {
+    importedCombinationData = null;
+    importCombinationInfo.textContent = '';
+    confirmImportCombinationsBtn.disabled = true;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.version || !data.combinations || !Array.isArray(data.combinations)) {
+        importCombinationInfo.textContent = '无效的文件格式';
+        importCombinationMsg.textContent = '文件格式不正确，应包含 version 和 combinations 字段';
+        confirmImportCombinationsBtn.disabled = true;
+        return;
+      }
+      importedCombinationData = data;
+      importCombinationInfo.textContent = `发现 ${data.combinations.length} 个组合`;
+      importCombinationMsg.textContent = '';
+      confirmImportCombinationsBtn.disabled = false;
+    } catch (err) {
+      importCombinationInfo.textContent = '解析失败';
+      importCombinationMsg.textContent = '无法解析 JSON 文件';
+      confirmImportCombinationsBtn.disabled = true;
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function handleImportCombinations() {
+  if (!importedCombinationData) return;
+  const mode = document.querySelector('input[name="combinationImportMode"]:checked').value;
+  importCombinationMsg.textContent = '正在导入...';
+  confirmImportCombinationsBtn.disabled = true;
+  try {
+    const res = await fetchJson('/api/agent-combinations/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: importedCombinationData, mode })
+    });
+    const message = `导入完成：成功 ${res.imported} 个${res.skipped > 0 ? `，跳过 ${res.skipped} 个` : ''}`;
+    importCombinationMsg.textContent = message;
+    setTimeout(async () => {
+      hideImportCombinationsModal();
+      await loadCombinations();
+      renderCombinations();
+    }, 1000);
+  } catch (err) {
+    importCombinationMsg.textContent = '导入失败：' + err.message;
+    confirmImportCombinationsBtn.disabled = false;
+  }
+}
+
+exportCombinationsBtn.addEventListener('click', handleExportCombinations);
+importCombinationsBtn.addEventListener('click', showImportCombinationsModal);
+closeImportCombinationsModal.addEventListener('click', hideImportCombinationsModal);
+cancelImportCombinationsBtn.addEventListener('click', hideImportCombinationsModal);
+importCombinationsModal.querySelector('.modal-backdrop').addEventListener('click', hideImportCombinationsModal);
+combinationFileInput.addEventListener('change', handleCombinationFileSelect);
+confirmImportCombinationsBtn.addEventListener('click', handleImportCombinations);
+
 cancelSelectCombinationBtn.addEventListener('click', () => {
   selectCombinationMsg.textContent = '';
 });

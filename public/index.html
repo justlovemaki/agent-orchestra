@@ -201,6 +201,10 @@
             </div>
           </div>
           <div id="combinationList" class="combination-list"></div>
+          <div class="combination-actions-bar">
+            <button id="exportCombinationsBtn" class="ghost small">导出</button>
+            <button id="importCombinationsBtn" class="ghost small">导入</button>
+          </div>
         </section>
 
         <section class="grid two">
@@ -749,6 +753,41 @@
         <div class="modal-actions">
           <button id="confirmImportPresetsBtn" class="primary" disabled>导入</button>
           <button id="cancelImportPresetsBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="importCombinationsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导入组合</h3>
+        <button class="modal-close" id="closeImportCombinationsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-presets-form">
+          <label class="import-file-label">
+            <span class="field-label">选择组合文件</span>
+            <input type="file" id="combinationFileInput" accept=".json" />
+          </label>
+          <div id="importCombinationInfo" class="import-preset-info muted small"></div>
+          <div class="import-mode-selection">
+            <span class="field-label">导入模式</span>
+            <label class="import-mode-option">
+              <input type="radio" name="combinationImportMode" value="merge" checked />
+              <span>合并模式（保留现有 + 添加新的，跳过同名）</span>
+            </label>
+            <label class="import-mode-option">
+              <input type="radio" name="combinationImportMode" value="overwrite" />
+              <span>覆盖模式（清空现有）</span>
+            </label>
+          </div>
+        </div>
+        <div id="importCombinationMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="confirmImportCombinationsBtn" class="primary" disabled>导入</button>
+          <button id="cancelImportCombinationsBtn" class="ghost">取消</button>
         </div>
       </div>
     </div>
