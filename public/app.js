@@ -39,7 +39,9 @@ const state = {
   trendsDays: 14,
   agentUsage: null,
   taskStatusDistribution: null,
-  agentWorkloadDistribution: null
+  agentWorkloadDistribution: null,
+  workloadAlertConfig: null,
+  workloadAlertHistory: []
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -446,15 +448,19 @@ function renderAuthUI() {
 
 function renderAdminUI() {
   const adminPanel = document.getElementById('adminPanel');
+  const workloadPanel = document.getElementById('workloadAlertPanel');
   if (!adminPanel) return;
   
   if (state.isAdmin) {
     adminPanel.classList.remove('hidden');
+    if (workloadPanel) workloadPanel.classList.remove('hidden');
     loadAllUsers();
     loadUserGroups();
     initUserGroupUI();
+    loadWorkloadAlertConfig();
   } else {
     adminPanel.classList.add('hidden');
+    if (workloadPanel) workloadPanel.classList.add('hidden');
   }
 }
 
@@ -2883,6 +2889,155 @@ function initFilters() {
     syncFiltersToUrl(storedFilters);
   }
 }
+
+async function loadWorkloadAlertConfig() {
+  if (!state.isAdmin) return;
+  try {
+    const res = await fetchJson('/api/admin/workload-alerts/config');
+    state.workloadAlertConfig = res;
+    renderWorkloadAlertConfig();
+    await loadWorkloadAlertHistory();
+  } catch (err) {
+    console.error('加载负载预警配置失败:', err);
+  }
+}
+
+function renderWorkloadAlertConfig() {
+  const config = state.workloadAlertConfig;
+  if (!config) return;
+  
+  const enabledCheckbox = document.getElementById('workloadAlertEnabled');
+  const thresholdInput = document.getElementById('workloadThreshold');
+  const channelCheckboxes = document.querySelectorAll('input[name="notifyChannel"]');
+  
+  if (enabledCheckbox) {
+    enabledCheckbox.checked = config.enabled || false;
+  }
+  if (thresholdInput) {
+    thresholdInput.value = config.threshold || 5;
+  }
+  if (channelCheckboxes) {
+    channelCheckboxes.forEach(cb => {
+      cb.checked = (config.notifyChannels || []).includes(cb.value);
+    });
+  }
+  
+  updateNextCheckTimeDisplay();
+}
+
+function updateNextCheckTimeDisplay() {
+  const nextCheckEl = document.getElementById('nextCheckTime');
+  if (!nextCheckEl) return;
+  
+  if (state.workloadAlertConfig?.enabled) {
+    const now = Date.now();
+    const nextCheck = now + (5 * 60 * 1000);
+    const nextTime = new Date(nextCheck).toLocaleTimeString('zh-CN');
+    nextCheckEl.textContent = `下次检查: ${nextTime}`;
+  } else {
+    nextCheckEl.textContent = '预警已禁用';
+  }
+}
+
+async function saveWorkloadAlertConfig() {
+  const enabledCheckbox = document.getElementById('workloadAlertEnabled');
+  const thresholdInput = document.getElementById('workloadThreshold');
+  const channelCheckboxes = document.querySelectorAll('input[name="notifyChannel"]:checked');
+  
+  const enabled = enabledCheckbox?.checked || false;
+  const threshold = parseInt(thresholdInput?.value) || 5;
+  const notifyChannels = Array.from(channelCheckboxes).map(cb => cb.value);
+  
+  const msgEl = document.getElementById('workloadAlertMsg');
+  
+  try {
+    msgEl.textContent = '保存中...';
+    await fetchJson('/api/admin/workload-alerts/config', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, threshold, notifyChannels })
+    });
+    msgEl.textContent = '配置已保存';
+    state.workloadAlertConfig = { enabled, threshold, notifyChannels };
+    renderWorkloadAlertConfig();
+    updateNextCheckTimeDisplay();
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+  } catch (err) {
+    msgEl.textContent = '保存失败: ' + err.message;
+  }
+}
+
+async function triggerWorkloadCheck() {
+  const msgEl = document.getElementById('workloadAlertMsg');
+  
+  try {
+    msgEl.textContent = '正在检查...';
+    const result = await fetchJson('/api/admin/workload-alerts/check', {
+      method: 'POST'
+    });
+    
+    if (result.exceededAgents && result.exceededAgents.length > 0) {
+      const msg = `发现 ${result.exceededAgents.length} 个 Agent 负载超过阈值`;
+      msgEl.textContent = msg;
+    } else {
+      msgEl.textContent = '所有 Agent 负载正常';
+    }
+    
+    await loadWorkloadAlertHistory();
+    setTimeout(() => { msgEl.textContent = ''; }, 5000);
+  } catch (err) {
+    msgEl.textContent = '检查失败: ' + err.message;
+  }
+}
+
+async function loadWorkloadAlertHistory() {
+  try {
+    const res = await fetchJson('/api/admin/workload-alerts/history?limit=20');
+    state.workloadAlertHistory = res.alerts || [];
+    renderWorkloadAlertHistory();
+  } catch (err) {
+    console.error('加载预警历史失败:', err);
+  }
+}
+
+function renderWorkloadAlertHistory() {
+  const container = document.getElementById('workloadAlertHistory');
+  if (!container) return;
+  
+  const history = state.workloadAlertHistory || [];
+  
+  if (history.length === 0) {
+    container.innerHTML = '<div class="muted small">暂无预警记录</div>';
+    return;
+  }
+  
+  container.innerHTML = history.map(event => {
+    const details = event.details || {};
+    const agents = details.agents || [];
+    const time = new Date(event.timestamp).toLocaleString('zh-CN');
+    const channelsText = (details.notifyChannels || []).join(', ') || '未通知';
+    
+    return `
+      <div class="workload-alert-item">
+        <div class="workload-alert-item-header">
+          <span class="workload-alert-time">${time}</span>
+          <span class="workload-alert-badge">${agents.length} 个 Agent</span>
+        </div>
+        <div class="workload-alert-item-content">
+          <div class="workload-alert-threshold">阈值: ${details.threshold || 5}</div>
+          <div class="workload-alert-channels">通知: ${channelsText}</div>
+        </div>
+        <div class="workload-alert-agents">
+          ${agents.map(a => `<span class="workload-alert-agent-tag">${escapeHtml(a.agentName)}: ${a.workloadCount}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+document.getElementById('saveWorkloadAlertConfigBtn')?.addEventListener('click', saveWorkloadAlertConfig);
+document.getElementById('checkWorkloadNowBtn')?.addEventListener('click', triggerWorkloadCheck);
+
+setInterval(updateNextCheckTimeDisplay, 60000);
 
 setInterval(refreshAll, 10000);
 initFilters();

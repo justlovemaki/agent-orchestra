@@ -493,6 +493,74 @@
           </div>
           <div id="userGroupList" class="user-group-list"></div>
         </section>
+
+        <section id="workloadAlertPanel" class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Workload Alert</div>
+              <h2>Agent 负载预警</h2>
+            </div>
+          </div>
+          <div id="workloadAlertConfig" class="workload-alert-config">
+            <div class="workload-alert-header">
+              <div class="workload-alert-toggle">
+                <label class="toggle-label">
+                  <input type="checkbox" id="workloadAlertEnabled" />
+                  <span>启用负载预警</span>
+                </label>
+              </div>
+              <div class="workload-alert-status">
+                <span id="workloadAlertStatus" class="muted small">检查间隔：5 分钟</span>
+                <span id="nextCheckTime" class="muted small"></span>
+              </div>
+            </div>
+            <div class="workload-alert-form">
+              <div class="workload-form-row">
+                <label class="workload-threshold-label">
+                  <span class="field-label">负载阈值</span>
+                  <div class="threshold-input-group">
+                    <input type="number" id="workloadThreshold" min="1" max="20" value="5" />
+                    <span class="threshold-suffix">个任务</span>
+                  </div>
+                  <span class="muted small">当 Agent 的 running + queued 任务数超过此值时触发预警</span>
+                </label>
+              </div>
+              <div class="workload-form-row">
+                <label class="workload-channels-label">
+                  <span class="field-label">通知渠道</span>
+                  <div class="channel-checkboxes">
+                    <label class="channel-checkbox">
+                      <input type="checkbox" name="notifyChannel" value="feishu" />
+                      <span>飞书</span>
+                    </label>
+                    <label class="channel-checkbox">
+                      <input type="checkbox" name="notifyChannel" value="dingtalk" />
+                      <span>钉钉</span>
+                    </label>
+                    <label class="channel-checkbox">
+                      <input type="checkbox" name="notifyChannel" value="wecom" />
+                      <span>企业微信</span>
+                    </label>
+                    <label class="channel-checkbox">
+                      <input type="checkbox" name="notifyChannel" value="slack" />
+                      <span>Slack</span>
+                    </label>
+                  </div>
+                  <span class="muted small">选择要发送预警通知的渠道（需提前配置相应的 Webhook）</span>
+                </label>
+              </div>
+              <div class="workload-form-actions">
+                <button id="saveWorkloadAlertConfigBtn" class="primary">保存配置</button>
+                <button id="checkWorkloadNowBtn" class="ghost">立即检查</button>
+              </div>
+            </div>
+            <div id="workloadAlertMsg" class="form-msg"></div>
+          </div>
+          <div class="panel-subtitle" style="margin-top: 20px;">预警历史</div>
+          <div id="workloadAlertHistory" class="workload-alert-history">
+            <div class="muted small">暂无预警记录</div>
+          </div>
+        </section>
       </section>
 
       <aside class="side-column">

@@ -3052,6 +3052,61 @@ async function requestHandler(req, res) {
           return json(res, 200, versions);
         }
 
+        // Workload Alerts APIs
+        if (req.method === 'GET' && adminPath === 'workload-alerts/config') {
+          const config = await getWorkloadAlertsConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'workload-alerts/config') {
+          const body = await readJson(req);
+          const { enabled, threshold, notifyChannels } = body;
+          
+          if (enabled !== undefined && typeof enabled !== 'boolean') {
+            throw new Error('enabled 必须是布尔值');
+          }
+          if (threshold !== undefined) {
+            if (!Number.isInteger(threshold) || threshold < 1 || threshold > 20) {
+              throw new Error('threshold 必须在 1-20 之间');
+            }
+          }
+          if (notifyChannels !== undefined) {
+            if (!Array.isArray(notifyChannels)) {
+              throw new Error('notifyChannels 必须是数组');
+            }
+            const validChannels = ['feishu', 'dingtalk', 'wecom', 'slack'];
+            for (const channel of notifyChannels) {
+              if (!validChannels.includes(channel)) {
+                throw new Error(`无效的通知渠道: ${channel}，可选值: ${validChannels.join(', ')}`);
+              }
+            }
+          }
+          
+          const config = await saveWorkloadAlertsConfig({ enabled, threshold, notifyChannels });
+          await addAuditEvent('workload_alert.config_changed', {
+            enabled: config.enabled,
+            threshold: config.threshold,
+            notifyChannels: config.notifyChannels,
+            changedBy: currentUser.name
+          }, currentUser.name, currentUser.id);
+          
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'POST' && adminPath === 'workload-alerts/check') {
+          const result = await performWorkloadCheck();
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'GET' && adminPath === 'workload-alerts/history') {
+          const limit = parseInt(parsed.query?.limit) || 20;
+          const alerts = await queryAuditEvents({
+            eventType: 'workload_alert.triggered',
+            limit
+          });
+          return json(res, 200, { alerts });
+        }
+
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {
           const config = await scheduledBackup.getConfig();
           return json(res, 200, config);
@@ -4182,6 +4237,12 @@ ensureData().then(async () => {
   await scheduledBackup.init();
   console.log('Scheduled backup initialized');
 
+  startWorkloadAlertScheduler();
+  const workloadConfig = await getWorkloadAlertsConfig();
+  if (workloadConfig.enabled) {
+    console.log('Workload alert scheduler started (enabled)');
+  }
+
   let cleaningUp = false;
   const cleanup = async (signal, exitCode = 0) => {
     if (cleaningUp) return;
@@ -4665,3 +4726,189 @@ async function handleScheduledBackupNotification(params) {
 }
 
 scheduledBackup.setNotificationFunction(handleScheduledBackupNotification);
+
+const WORKLOAD_ALERTS_CONFIG_FILE = path.join(DATA_DIR, 'workload-alerts-config.json');
+let workloadAlertTimer = null;
+let nextWorkloadCheckTime = null;
+
+const DEFAULT_WORKLOAD_CONFIG = {
+  enabled: false,
+  threshold: 5,
+  notifyChannels: []
+};
+
+async function getWorkloadAlertsConfig() {
+  await ensureData();
+  try {
+    const data = await fsp.readFile(WORKLOAD_ALERTS_CONFIG_FILE, 'utf8');
+    const config = JSON.parse(data);
+    return {
+      ...DEFAULT_WORKLOAD_CONFIG,
+      ...config
+    };
+  } catch {
+    return { ...DEFAULT_WORKLOAD_CONFIG };
+  }
+}
+
+async function saveWorkloadAlertsConfig(updates) {
+  await ensureData();
+  const current = await getWorkloadAlertsConfig();
+  const config = {
+    ...current,
+    ...updates
+  };
+  await fsp.writeFile(WORKLOAD_ALERTS_CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
+  return config;
+}
+
+async function getAgentWorkload() {
+  const tasks = await readTasks();
+  const agentWorkloadMap = new Map();
+  
+  for (const task of tasks) {
+    if (task.status !== 'running' && task.status !== 'queued') continue;
+    const runs = task.runs || [];
+    for (const run of runs) {
+      if (!run.agentId) continue;
+      if (run.status !== 'running' && run.status !== 'queued') continue;
+      const current = agentWorkloadMap.get(run.agentId) || { agentId: run.agentId, workloadCount: 0 };
+      current.workloadCount += 1;
+      agentWorkloadMap.set(run.agentId, current);
+    }
+  }
+  
+  return Array.from(agentWorkloadMap.values());
+}
+
+async function performWorkloadCheck() {
+  const config = await getWorkloadAlertsConfig();
+  const agentWorkloads = await getAgentWorkload();
+  const agentsList = await listAgents();
+  const agentNameMap = new Map(agentsList.map(a => [a.id, a.identity || a.id]));
+  
+  for (const workload of agentWorkloads) {
+    workload.agentName = agentNameMap.get(workload.agentId) || workload.agentId;
+  }
+  
+  const exceededAgents = agentWorkloads.filter(a => a.workloadCount > config.threshold);
+  const triggeredAt = Date.now();
+  
+  const result = {
+    checkedAt: triggeredAt,
+    threshold: config.threshold,
+    totalAgents: agentWorkloads.length,
+    exceededAgents,
+    notified: false
+  };
+  
+  if (exceededAgents.length > 0 && config.enabled && config.notifyChannels.length > 0) {
+    result.notified = true;
+    const notifyResult = await sendWorkloadAlertNotification(exceededAgents, config.threshold);
+    result.notifyResult = notifyResult;
+    
+    await addAuditEvent('workload_alert.triggered', {
+      agents: exceededAgents.map(a => ({
+        agentId: a.agentId,
+        agentName: a.agentName,
+        workloadCount: a.workloadCount
+      })),
+      threshold: config.threshold,
+      notifyChannels: config.notifyChannels,
+      notified: notifyResult.sent.length > 0,
+      notifyResults: notifyResult
+    }, 'system');
+  }
+  
+  return result;
+}
+
+async function sendWorkloadAlertNotification(agents, threshold) {
+  const config = await getWorkloadAlertsConfig();
+  const timeText = new Date().toLocaleString('zh-CN');
+  
+  let message = `🚨 Agent 负载预警\n`;
+  message += `━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `⏰ 时间: ${timeText}\n`;
+  message += `📊 阈值: ${threshold}\n`;
+  message += `⚠️ 预警 Agent 数量: ${agents.length}\n`;
+  message += `━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `📋 详情:\n`;
+  
+  for (const agent of agents) {
+    const percentage = Math.round((agent.workloadCount / threshold) * 100);
+    message += `• ${agent.agentName}: ${agent.workloadCount} 个任务 (${percentage}%)\n`;
+  }
+  
+  message += `━━━━━━━━━━━━━━━━━━━━`;
+  
+  const results = { sent: [], failed: [] };
+  
+  for (const channel of config.notifyChannels) {
+    try {
+      if (channel === 'feishu') {
+        const feishuConfig = getFeishuConfig();
+        if (feishuConfig && feishuConfig.channelId) {
+          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, message);
+          results.sent.push('feishu');
+        }
+      } else if (channel === 'dingtalk') {
+        const dingtalkConfig = getDingTalkConfig();
+        if (dingtalkConfig && dingtalkConfig.webhook) {
+          await sendDingTalkTextMessage(dingtalkConfig.webhook, message);
+          results.sent.push('dingtalk');
+        }
+      } else if (channel === 'wecom') {
+        const wecomConfig = getWecomConfig();
+        if (wecomConfig && wecomConfig.webhook) {
+          await sendWecomTextMessage(wecomConfig.webhook, message);
+          results.sent.push('wecom');
+        }
+      } else if (channel === 'slack') {
+        const slackConfig = getSlackConfig();
+        if (slackConfig && slackConfig.channelId) {
+          await sendSlackTextMessage(slackConfig, slackConfig.channelId, message);
+          results.sent.push('slack');
+        }
+      }
+    } catch (err) {
+      console.error(`[WorkloadAlert] 发送${channel}通知失败:`, err.message);
+      results.failed.push({ channel, error: err.message });
+    }
+  }
+  
+  return results;
+}
+
+function startWorkloadAlertScheduler() {
+  if (workloadAlertTimer) {
+    clearTimeout(workloadAlertTimer);
+    workloadAlertTimer = null;
+  }
+  
+  scheduleNextWorkloadCheck();
+}
+
+function scheduleNextWorkloadCheck() {
+  const INTERVAL_MS = 5 * 60 * 1000;
+  nextWorkloadCheckTime = Date.now() + INTERVAL_MS;
+  
+  workloadAlertTimer = setTimeout(async () => {
+    const config = await getWorkloadAlertsConfig();
+    if (config.enabled) {
+      try {
+        await performWorkloadCheck();
+      } catch (err) {
+        console.error('[WorkloadAlert] 自动检查失败:', err.message);
+      }
+    }
+    scheduleNextWorkloadCheck();
+  }, INTERVAL_MS);
+}
+
+function getWorkloadAlertStatus() {
+  return {
+    nextCheckTime: nextWorkloadCheckTime,
+    isRunning: workloadAlertTimer !== null
+  };
+}
