@@ -1134,6 +1134,9 @@ async function requestHandler(req, res) {
       }
       if (req.method === 'POST' && pathname === '/api/tasks') {
         const body = await readJson(req);
+        if (body.combinationId) {
+          await agentCombinations.incrementUsage(body.combinationId);
+        }
         return json(res, 201, { task: await createTask(body) });
       }
       if (req.method === 'GET' && pathname.startsWith('/api/tasks/') && pathname.endsWith('/log')) {

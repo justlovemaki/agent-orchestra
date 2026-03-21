@@ -2798,6 +2798,9 @@ form.addEventListener('submit', async e => {
     mode: fd.get('mode'),
     agents: fd.getAll('agents')
   };
+  if (selectedCombinationId) {
+    payload.combinationId = selectedCombinationId;
+  }
   try {
     const { task } = await fetchJson('/api/tasks', {
       method: 'POST',
@@ -2806,6 +2809,7 @@ form.addEventListener('submit', async e => {
     });
     formMsg.textContent = `任务已创建：${task.title}`;
     form.reset();
+    selectedCombinationId = null;
     state.selectedTaskId = task.id;
     await refreshAll();
   } catch (err) {
@@ -3328,6 +3332,22 @@ async function saveCombination() {
   }
 }
 
+function formatUsageTime(timestamp) {
+  if (!timestamp) return '从未使用';
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}秒前`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  const date = new Date(timestamp);
+  return date.toLocaleDateString('zh-CN');
+}
+
 function renderCombinations() {
   if (!state.combinations || state.combinations.length === 0) {
     combinationListEl.innerHTML = '<div class="muted small">还没有创建任何组合</div>';
@@ -3341,6 +3361,8 @@ function renderCombinations() {
       return agent ? escapeHtml(agent.name) : id;
     }).join(', ');
     const moreText = agentCount > 3 ? ` 等${agentCount}个` : '';
+    const usedCount = combination.usedCount || 0;
+    const lastUsedAt = formatUsageTime(combination.lastUsedAt);
     return `
       <div class="combination-item" data-combination-id="${combination.id}">
         <div class="combination-header">
@@ -3351,6 +3373,10 @@ function renderCombinations() {
             <div class="combination-meta">
               <span>${agentCount} 个 Agent</span>
               <span class="combination-agents">${agentNames}${moreText}</span>
+            </div>
+            <div class="combination-usage">
+              <span class="combination-used-count">使用 ${usedCount} 次</span>
+              <span class="combination-last-used">最后使用: ${lastUsedAt}</span>
             </div>
           </div>
           <div class="combination-actions">
@@ -3410,12 +3436,18 @@ function renderCombinationSelectionList() {
     combinationSelectionList.innerHTML = '<div class="muted small">还没有创建任何组合</div>';
     return;
   }
-  combinationSelectionList.innerHTML = state.combinations.map(combination => `
+  const sortedCombinations = [...state.combinations].sort((a, b) => {
+    const aUsage = a.usedCount || 0;
+    const bUsage = b.usedCount || 0;
+    return bUsage - aUsage;
+  });
+  combinationSelectionList.innerHTML = sortedCombinations.map(combination => `
     <label class="combination-selection-item">
       <input type="radio" name="selectCombination" value="${combination.id}" />
       <span class="combination-color-dot" style="background-color: ${combination.color || '#6b7280'}"></span>
       <span class="combination-selection-name">${escapeHtml(combination.name)}</span>
       <span class="combination-selection-count">${combination.agentIds?.length || 0} 个 Agent</span>
+      <span class="combination-selection-usage">使用 ${combination.usedCount || 0} 次</span>
     </label>
   `).join('');
 }

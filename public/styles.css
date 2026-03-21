@@ -3723,6 +3723,31 @@ button.ghost.tiny {
   color: var(--muted);
 }
 
+.combination-selection-usage {
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.combination-usage {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.combination-used-count {
+  color: var(--accent);
+}
+
+.combination-last-used {
+  color: var(--muted);
+}
+
 .field-label {
   display: flex;
   align-items: center;
