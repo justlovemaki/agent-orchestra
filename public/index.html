@@ -131,6 +131,7 @@
                 <option value="">全部分组</option>
               </select>
               <button id="showGroupFormBtn" class="ghost small">管理分组</button>
+              <button id="showCombinationPanelBtn" class="ghost small">组合管理</button>
             </div>
           </div>
           <div id="agentsGrid" class="agents-grid"></div>
@@ -165,6 +166,41 @@
             </div>
           </div>
           <div id="groupList" class="group-list"></div>
+        </section>
+
+        <section id="combinationPanel" class="panel section-panel hidden">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Combinations</div>
+              <h2>组合管理</h2>
+            </div>
+            <button id="hideCombinationPanelBtn" class="ghost small">关闭</button>
+          </div>
+          <div id="combinationForm" class="combination-form hidden">
+            <div class="combination-form-fields">
+              <label>
+                <span class="field-label">组合名称</span>
+                <input id="combinationNameInput" placeholder="例如：内容团队" required />
+              </label>
+              <label>
+                <span class="field-label">颜色</span>
+                <input type="color" id="combinationColorInput" value="#6b7280" />
+              </label>
+              <label>
+                <span class="field-label">描述</span>
+                <input id="combinationDescInput" placeholder="简要描述用途" />
+              </label>
+              <label>
+                <span class="field-label">选择 Agents</span>
+                <div id="combinationAgentCheckboxes" class="checkbox-list compact"></div>
+              </label>
+            </div>
+            <div class="combination-form-actions">
+              <button id="saveCombinationBtn" class="primary">保存组合</button>
+              <button id="cancelCombinationBtn" class="ghost">取消</button>
+            </div>
+          </div>
+          <div id="combinationList" class="combination-list"></div>
         </section>
 
         <section class="grid two">
@@ -502,7 +538,10 @@
             </label>
 
             <div class="field-group">
-              <div class="field-label">选择 Agent</div>
+              <div class="field-label">
+                选择 Agent
+                <button id="selectFromCombinationBtn" class="ghost tiny">从组合选择</button>
+              </div>
               <div id="agentCheckboxes" class="checkbox-list"></div>
             </div>
 
@@ -646,6 +685,24 @@
         <div class="modal-actions">
           <button id="confirmReassignBtn" class="primary">确认重新指派</button>
           <button id="cancelReassignBtn" class="ghost">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="selectCombinationModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>从组合选择</h3>
+        <button class="modal-close" id="closeSelectCombinationModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="combinationSelectionList" class="combination-selection-list"></div>
+        <div id="selectCombinationMsg" class="form-msg"></div>
+        <div class="modal-actions">
+          <button id="confirmSelectCombinationBtn" class="primary">确认选择</button>
+          <button id="cancelSelectCombinationBtn" class="ghost">取消</button>
         </div>
       </div>
     </div>

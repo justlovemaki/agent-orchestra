@@ -13,6 +13,8 @@ const state = {
   editingTemplateId: null,
   groups: [],
   editingGroupId: null,
+  combinations: [],
+  editingCombinationId: null,
   selectedAgentId: null,
   groupFilter: '',
   workflows: [],
@@ -118,6 +120,7 @@ const templateListEl = document.getElementById('templateList');
 const templateSelectEl = document.getElementById('templateSelect');
 
 const showGroupFormBtn = document.getElementById('showGroupFormBtn');
+const showCombinationPanelBtn = document.getElementById('showCombinationPanelBtn');
 const groupPanel = document.getElementById('groupPanel');
 const hideGroupPanelBtn = document.getElementById('hideGroupPanelBtn');
 const groupForm = document.getElementById('groupForm');
@@ -128,6 +131,24 @@ const saveGroupBtn = document.getElementById('saveGroupBtn');
 const cancelGroupBtn = document.getElementById('cancelGroupBtn');
 const groupListEl = document.getElementById('groupList');
 const filterGroupEl = document.getElementById('filterGroup');
+
+const combinationPanel = document.getElementById('combinationPanel');
+const hideCombinationPanelBtn = document.getElementById('hideCombinationPanelBtn');
+const combinationForm = document.getElementById('combinationForm');
+const combinationNameInput = document.getElementById('combinationNameInput');
+const combinationColorInput = document.getElementById('combinationColorInput');
+const combinationDescInput = document.getElementById('combinationDescInput');
+const combinationAgentCheckboxes = document.getElementById('combinationAgentCheckboxes');
+const saveCombinationBtn = document.getElementById('saveCombinationBtn');
+const cancelCombinationBtn = document.getElementById('cancelCombinationBtn');
+const combinationListEl = document.getElementById('combinationList');
+const selectFromCombinationBtn = document.getElementById('selectFromCombinationBtn');
+const selectCombinationModal = document.getElementById('selectCombinationModal');
+const closeSelectCombinationModal = document.getElementById('closeSelectCombinationModal');
+const combinationSelectionList = document.getElementById('combinationSelectionList');
+const confirmSelectCombinationBtn = document.getElementById('confirmSelectCombinationBtn');
+const cancelSelectCombinationBtn = document.getElementById('cancelSelectCombinationBtn');
+const selectCombinationMsg = document.getElementById('selectCombinationMsg');
 
 const showSpawnFormBtn = document.getElementById('showSpawnFormBtn');
 const spawnForm = document.getElementById('spawnForm');
@@ -862,6 +883,7 @@ async function refreshAll(force = false) {
     loadTasks(force),
     loadTemplates(),
     loadGroups(),
+    loadCombinations(),
     loadSharedPresets(),
     loadWorkflows(),
     loadSessions(),
@@ -2370,6 +2392,11 @@ async function loadGroups() {
   state.groups = res.groups;
 }
 
+async function loadCombinations() {
+  const res = await fetchJson('/api/agent-combinations');
+  state.combinations = res.combinations || [];
+}
+
 async function loadSharedPresets() {
   try {
     const res = await fetchJson('/api/presets');
@@ -3057,6 +3084,212 @@ cancelGroupBtn.addEventListener('click', () => hideGroupForm());
 filterGroupEl.addEventListener('change', () => {
   state.groupFilter = filterGroupEl.value;
   renderAgents();
+});
+
+showCombinationPanelBtn.addEventListener('click', () => {
+  combinationPanel.classList.remove('hidden');
+  state.editingCombinationId = null;
+  showCombinationForm();
+  renderCombinations();
+});
+
+hideCombinationPanelBtn.addEventListener('click', () => {
+  combinationPanel.classList.add('hidden');
+  hideCombinationForm();
+});
+
+saveCombinationBtn.addEventListener('click', () => saveCombination());
+cancelCombinationBtn.addEventListener('click', () => hideCombinationForm());
+
+function showCombinationForm(combination = null) {
+  combinationForm.classList.remove('hidden');
+  if (combination) {
+    combinationNameInput.value = combination.name;
+    combinationColorInput.value = combination.color || '#6b7280';
+    combinationDescInput.value = combination.description || '';
+    state.editingCombinationId = combination.id;
+    renderCombinationAgentCheckboxes(combination.agentIds);
+  } else {
+    combinationNameInput.value = '';
+    combinationColorInput.value = '#6b7280';
+    combinationDescInput.value = '';
+    state.editingCombinationId = null;
+    renderCombinationAgentCheckboxes([]);
+  }
+}
+
+function hideCombinationForm() {
+  combinationForm.classList.add('hidden');
+  combinationNameInput.value = '';
+  combinationColorInput.value = '#6b7280';
+  combinationDescInput.value = '';
+  state.editingCombinationId = null;
+}
+
+function renderCombinationAgentCheckboxes(selectedAgentIds = []) {
+  const selected = new Set(selectedAgentIds);
+  const agents = state.overview?.agents || [];
+  combinationAgentCheckboxes.innerHTML = agents.map(agent => `
+    <label class="checkbox-item">
+      <input type="checkbox" name="combinationAgents" value="${agent.id}" ${selected.has(agent.id) ? 'checked' : ''} />
+      <span>${escapeHtml(agent.name)}</span>
+    </label>
+  `).join('');
+}
+
+async function saveCombination() {
+  const name = combinationNameInput.value.trim();
+  if (!name) {
+    alert('请输入组合名称');
+    return;
+  }
+  const agentCheckboxes = combinationAgentCheckboxes.querySelectorAll('input:checked');
+  const agentIds = [...agentCheckboxes].map(cb => cb.value);
+  const data = {
+    name,
+    description: combinationDescInput.value.trim(),
+    color: combinationColorInput.value,
+    agentIds
+  };
+  try {
+    if (state.editingCombinationId) {
+      await fetchJson(`/api/agent-combinations/${state.editingCombinationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    } else {
+      await fetchJson('/api/agent-combinations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    }
+    await loadCombinations();
+    hideCombinationForm();
+    renderCombinations();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function renderCombinations() {
+  if (!state.combinations || state.combinations.length === 0) {
+    combinationListEl.innerHTML = '<div class="muted small">还没有创建任何组合</div>';
+    return;
+  }
+  const agents = state.overview?.agents || [];
+  combinationListEl.innerHTML = state.combinations.map(combination => {
+    const agentCount = combination.agentIds?.length || 0;
+    const agentNames = (combination.agentIds || []).slice(0, 3).map(id => {
+      const agent = agents.find(a => a.id === id);
+      return agent ? escapeHtml(agent.name) : id;
+    }).join(', ');
+    const moreText = agentCount > 3 ? ` 等${agentCount}个` : '';
+    return `
+      <div class="combination-item" data-combination-id="${combination.id}">
+        <div class="combination-header">
+          <div class="combination-color" style="background-color: ${combination.color || '#6b7280'}"></div>
+          <div class="combination-info">
+            <div class="combination-name">${escapeHtml(combination.name)}</div>
+            <div class="combination-desc">${escapeHtml(combination.description || '暂无描述')}</div>
+            <div class="combination-meta">
+              <span>${agentCount} 个 Agent</span>
+              <span class="combination-agents">${agentNames}${moreText}</span>
+            </div>
+          </div>
+          <div class="combination-actions">
+            <button class="ghost tiny edit-combination-btn" data-combination-id="${combination.id}" title="编辑组合">编辑</button>
+            <button class="ghost tiny danger delete-combination-btn" data-combination-id="${combination.id}" title="删除组合">删除</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  combinationListEl.querySelectorAll('.edit-combination-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      const combination = state.combinations.find(c => c.id === combinationId);
+      if (combination) {
+        combinationPanel.classList.remove('hidden');
+        showCombinationForm(combination);
+      }
+    });
+  });
+
+  combinationListEl.querySelectorAll('.delete-combination-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      const combination = state.combinations.find(c => c.id === combinationId);
+      if (!combination) return;
+      if (!confirm(`确定要删除组合 "${combination.name}" 吗？`)) return;
+      try {
+        await fetchJson(`/api/agent-combinations/${combinationId}`, { method: 'DELETE' });
+        await loadCombinations();
+        renderCombinations();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+selectFromCombinationBtn.addEventListener('click', () => {
+  renderCombinationSelectionList();
+  selectCombinationModal.classList.remove('hidden');
+});
+
+closeSelectCombinationModal.addEventListener('click', () => {
+  selectCombinationModal.classList.add('hidden');
+});
+
+cancelSelectCombinationBtn.addEventListener('click', () => {
+  selectCombinationModal.classList.add('hidden');
+});
+
+function renderCombinationSelectionList() {
+  if (!state.combinations || state.combinations.length === 0) {
+    combinationSelectionList.innerHTML = '<div class="muted small">还没有创建任何组合</div>';
+    return;
+  }
+  combinationSelectionList.innerHTML = state.combinations.map(combination => `
+    <label class="combination-selection-item">
+      <input type="radio" name="selectCombination" value="${combination.id}" />
+      <span class="combination-color-dot" style="background-color: ${combination.color || '#6b7280'}"></span>
+      <span class="combination-selection-name">${escapeHtml(combination.name)}</span>
+      <span class="combination-selection-count">${combination.agentIds?.length || 0} 个 Agent</span>
+    </label>
+  `).join('');
+}
+
+let selectedCombinationId = null;
+
+confirmSelectCombinationBtn.addEventListener('click', () => {
+  const selected = combinationSelectionList.querySelector('input[name="selectCombination"]:checked');
+  if (!selected) {
+    selectCombinationMsg.textContent = '请选择一个组合';
+    return;
+  }
+  selectedCombinationId = selected.value;
+  const combination = state.combinations.find(c => c.id === selectedCombinationId);
+  if (!combination) return;
+  const agentCheckboxes = agentCheckboxesEl.querySelectorAll('input[type="checkbox"]');
+  agentCheckboxes.forEach(cb => {
+    if (combination.agentIds.includes(cb.value)) {
+      cb.checked = true;
+    } else {
+      cb.checked = false;
+    }
+  });
+  selectCombinationModal.classList.add('hidden');
+  selectCombinationMsg.textContent = '';
+});
+
+cancelSelectCombinationBtn.addEventListener('click', () => {
+  selectCombinationMsg.textContent = '';
 });
 
 function renderWorkflows() {

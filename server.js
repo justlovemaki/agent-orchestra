@@ -9,6 +9,7 @@ const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
+const agentCombinations = require('./lib/agent-combinations');
 const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, setUserGroupId, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
 const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
@@ -25,6 +26,7 @@ const AGENT_GROUPS_FILE = path.join(DATA_DIR, 'agent-groups.json');
 const SHARED_PRESETS_FILE = path.join(DATA_DIR, 'shared-presets.json');
 const USER_PRESETS_FILE = path.join(DATA_DIR, 'user-presets.json');
 const USER_TEMPLATES_FILE = path.join(DATA_DIR, 'user-templates.json');
+const AGENT_COMBINATIONS_FILE = path.join(DATA_DIR, 'agent-combinations.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
 const OVERVIEW_CACHE_TTL_MS = 8000;
@@ -57,6 +59,7 @@ async function ensureData() {
   try { await fsp.access(SHARED_PRESETS_FILE); } catch { await fsp.writeFile(SHARED_PRESETS_FILE, '[]\n'); }
   try { await fsp.access(USER_PRESETS_FILE); } catch { await fsp.writeFile(USER_PRESETS_FILE, '[]\n'); }
   try { await fsp.access(USER_TEMPLATES_FILE); } catch { await fsp.writeFile(USER_TEMPLATES_FILE, '[]\n'); }
+  try { await fsp.access(AGENT_COMBINATIONS_FILE); } catch { await fsp.writeFile(AGENT_COMBINATIONS_FILE, '[]\n'); }
 }
 
 async function writePidFile(pid = process.pid) {
@@ -1296,6 +1299,66 @@ async function requestHandler(req, res) {
         if (idx === -1) throw new Error('分组不存在');
         groups.splice(idx, 1);
         await writeAgentGroups(groups);
+        return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-combinations') {
+        return json(res, 200, { combinations: await agentCombinations.getAgentCombinations() });
+      }
+      if (req.method === 'POST' && pathname === '/api/agent-combinations') {
+        const body = await readJson(req);
+        if (!body.name?.trim()) throw new Error('组合名称不能为空');
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const newCombination = await agentCombinations.createAgentCombination({
+          name: body.name.trim(),
+          description: body.description?.trim() || '',
+          color: body.color || '#6b7280',
+          agentIds: body.agentIds || []
+        });
+        await addAuditEvent('agent_combination.created', {
+          combinationId: newCombination.id,
+          combinationName: newCombination.name,
+          agentCount: newCombination.agentIds.length
+        }, userName, currentUser?.id);
+        return json(res, 201, { combination: newCombination });
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/agent-combinations/')) {
+        const combinationId = pathname.split('/')[3];
+        const combination = await agentCombinations.getAgentCombination(combinationId);
+        if (!combination) throw new Error('组合不存在');
+        return json(res, 200, { combination });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/agent-combinations/')) {
+        const combinationId = pathname.split('/')[3];
+        const body = await readJson(req);
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const updated = await agentCombinations.updateAgentCombination(combinationId, {
+          name: body.name?.trim(),
+          description: body.description?.trim(),
+          color: body.color,
+          agentIds: body.agentIds
+        });
+        if (!updated) throw new Error('组合不存在');
+        await addAuditEvent('agent_combination.updated', {
+          combinationId: updated.id,
+          combinationName: updated.name,
+          agentCount: updated.agentIds.length
+        }, userName, currentUser?.id);
+        return json(res, 200, { combination: updated });
+      }
+      if (req.method === 'DELETE' && pathname.startsWith('/api/agent-combinations/')) {
+        const combinationId = pathname.split('/')[3];
+        const combination = await agentCombinations.getAgentCombination(combinationId);
+        if (!combination) throw new Error('组合不存在');
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        await agentCombinations.deleteAgentCombination(combinationId);
+        await addAuditEvent('agent_combination.deleted', {
+          combinationId: combination.id,
+          combinationName: combination.name,
+          agentCount: combination.agentIds.length
+        }, userName, currentUser?.id);
         return json(res, 200, { success: true });
       }
       if (req.method === 'GET' && pathname === '/api/presets') {

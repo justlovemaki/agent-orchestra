@@ -8,5 +8,41 @@
       "title": "Test Task"
     },
     "timestamp": 1773744191811
+  },
+  {
+    "id": "b1a0871a-8d32-4977-b95d-16f137a45197",
+    "type": "agent_combination.created",
+    "user": "Master",
+    "userId": null,
+    "details": {
+      "combinationId": "a7ef913c-c9e9-4532-8c43-fefd8de83823",
+      "combinationName": "测试组合",
+      "agentCount": 0
+    },
+    "timestamp": 1774059626012
+  },
+  {
+    "id": "3f1ac9e7-edcb-417f-8ab1-3337409bb97a",
+    "type": "agent_combination.updated",
+    "user": "Master",
+    "userId": null,
+    "details": {
+      "combinationId": "a7ef913c-c9e9-4532-8c43-fefd8de83823",
+      "combinationName": "更新后的组合",
+      "agentCount": 0
+    },
+    "timestamp": 1774059636436
+  },
+  {
+    "id": "7d8b7c4e-0cc4-4890-8d2e-7a36aee83870",
+    "type": "agent_combination.deleted",
+    "user": "Master",
+    "userId": null,
+    "details": {
+      "combinationId": "a7ef913c-c9e9-4532-8c43-fefd8de83823",
+      "combinationName": "更新后的组合",
+      "agentCount": 0
+    },
+    "timestamp": 1774059639938
   }
 ]
