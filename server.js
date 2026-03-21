@@ -1435,6 +1435,14 @@ async function requestHandler(req, res) {
         }, userName, currentUser?.id);
         return json(res, 200, results);
       }
+      if (req.method === 'GET' && pathname.match(/^\/api\/agent-combinations\/[^/]+\/usage-trends$/)) {
+        const combinationId = pathname.split('/')[3];
+        const combination = await agentCombinations.getAgentCombination(combinationId);
+        if (!combination) throw new Error('组合不存在');
+        const days = parseInt(parsed.query?.days) || 14;
+        const trends = await agentCombinations.getUsageTrends(combinationId, days);
+        return json(res, 200, { combination, trends });
+      }
       if (req.method === 'GET' && pathname === '/api/presets') {
         return json(res, 200, { presets: await readSharedPresets() });
       }

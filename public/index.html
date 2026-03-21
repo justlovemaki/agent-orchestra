@@ -861,6 +861,34 @@
     </div>
   </div>
 
+  <div id="usageTrendsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>使用趋势</h3>
+        <button class="modal-close" id="closeUsageTrendsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="usageTrendsHeader" class="usage-trends-header"></div>
+        <div class="usage-trends-controls">
+          <button id="usageTrends7d" class="filter-btn">7天</button>
+          <button id="usageTrends14d" class="filter-btn filter-btn-active">14天</button>
+        </div>
+        <div class="usage-trends-chart-container">
+          <div id="usageTrendsLoading" class="trends-loading">
+            <div class="loading-spinner"></div>
+            <span>加载中...</span>
+          </div>
+          <div id="usageTrendsEmpty" class="trends-empty hidden">
+            <span class="muted">暂无使用数据</span>
+          </div>
+          <canvas id="usageTrendsChart"></canvas>
+        </div>
+        <div id="usageTrendsSummary" class="usage-trends-summary"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="presetPermissionsModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-content">

@@ -41,7 +41,10 @@ const state = {
   taskStatusDistribution: null,
   agentWorkloadDistribution: null,
   workloadAlertConfig: null,
-  workloadAlertHistory: []
+  workloadAlertHistory: [],
+  usageTrends: null,
+  usageTrendsDays: 14,
+  usageTrendsCombinationId: null
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -68,6 +71,7 @@ let agentUsageChartInstance = null;
 let taskStatusChartInstance = null;
 let agentWorkloadChartInstance = null;
 let trendDetailPopup = null;
+let usageTrendsChartInstance = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -151,6 +155,16 @@ const combinationSelectionList = document.getElementById('combinationSelectionLi
 const confirmSelectCombinationBtn = document.getElementById('confirmSelectCombinationBtn');
 const cancelSelectCombinationBtn = document.getElementById('cancelSelectCombinationBtn');
 const selectCombinationMsg = document.getElementById('selectCombinationMsg');
+
+const usageTrendsModal = document.getElementById('usageTrendsModal');
+const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
+const usageTrendsHeader = document.getElementById('usageTrendsHeader');
+const usageTrends7dBtn = document.getElementById('usageTrends7d');
+const usageTrends14dBtn = document.getElementById('usageTrends14d');
+const usageTrendsLoadingEl = document.getElementById('usageTrendsLoading');
+const usageTrendsEmptyEl = document.getElementById('usageTrendsEmpty');
+const usageTrendsChartEl = document.getElementById('usageTrendsChart');
+const usageTrendsSummaryEl = document.getElementById('usageTrendsSummary');
 
 const showSpawnFormBtn = document.getElementById('showSpawnFormBtn');
 const spawnForm = document.getElementById('spawnForm');
@@ -3380,6 +3394,7 @@ function renderCombinations() {
             </div>
           </div>
           <div class="combination-actions">
+            <button class="ghost tiny view-usage-trends-btn" data-combination-id="${combination.id}" title="查看使用趋势">趋势</button>
             <button class="ghost tiny edit-combination-btn" data-combination-id="${combination.id}" title="编辑组合">编辑</button>
             <button class="ghost tiny danger delete-combination-btn" data-combination-id="${combination.id}" title="删除组合">删除</button>
           </div>
@@ -3415,6 +3430,167 @@ function renderCombinations() {
         alert(err.message);
       }
     });
+  });
+
+  combinationListEl.querySelectorAll('.view-usage-trends-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      openUsageTrendsModal(combinationId);
+    });
+  });
+}
+
+async function openUsageTrendsModal(combinationId) {
+  const combination = state.combinations.find(c => c.id === combinationId);
+  if (!combination) return;
+
+  state.usageTrendsCombinationId = combinationId;
+  state.usageTrendsDays = 14;
+
+  usageTrendsHeader.innerHTML = `
+    <div class="usage-trends-title">${escapeHtml(combination.name)}</div>
+    <div class="usage-trends-subtitle muted small">${escapeHtml(combination.description || '暂无描述')}</div>
+  `;
+
+  usageTrends14dBtn.classList.add('filter-btn-active');
+  usageTrends7dBtn.classList.remove('filter-btn-active');
+
+  await loadUsageTrends(combinationId, 14);
+  usageTrendsModal.classList.remove('hidden');
+}
+
+async function loadUsageTrends(combinationId, days) {
+  usageTrendsLoadingEl.classList.remove('hidden');
+  usageTrendsEmptyEl.classList.add('hidden');
+  usageTrendsChartEl.style.display = 'none';
+
+  try {
+    const res = await fetchJson(`/api/agent-combinations/${combinationId}/usage-trends?days=${days}`);
+    state.usageTrends = res.trends?.trends || [];
+    state.usageTrendsDays = days;
+    renderUsageTrends();
+  } catch (err) {
+    state.usageTrends = [];
+    renderUsageTrends();
+  }
+}
+
+function renderUsageTrends() {
+  usageTrendsLoadingEl.classList.add('hidden');
+
+  if (!state.usageTrends || state.usageTrends.length === 0) {
+    usageTrendsEmptyEl.classList.remove('hidden');
+    usageTrendsChartEl.style.display = 'none';
+    usageTrendsSummaryEl.innerHTML = '';
+    if (usageTrendsChartInstance) {
+      usageTrendsChartInstance.destroy();
+      usageTrendsChartInstance = null;
+    }
+    return;
+  }
+
+  usageTrendsEmptyEl.classList.add('hidden');
+  usageTrendsChartEl.style.display = 'block';
+
+  const labels = state.usageTrends.map(t => {
+    const d = new Date(t.date);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+
+  const data = state.usageTrends.map(t => t.count);
+  const totalUsage = data.reduce((sum, val) => sum + val, 0);
+  const avgUsage = totalUsage > 0 ? (totalUsage / data.length).toFixed(1) : 0;
+  const maxUsage = Math.max(...data, 0);
+
+  usageTrendsSummaryEl.innerHTML = `
+    <div class="usage-summary-item">
+      <span class="usage-summary-label">总使用次数</span>
+      <span class="usage-summary-value">${totalUsage}</span>
+    </div>
+    <div class="usage-summary-item">
+      <span class="usage-summary-label">日均使用</span>
+      <span class="usage-summary-value">${avgUsage}</span>
+    </div>
+    <div class="usage-summary-item">
+      <span class="usage-summary-label">单日最高</span>
+      <span class="usage-summary-value">${maxUsage}</span>
+    </div>
+  `;
+
+  if (usageTrendsChartInstance) {
+    usageTrendsChartInstance.destroy();
+  }
+
+  const ctx = usageTrendsChartEl.getContext('2d');
+  usageTrendsChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: '使用次数',
+        data,
+        borderColor: '#7aa2ff',
+        backgroundColor: 'rgba(122, 162, 255, 0.15)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#7aa2ff',
+        pointBorderColor: 'rgba(11, 20, 36, 0.86)',
+        pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              return `使用次数: ${context.raw}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1,
+            precision: 0
+          }
+        }
+      }
+    }
   });
 }
 
@@ -3582,6 +3758,33 @@ cancelImportCombinationsBtn.addEventListener('click', hideImportCombinationsModa
 importCombinationsModal.querySelector('.modal-backdrop').addEventListener('click', hideImportCombinationsModal);
 combinationFileInput.addEventListener('change', handleCombinationFileSelect);
 confirmImportCombinationsBtn.addEventListener('click', handleImportCombinations);
+
+closeUsageTrendsModal.addEventListener('click', () => {
+  usageTrendsModal.classList.add('hidden');
+  if (usageTrendsChartInstance) {
+    usageTrendsChartInstance.destroy();
+    usageTrendsChartInstance = null;
+  }
+});
+usageTrendsModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+  usageTrendsModal.classList.add('hidden');
+  if (usageTrendsChartInstance) {
+    usageTrendsChartInstance.destroy();
+    usageTrendsChartInstance = null;
+  }
+});
+
+usageTrends7dBtn.addEventListener('click', async () => {
+  usageTrends7dBtn.classList.add('filter-btn-active');
+  usageTrends14dBtn.classList.remove('filter-btn-active');
+  await loadUsageTrends(state.usageTrendsCombinationId, 7);
+});
+
+usageTrends14dBtn.addEventListener('click', async () => {
+  usageTrends14dBtn.classList.add('filter-btn-active');
+  usageTrends7dBtn.classList.remove('filter-btn-active');
+  await loadUsageTrends(state.usageTrendsCombinationId, 14);
+});
 
 cancelSelectCombinationBtn.addEventListener('click', () => {
   selectCombinationMsg.textContent = '';
