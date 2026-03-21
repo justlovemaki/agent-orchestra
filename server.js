@@ -14,6 +14,7 @@ const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserR
 const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
 const cloudStorage = require('./lib/cloud-storage');
+const notificationChannels = require('./lib/notification-channels');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -3154,6 +3155,94 @@ async function requestHandler(req, res) {
             limit
           });
           return json(res, 200, { alerts });
+        }
+
+        if (req.method === 'GET' && adminPath === 'notification-channels') {
+          const channels = await notificationChannels.getChannels();
+          return json(res, 200, { channels });
+        }
+
+        if (req.method === 'POST' && adminPath === 'notification-channels') {
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const channel = await notificationChannels.createChannel(body);
+          await addAuditEvent('notification_channel.created', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type
+          }, userName, currentUser?.id);
+          return json(res, 201, { channel });
+        }
+
+        if (req.method === 'PUT' && adminPath.match(/^notification-channels\/[\w-]+$/)) {
+          const channelId = adminPath.split('/')[1];
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const channel = await notificationChannels.updateChannel(channelId, body);
+          await addAuditEvent('notification_channel.updated', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type
+          }, userName, currentUser?.id);
+          return json(res, 200, { channel });
+        }
+
+        if (req.method === 'DELETE' && adminPath.match(/^notification-channels\/[\w-]+$/)) {
+          const channelId = adminPath.split('/')[1];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const channel = await notificationChannels.deleteChannel(channelId);
+          await addAuditEvent('notification_channel.deleted', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type
+          }, userName, currentUser?.id);
+          return json(res, 200, { success: true });
+        }
+
+        if (req.method === 'POST' && adminPath.match(/^notification-channels\/[\w-]+\/test$/)) {
+          const channelId = adminPath.split('/')[1];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const channel = await notificationChannels.getChannel(channelId);
+          if (!channel) {
+            return json(res, 404, { error: '渠道不存在' });
+          }
+          try {
+            const result = await notificationChannels.sendTestMessage(channelId);
+            await addAuditEvent('notification_channel.tested', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              success: true
+            }, userName, currentUser?.id);
+            return json(res, 200, { success: true, message: '测试消息发送成功', details: result });
+          } catch (err) {
+            await addAuditEvent('notification_channel.tested', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              success: false,
+              error: err.message
+            }, userName, currentUser?.id);
+            return json(res, 400, { success: false, error: err.message });
+          }
+        }
+
+        if (req.method === 'PUT' && adminPath.match(/^notification-channels\/[\w-]+\/toggle$/)) {
+          const channelId = adminPath.split('/')[1];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const channel = await notificationChannels.toggleChannel(channelId);
+          await addAuditEvent('notification_channel.toggled', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            isEnabled: channel.isEnabled
+          }, userName, currentUser?.id);
+          return json(res, 200, { channel });
         }
 
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {

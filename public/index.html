@@ -476,6 +476,43 @@
           <div id="auditResultCount" class="filter-result-count muted small"></div>
         </section>
 
+        <section id="notificationChannelPanel" class="panel section-panel hidden">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Notification Channels</div>
+              <h2>通知渠道管理</h2>
+            </div>
+            <button id="showChannelFormBtn" class="ghost small">新建渠道</button>
+          </div>
+          <div id="channelForm" class="channel-form hidden">
+            <div class="channel-form-grid">
+              <label>
+                <span class="field-label">渠道名称</span>
+                <input id="channelNameInput" placeholder="例如：测试环境通知" required />
+              </label>
+              <label>
+                <span class="field-label">渠道类型</span>
+                <select id="channelTypeInput">
+                  <option value="">选择类型</option>
+                  <option value="feishu">飞书</option>
+                  <option value="dingtalk">钉钉</option>
+                  <option value="wecom">企业微信</option>
+                  <option value="slack">Slack</option>
+                </select>
+              </label>
+              <label class="full-width">
+                <span class="field-label">Webhook 地址</span>
+                <input id="channelWebhookInput" placeholder="输入 webhook 地址" />
+              </label>
+            </div>
+            <div class="channel-form-actions">
+              <button id="saveChannelBtn" class="primary">保存</button>
+              <button id="cancelChannelBtn" class="ghost">取消</button>
+            </div>
+          </div>
+          <div id="channelList" class="channel-list"></div>
+        </section>
+
         <section id="adminPanel" class="panel section-panel hidden">
           <div class="panel-head panel-head-tight">
             <div>

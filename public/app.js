@@ -44,7 +44,9 @@ const state = {
   workloadAlertHistory: [],
   usageTrends: null,
   usageTrendsDays: 14,
-  usageTrendsCombinationId: null
+  usageTrendsCombinationId: null,
+  notificationChannels: [],
+  editingChannelId: null
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -206,6 +208,16 @@ const clearAuditFilterBtn = document.getElementById('clearAuditFilterBtn');
 const auditFilterChipsEl = document.getElementById('auditFilterChips');
 const auditEventsListEl = document.getElementById('auditEventsList');
 const auditResultCountEl = document.getElementById('auditResultCount');
+
+const notificationChannelPanel = document.getElementById('notificationChannelPanel');
+const showChannelFormBtn = document.getElementById('showChannelFormBtn');
+const channelForm = document.getElementById('channelForm');
+const channelNameInput = document.getElementById('channelNameInput');
+const channelTypeInput = document.getElementById('channelTypeInput');
+const channelWebhookInput = document.getElementById('channelWebhookInput');
+const saveChannelBtn = document.getElementById('saveChannelBtn');
+const cancelChannelBtn = document.getElementById('cancelChannelBtn');
+const channelListEl = document.getElementById('channelList');
 
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
@@ -463,18 +475,23 @@ function renderAuthUI() {
 function renderAdminUI() {
   const adminPanel = document.getElementById('adminPanel');
   const workloadPanel = document.getElementById('workloadAlertPanel');
+  const channelPanel = document.getElementById('notificationChannelPanel');
   if (!adminPanel) return;
   
   if (state.isAdmin) {
     adminPanel.classList.remove('hidden');
     if (workloadPanel) workloadPanel.classList.remove('hidden');
+    if (channelPanel) channelPanel.classList.remove('hidden');
     loadAllUsers();
     loadUserGroups();
     initUserGroupUI();
     loadWorkloadAlertConfig();
+    loadNotificationChannels();
+    initChannelFormHandlers();
   } else {
     adminPanel.classList.add('hidden');
     if (workloadPanel) workloadPanel.classList.add('hidden');
+    if (channelPanel) channelPanel.classList.add('hidden');
   }
 }
 
@@ -4637,6 +4654,193 @@ async function clearAuditFilters() {
   renderAuditEvents();
   renderAuditFilterChips();
   renderAuditResultCount();
+}
+
+async function loadNotificationChannels() {
+  try {
+    const res = await fetchJson('/api/admin/notification-channels');
+    state.notificationChannels = res.channels || [];
+    renderNotificationChannels();
+  } catch (err) {
+    console.error('加载通知渠道失败:', err);
+  }
+}
+
+function renderNotificationChannels() {
+  const channels = state.notificationChannels;
+  if (!channels || channels.length === 0) {
+    channelListEl.innerHTML = '<div class="empty-state muted">暂无通知渠道，点击上方按钮创建</div>';
+    return;
+  }
+  const channelTypeLabels = {
+    feishu: '飞书',
+    dingtalk: '钉钉',
+    wecom: '企业微信',
+    slack: 'Slack'
+  };
+  channelListEl.innerHTML = channels.map(channel => `
+    <div class="channel-item" data-channel-id="${channel.id}">
+      <div class="channel-info">
+        <div class="channel-name">${escapeHtml(channel.name)}</div>
+        <div class="channel-meta">
+          <span class="channel-type-badge">${channelTypeLabels[channel.type] || channel.type}</span>
+          <span class="channel-webhook muted small">${escapeHtml(channel.webhook || channel.webhookUrl || '')}</span>
+        </div>
+      </div>
+      <div class="channel-status">
+        <label class="toggle-label toggle-label-small">
+          <input type="checkbox" class="channel-toggle" data-channel-id="${channel.id}" ${channel.isEnabled ? 'checked' : ''} />
+          <span>${channel.isEnabled ? '已启用' : '已禁用'}</span>
+        </label>
+      </div>
+      <div class="channel-actions">
+        <button class="ghost small channel-edit-btn" data-channel-id="${channel.id}">编辑</button>
+        <button class="ghost small channel-test-btn" data-channel-id="${channel.id}">测试</button>
+        <button class="ghost small danger channel-delete-btn" data-channel-id="${channel.id}">删除</button>
+      </div>
+    </div>
+  `).join('');
+
+  channelListEl.querySelectorAll('.channel-toggle').forEach(el => {
+    el.addEventListener('change', () => {
+      const channelId = el.dataset.channelId;
+      toggleChannel(channelId);
+    });
+  });
+
+  channelListEl.querySelectorAll('.channel-edit-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const channelId = el.dataset.channelId;
+      openChannelModal(channelId);
+    });
+  });
+
+  channelListEl.querySelectorAll('.channel-test-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const channelId = el.dataset.channelId;
+      testChannel(channelId);
+    });
+  });
+
+  channelListEl.querySelectorAll('.channel-delete-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const channelId = el.dataset.channelId;
+      deleteChannel(channelId);
+    });
+  });
+}
+
+function openChannelModal(channelId = null) {
+  state.editingChannelId = channelId;
+  if (channelId) {
+    const channel = state.notificationChannels.find(c => c.id === channelId);
+    if (channel) {
+      channelNameInput.value = channel.name;
+      channelTypeInput.value = channel.type;
+      channelWebhookInput.value = channel.webhook || channel.webhookUrl || '';
+    }
+  } else {
+    channelNameInput.value = '';
+    channelTypeInput.value = '';
+    channelWebhookInput.value = '';
+  }
+  channelForm.classList.remove('hidden');
+}
+
+function closeChannelModal() {
+  state.editingChannelId = null;
+  channelForm.classList.add('hidden');
+}
+
+async function saveChannel() {
+  const name = channelNameInput.value.trim();
+  const type = channelTypeInput.value;
+  const webhook = channelWebhookInput.value.trim();
+
+  if (!name) {
+    alert('请输入渠道名称');
+    return;
+  }
+  if (!type) {
+    alert('请选择渠道类型');
+    return;
+  }
+  if (!webhook) {
+    alert('请输入 Webhook 地址');
+    return;
+  }
+
+  try {
+    const data = { name, type, webhook };
+    if (state.editingChannelId) {
+      await fetchJson(`/api/admin/notification-channels/${state.editingChannelId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+    } else {
+      await fetchJson('/api/admin/notification-channels', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    }
+    await loadNotificationChannels();
+    closeChannelModal();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteChannel(channelId) {
+  if (!confirm('确定要删除此通知渠道吗？')) return;
+  try {
+    await fetchJson(`/api/admin/notification-channels/${channelId}`, {
+      method: 'DELETE'
+    });
+    await loadNotificationChannels();
+  } catch (err) {
+    alert('删除失败: ' + err.message);
+  }
+}
+
+async function toggleChannel(channelId) {
+  try {
+    await fetchJson(`/api/admin/notification-channels/${channelId}/toggle`, {
+      method: 'PUT'
+    });
+    await loadNotificationChannels();
+  } catch (err) {
+    alert('切换状态失败: ' + err.message);
+    await loadNotificationChannels();
+  }
+}
+
+async function testChannel(channelId) {
+  const btn = channelListEl.querySelector(`.channel-test-btn[data-channel-id="${channelId}"]`);
+  if (!btn) return;
+  const originalText = btn.textContent;
+  btn.textContent = '测试中...';
+  btn.disabled = true;
+  try {
+    const res = await fetchJson(`/api/admin/notification-channels/${channelId}/test`, {
+      method: 'POST'
+    });
+    if (res.success) {
+      alert('测试消息发送成功！');
+    } else {
+      alert('测试失败: ' + (res.error || '未知错误'));
+    }
+  } catch (err) {
+    alert('测试失败: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+function initChannelFormHandlers() {
+  showChannelFormBtn.addEventListener('click', () => openChannelModal(null));
+  saveChannelBtn.addEventListener('click', saveChannel);
+  cancelChannelBtn.addEventListener('click', closeChannelModal);
 }
 
 function showAuditDetailModal(eventId) {
