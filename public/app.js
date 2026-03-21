@@ -2926,6 +2926,11 @@ function renderWorkloadAlertConfig() {
   
   const enabledCheckbox = document.getElementById('workloadAlertEnabled');
   const thresholdInput = document.getElementById('workloadThreshold');
+  const warningThresholdInput = document.getElementById('warningThreshold');
+  const criticalThresholdInput = document.getElementById('criticalThreshold');
+  const silencePeriodInput = document.getElementById('silencePeriodMinutes');
+  const messageTemplateWarning = document.getElementById('messageTemplateWarning');
+  const messageTemplateCritical = document.getElementById('messageTemplateCritical');
   const channelCheckboxes = document.querySelectorAll('input[name="notifyChannel"]');
   
   if (enabledCheckbox) {
@@ -2933,6 +2938,21 @@ function renderWorkloadAlertConfig() {
   }
   if (thresholdInput) {
     thresholdInput.value = config.threshold || 5;
+  }
+  if (warningThresholdInput) {
+    warningThresholdInput.value = config.warningThreshold || 0.8;
+  }
+  if (criticalThresholdInput) {
+    criticalThresholdInput.value = config.criticalThreshold || 1.0;
+  }
+  if (silencePeriodInput) {
+    silencePeriodInput.value = config.silencePeriodMinutes || 30;
+  }
+  if (messageTemplateWarning && config.messageTemplate) {
+    messageTemplateWarning.value = config.messageTemplate.warning || '';
+  }
+  if (messageTemplateCritical && config.messageTemplate) {
+    messageTemplateCritical.value = config.messageTemplate.critical || '';
   }
   if (channelCheckboxes) {
     channelCheckboxes.forEach(cb => {
@@ -2960,22 +2980,43 @@ function updateNextCheckTimeDisplay() {
 async function saveWorkloadAlertConfig() {
   const enabledCheckbox = document.getElementById('workloadAlertEnabled');
   const thresholdInput = document.getElementById('workloadThreshold');
+  const warningThresholdInput = document.getElementById('warningThreshold');
+  const criticalThresholdInput = document.getElementById('criticalThreshold');
+  const silencePeriodInput = document.getElementById('silencePeriodMinutes');
+  const messageTemplateWarning = document.getElementById('messageTemplateWarning');
+  const messageTemplateCritical = document.getElementById('messageTemplateCritical');
   const channelCheckboxes = document.querySelectorAll('input[name="notifyChannel"]:checked');
   
   const enabled = enabledCheckbox?.checked || false;
   const threshold = parseInt(thresholdInput?.value) || 5;
+  const warningThreshold = parseFloat(warningThresholdInput?.value) || 0.8;
+  const criticalThreshold = parseFloat(criticalThresholdInput?.value) || 1.0;
+  const silencePeriodMinutes = parseInt(silencePeriodInput?.value) || 30;
   const notifyChannels = Array.from(channelCheckboxes).map(cb => cb.value);
+  
+  const messageTemplate = {
+    warning: messageTemplateWarning?.value || '',
+    critical: messageTemplateCritical?.value || ''
+  };
   
   const msgEl = document.getElementById('workloadAlertMsg');
   
   try {
     msgEl.textContent = '保存中...';
-    await fetchJson('/api/admin/workload-alerts/config', {
+    const result = await fetchJson('/api/admin/workload-alerts/config', {
       method: 'PUT',
-      body: JSON.stringify({ enabled, threshold, notifyChannels })
+      body: JSON.stringify({ 
+        enabled, 
+        threshold, 
+        warningThreshold, 
+        criticalThreshold, 
+        notifyChannels,
+        messageTemplate,
+        silencePeriodMinutes
+      })
     });
     msgEl.textContent = '配置已保存';
-    state.workloadAlertConfig = { enabled, threshold, notifyChannels };
+    state.workloadAlertConfig = result;
     renderWorkloadAlertConfig();
     updateNextCheckTimeDisplay();
     setTimeout(() => { msgEl.textContent = ''; }, 3000);
@@ -2993,9 +3034,19 @@ async function triggerWorkloadCheck() {
       method: 'POST'
     });
     
-    if (result.exceededAgents && result.exceededAgents.length > 0) {
-      const msg = `发现 ${result.exceededAgents.length} 个 Agent 负载超过阈值`;
-      msgEl.textContent = msg;
+    const warningCount = (result.warningAgents || []).length;
+    const criticalCount = (result.criticalAgents || []).length;
+    const totalCount = warningCount + criticalCount;
+    
+    if (totalCount > 0) {
+      let msg = '';
+      if (criticalCount > 0) {
+        msg += `严重: ${criticalCount} 个`;
+      }
+      if (warningCount > 0) {
+        msg += (msg ? ', ' : '') + `警告: ${warningCount} 个`;
+      }
+      msgEl.textContent = `发现 ${msg} Agent 负载预警`;
     } else {
       msgEl.textContent = '所有 Agent 负载正常';
     }
@@ -3034,18 +3085,34 @@ function renderWorkloadAlertHistory() {
     const time = new Date(event.timestamp).toLocaleString('zh-CN');
     const channelsText = (details.notifyChannels || []).join(', ') || '未通知';
     
+    const warningAgents = agents.filter(a => a.level === 'warning');
+    const criticalAgents = agents.filter(a => a.level === 'critical');
+    
+    let levelBadge = `<span class="workload-alert-badge">${agents.length} 个 Agent</span>`;
+    if (warningAgents.length > 0 && criticalAgents.length > 0) {
+      levelBadge = `
+        <span class="workload-alert-badge warning">警告: ${warningAgents.length}</span>
+        <span class="workload-alert-badge critical">严重: ${criticalAgents.length}</span>
+      `;
+    } else if (criticalAgents.length > 0) {
+      levelBadge = `<span class="workload-alert-badge critical">严重: ${criticalAgents.length}</span>`;
+    } else if (warningAgents.length > 0) {
+      levelBadge = `<span class="workload-alert-badge warning">警告: ${warningAgents.length}</span>`;
+    }
+    
     return `
       <div class="workload-alert-item">
         <div class="workload-alert-item-header">
           <span class="workload-alert-time">${time}</span>
-          <span class="workload-alert-badge">${agents.length} 个 Agent</span>
+          <div class="workload-alert-badges">${levelBadge}</div>
         </div>
         <div class="workload-alert-item-content">
           <div class="workload-alert-threshold">阈值: ${details.threshold || 5}</div>
+          <div class="workload-alert-thresholds">分级: ${Math.round((details.warningThreshold || 0) * 100)}% / ${Math.round((details.criticalThreshold || 1) * 100)}%</div>
           <div class="workload-alert-channels">通知: ${channelsText}</div>
         </div>
         <div class="workload-alert-agents">
-          ${agents.map(a => `<span class="workload-alert-agent-tag">${escapeHtml(a.agentName)}: ${a.workloadCount}</span>`).join('')}
+          ${agents.map(a => `<span class="workload-alert-agent-tag ${a.level || ''}">${escapeHtml(a.agentName)}: ${a.workloadCount} ${a.level === 'critical' ? '🔴' : '⚠️'}</span>`).join('')}
         </div>
       </div>
     `;
@@ -3054,6 +3121,16 @@ function renderWorkloadAlertHistory() {
 
 document.getElementById('saveWorkloadAlertConfigBtn')?.addEventListener('click', saveWorkloadAlertConfig);
 document.getElementById('checkWorkloadNowBtn')?.addEventListener('click', triggerWorkloadCheck);
+
+document.querySelectorAll('.template-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const level = tab.dataset.level;
+    document.querySelectorAll('.template-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('messageTemplateWarning')?.classList.toggle('hidden', level !== 'warning');
+    document.getElementById('messageTemplateCritical')?.classList.toggle('hidden', level !== 'critical');
+  });
+});
 
 setInterval(updateNextCheckTimeDisplay, 60000);
 

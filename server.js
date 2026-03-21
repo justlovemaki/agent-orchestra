@@ -3071,7 +3071,7 @@ async function requestHandler(req, res) {
 
         if (req.method === 'PUT' && adminPath === 'workload-alerts/config') {
           const body = await readJson(req);
-          const { enabled, threshold, notifyChannels } = body;
+          const { enabled, threshold, warningThreshold, criticalThreshold, notifyChannels, messageTemplate, silencePeriodMinutes } = body;
           
           if (enabled !== undefined && typeof enabled !== 'boolean') {
             throw new Error('enabled 必须是布尔值');
@@ -3079,6 +3079,16 @@ async function requestHandler(req, res) {
           if (threshold !== undefined) {
             if (!Number.isInteger(threshold) || threshold < 1 || threshold > 20) {
               throw new Error('threshold 必须在 1-20 之间');
+            }
+          }
+          if (warningThreshold !== undefined) {
+            if (typeof warningThreshold !== 'number' || warningThreshold < 0.1 || warningThreshold > 1) {
+              throw new Error('warningThreshold 必须在 0.1-1 之间');
+            }
+          }
+          if (criticalThreshold !== undefined) {
+            if (typeof criticalThreshold !== 'number' || criticalThreshold < 0.1 || criticalThreshold > 1) {
+              throw new Error('criticalThreshold 必须在 0.1-1 之间');
             }
           }
           if (notifyChannels !== undefined) {
@@ -3092,12 +3102,40 @@ async function requestHandler(req, res) {
               }
             }
           }
+          if (messageTemplate !== undefined) {
+            if (typeof messageTemplate !== 'object' || messageTemplate === null) {
+              throw new Error('messageTemplate 必须是对象');
+            }
+            if (messageTemplate.warning !== undefined && typeof messageTemplate.warning !== 'string') {
+              throw new Error('messageTemplate.warning 必须是字符串');
+            }
+            if (messageTemplate.critical !== undefined && typeof messageTemplate.critical !== 'string') {
+              throw new Error('messageTemplate.critical 必须是字符串');
+            }
+          }
+          if (silencePeriodMinutes !== undefined) {
+            if (!Number.isInteger(silencePeriodMinutes) || silencePeriodMinutes < 1 || silencePeriodMinutes > 1440) {
+              throw new Error('silencePeriodMinutes 必须在 1-1440 之间');
+            }
+          }
           
-          const config = await saveWorkloadAlertsConfig({ enabled, threshold, notifyChannels });
+          const config = await saveWorkloadAlertsConfig({ 
+            enabled, 
+            threshold, 
+            warningThreshold, 
+            criticalThreshold, 
+            notifyChannels, 
+            messageTemplate, 
+            silencePeriodMinutes 
+          });
           await addAuditEvent('workload_alert.config_changed', {
             enabled: config.enabled,
             threshold: config.threshold,
+            warningThreshold: config.warningThreshold,
+            criticalThreshold: config.criticalThreshold,
             notifyChannels: config.notifyChannels,
+            messageTemplate: config.messageTemplate,
+            silencePeriodMinutes: config.silencePeriodMinutes,
             changedBy: currentUser.name
           }, currentUser.name, currentUser.id);
           
@@ -4739,14 +4777,59 @@ async function handleScheduledBackupNotification(params) {
 scheduledBackup.setNotificationFunction(handleScheduledBackupNotification);
 
 const WORKLOAD_ALERTS_CONFIG_FILE = path.join(DATA_DIR, 'workload-alerts-config.json');
+const WORKLOAD_ALERTS_STATE_FILE = path.join(DATA_DIR, 'workload-alerts-state.json');
 let workloadAlertTimer = null;
 let nextWorkloadCheckTime = null;
 
 const DEFAULT_WORKLOAD_CONFIG = {
   enabled: false,
   threshold: 5,
-  notifyChannels: []
+  warningThreshold: 0.8,
+  criticalThreshold: 1.0,
+  notifyChannels: [],
+  messageTemplate: {
+    warning: '🚨 [{level}] Agent 负载预警\n━━━━━━━━━━━━━━━━━━━━\n⏰ 时间: {time}\n📊 阈值: {threshold}\n⚠️ 级别: {level}\n⚠️ Agent: {agentName}\n📈 负载: {workload} 个任务 ({percentage}%)\n━━━━━━━━━━━━━━━━━━━━',
+    critical: '🚨 [{level}] Agent 负载告警\n━━━━━━━━━━━━━━━━━━━━\n⏰ 时间: {time}\n📊 阈值: {threshold}\n🔴 级别: {level}\n🔴 Agent: {agentName}\n📈 负载: {workload} 个任务 ({percentage}%)\n━━━━━━━━━━━━━━━━━━━━'
+  },
+  silencePeriodMinutes: 30
 };
+
+async function getWorkloadAlertsState() {
+  await ensureData();
+  try {
+    const data = await fsp.readFile(WORKLOAD_ALERTS_STATE_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+async function saveWorkloadAlertsState(state) {
+  await ensureData();
+  await fsp.writeFile(WORKLOAD_ALERTS_STATE_FILE, JSON.stringify(state, null, 2) + '\n');
+}
+
+async function shouldSendAlert(agentId, level, silencePeriodMinutes) {
+  const state = await getWorkloadAlertsState();
+  const key = `${agentId}:${level}`;
+  const lastAlert = state[key];
+  
+  if (!lastAlert) {
+    return true;
+  }
+  
+  const silenceMs = silencePeriodMinutes * 60 * 1000;
+  const elapsed = Date.now() - lastAlert;
+  
+  return elapsed >= silenceMs;
+}
+
+async function recordAlertSent(agentId, level) {
+  const state = await getWorkloadAlertsState();
+  const key = `${agentId}:${level}`;
+  state[key] = Date.now();
+  await saveWorkloadAlertsState(state);
+}
 
 async function getWorkloadAlertsConfig() {
   await ensureData();
@@ -4802,83 +4885,141 @@ async function performWorkloadCheck() {
     workload.agentName = agentNameMap.get(workload.agentId) || workload.agentId;
   }
   
-  const exceededAgents = agentWorkloads.filter(a => a.workloadCount > config.threshold);
+  const warningThresholdValue = config.threshold * (config.warningThreshold || 0.8);
+  const criticalThresholdValue = config.threshold * (config.criticalThreshold || 1.0);
+  const silencePeriod = config.silencePeriodMinutes || 30;
+  
+  const warningAgents = agentWorkloads.filter(a => a.workloadCount >= warningThresholdValue && a.workloadCount < criticalThresholdValue);
+  const criticalAgents = agentWorkloads.filter(a => a.workloadCount >= criticalThresholdValue);
   const triggeredAt = Date.now();
+  
+  for (const agent of agentWorkloads) {
+    agent.warningLevel = 'normal';
+    if (agent.workloadCount >= criticalThresholdValue) {
+      agent.warningLevel = 'critical';
+    } else if (agent.workloadCount >= warningThresholdValue) {
+      agent.warningLevel = 'warning';
+    }
+    agent.percentage = Math.round((agent.workloadCount / config.threshold) * 100);
+  }
   
   const result = {
     checkedAt: triggeredAt,
     threshold: config.threshold,
+    warningThreshold: warningThresholdValue,
+    criticalThreshold: criticalThresholdValue,
     totalAgents: agentWorkloads.length,
-    exceededAgents,
-    notified: false
+    warningAgents,
+    criticalAgents,
+    notified: false,
+    notifications: []
   };
   
-  if (exceededAgents.length > 0 && config.enabled && config.notifyChannels.length > 0) {
-    result.notified = true;
-    const notifyResult = await sendWorkloadAlertNotification(exceededAgents, config.threshold);
-    result.notifyResult = notifyResult;
+  if (config.enabled && config.notifyChannels.length > 0) {
+    const sentAlerts = [];
     
-    await addAuditEvent('workload_alert.triggered', {
-      agents: exceededAgents.map(a => ({
-        agentId: a.agentId,
-        agentName: a.agentName,
-        workloadCount: a.workloadCount
-      })),
-      threshold: config.threshold,
-      notifyChannels: config.notifyChannels,
-      notified: notifyResult.sent.length > 0,
-      notifyResults: notifyResult
-    }, 'system');
+    for (const agent of [...criticalAgents, ...warningAgents]) {
+      const level = agent.warningLevel;
+      const shouldSend = await shouldSendAlert(agent.agentId, level, silencePeriod);
+      
+      if (shouldSend) {
+        const notifyResult = await sendWorkloadAlertNotification([agent], config.threshold, level);
+        await recordAlertSent(agent.agentId, level);
+        
+        sentAlerts.push({
+          agentId: agent.agentId,
+          agentName: agent.agentName,
+          level,
+          workloadCount: agent.workloadCount,
+          notifyResult
+        });
+        
+        result.notifications.push(notifyResult);
+        result.notified = true;
+      }
+    }
+    
+    if (sentAlerts.length > 0) {
+      await addAuditEvent('workload_alert.triggered', {
+        agents: sentAlerts.map(a => ({
+          agentId: a.agentId,
+          agentName: a.agentName,
+          workloadCount: a.workloadCount,
+          level: a.level
+        })),
+        threshold: config.threshold,
+        warningThreshold: warningThresholdValue,
+        criticalThreshold: criticalThresholdValue,
+        notifyChannels: config.notifyChannels,
+        notified: sentAlerts.some(a => a.notifyResult.sent.length > 0),
+        notifyResults: sentAlerts.map(a => a.notifyResult),
+        silencePeriodMinutes: silencePeriod
+      }, 'system');
+    }
   }
   
   return result;
 }
 
-async function sendWorkloadAlertNotification(agents, threshold) {
+function renderMessageTemplate(template, data) {
+  return template
+    .replace(/{agentName}/g, data.agentName)
+    .replace(/{workload}/g, data.workload)
+    .replace(/{threshold}/g, data.threshold)
+    .replace(/{level}/g, data.level)
+    .replace(/{time}/g, data.time)
+    .replace(/{percentage}/g, data.percentage);
+}
+
+async function sendWorkloadAlertNotification(agents, threshold, level = 'warning') {
   const config = await getWorkloadAlertsConfig();
   const timeText = new Date().toLocaleString('zh-CN');
   
-  let message = `🚨 Agent 负载预警\n`;
-  message += `━━━━━━━━━━━━━━━━━━━━\n`;
-  message += `⏰ 时间: ${timeText}\n`;
-  message += `📊 阈值: ${threshold}\n`;
-  message += `⚠️ 预警 Agent 数量: ${agents.length}\n`;
-  message += `━━━━━━━━━━━━━━━━━━━━\n`;
-  message += `📋 详情:\n`;
+  const template = config.messageTemplate?.[level] || config.messageTemplate?.warning || 
+    `🚨 [{level}] Agent 负载预警\nAgent: {agentName}\n负载: {workload} 个任务 ({percentage}%)\n阈值: {threshold}`;
   
+  const messages = [];
   for (const agent of agents) {
     const percentage = Math.round((agent.workloadCount / threshold) * 100);
-    message += `• ${agent.agentName}: ${agent.workloadCount} 个任务 (${percentage}%)\n`;
+    const message = renderMessageTemplate(template, {
+      agentName: agent.agentName,
+      workload: agent.workloadCount,
+      threshold: threshold,
+      level: level === 'critical' ? '严重' : '警告',
+      time: timeText,
+      percentage: percentage
+    });
+    messages.push(message);
   }
   
-  message += `━━━━━━━━━━━━━━━━━━━━`;
+  const combinedMessage = messages.join('\n\n');
   
-  const results = { sent: [], failed: [] };
+  const results = { sent: [], failed: [], level, agentCount: agents.length };
   
   for (const channel of config.notifyChannels) {
     try {
       if (channel === 'feishu') {
         const feishuConfig = getFeishuConfig();
         if (feishuConfig && feishuConfig.channelId) {
-          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, message);
+          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, combinedMessage);
           results.sent.push('feishu');
         }
       } else if (channel === 'dingtalk') {
         const dingtalkConfig = getDingTalkConfig();
         if (dingtalkConfig && dingtalkConfig.webhook) {
-          await sendDingTalkTextMessage(dingtalkConfig.webhook, message);
+          await sendDingTalkTextMessage(dingtalkConfig.webhook, combinedMessage);
           results.sent.push('dingtalk');
         }
       } else if (channel === 'wecom') {
         const wecomConfig = getWecomConfig();
         if (wecomConfig && wecomConfig.webhook) {
-          await sendWecomTextMessage(wecomConfig.webhook, message);
+          await sendWecomTextMessage(wecomConfig.webhook, combinedMessage);
           results.sent.push('wecom');
         }
       } else if (channel === 'slack') {
         const slackConfig = getSlackConfig();
         if (slackConfig && slackConfig.channelId) {
-          await sendSlackTextMessage(slackConfig, slackConfig.channelId, message);
+          await sendSlackTextMessage(slackConfig, slackConfig.channelId, combinedMessage);
           results.sent.push('slack');
         }
       }

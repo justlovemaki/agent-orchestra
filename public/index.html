@@ -517,12 +517,35 @@
             <div class="workload-alert-form">
               <div class="workload-form-row">
                 <label class="workload-threshold-label">
-                  <span class="field-label">负载阈值</span>
+                  <span class="field-label">基础阈值</span>
                   <div class="threshold-input-group">
                     <input type="number" id="workloadThreshold" min="1" max="20" value="5" />
                     <span class="threshold-suffix">个任务</span>
                   </div>
-                  <span class="muted small">当 Agent 的 running + queued 任务数超过此值时触发预警</span>
+                  <span class="muted small">当 Agent 的 running + queued 任务数达到此值时触发严重预警</span>
+                </label>
+              </div>
+              <div class="workload-form-row">
+                <label class="workload-threshold-label">
+                  <span class="field-label">分级阈值</span>
+                  <div class="threshold-levels">
+                    <div class="threshold-level-item">
+                      <span class="level-badge warning">警告</span>
+                      <div class="threshold-input-group">
+                        <input type="number" id="warningThreshold" min="0.1" max="1" step="0.1" value="0.8" />
+                        <span class="threshold-suffix">× 阈值</span>
+                      </div>
+                      <span class="muted small">80% 时触发警告</span>
+                    </div>
+                    <div class="threshold-level-item">
+                      <span class="level-badge critical">严重</span>
+                      <div class="threshold-input-group">
+                        <input type="number" id="criticalThreshold" min="0.1" max="1" step="0.1" value="1.0" />
+                        <span class="threshold-suffix">× 阈值</span>
+                      </div>
+                      <span class="muted small">100% 时触发严重告警</span>
+                    </div>
+                  </div>
                 </label>
               </div>
               <div class="workload-form-row">
@@ -547,6 +570,30 @@
                     </label>
                   </div>
                   <span class="muted small">选择要发送预警通知的渠道（需提前配置相应的 Webhook）</span>
+                </label>
+              </div>
+              <div class="workload-form-row">
+                <label class="workload-silence-label">
+                  <span class="field-label">静默期</span>
+                  <div class="silence-input-group">
+                    <input type="number" id="silencePeriodMinutes" min="1" max="1440" value="30" />
+                    <span class="threshold-suffix">分钟</span>
+                  </div>
+                  <span class="muted small">同一 Agent 相同级别预警的静默间隔，默认 30 分钟</span>
+                </label>
+              </div>
+              <div class="workload-form-row">
+                <label class="workload-template-label">
+                  <span class="field-label">消息模板</span>
+                  <div class="template-tabs">
+                    <button type="button" class="template-tab active" data-level="warning">警告消息</button>
+                    <button type="button" class="template-tab" data-level="critical">严重消息</button>
+                  </div>
+                  <textarea id="messageTemplateWarning" class="message-template-textarea" rows="4" placeholder="警告消息模板"></textarea>
+                  <textarea id="messageTemplateCritical" class="message-template-textarea hidden" rows="4" placeholder="严重消息模板"></textarea>
+                  <div class="template-hint muted small">
+                    模板变量：{agentName} {workload} {threshold} {level} {time} {percentage}
+                  </div>
                 </label>
               </div>
               <div class="workload-form-actions">
