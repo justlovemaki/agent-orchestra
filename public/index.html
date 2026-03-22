@@ -486,6 +486,7 @@
           </div>
           <div class="channel-tabs">
             <button class="channel-tab active" data-tab="channels">渠道列表</button>
+            <button class="channel-tab" data-tab="templates">消息模板</button>
             <button class="channel-tab" data-tab="history">发送历史</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
@@ -516,6 +517,29 @@
           </div>
           <div id="channelTabContent">
             <div id="channelList" class="channel-list"></div>
+            <div id="templatesTabContent" class="templates-tab-content hidden">
+              <div class="templates-header">
+                <div class="template-variables-info">
+                  <span class="field-label">可用变量：</span>
+                  <span class="template-variable-badge">{agentName}</span>
+                  <span class="template-variable-badge">{workload}</span>
+                  <span class="template-variable-badge">{threshold}</span>
+                  <span class="template-variable-badge">{level}</span>
+                  <span class="template-variable-badge">{time}</span>
+                  <span class="template-variable-badge">{percentage}</span>
+                  <span class="template-variable-badge">{backupType}</span>
+                  <span class="template-variable-badge">{fileSize}</span>
+                  <span class="template-variable-badge">{duration}</span>
+                  <span class="template-variable-badge">{error}</span>
+                  <span class="template-variable-badge">{fileName}</span>
+                </div>
+                <div class="templates-actions">
+                  <button id="resetAllTemplatesBtn" class="ghost small">恢复默认</button>
+                  <button id="saveTemplatesBtn" class="primary small">保存全部</button>
+                </div>
+              </div>
+              <div id="templatesList" class="templates-list"></div>
+            </div>
             <div id="historyTabContent" class="history-tab-content hidden">
               <div id="notificationStats" class="notification-stats"></div>
               <div id="historyFilterBar" class="filter-bar history-filter-bar">

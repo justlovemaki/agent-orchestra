@@ -4351,6 +4351,112 @@ button.ghost.tiny {
   gap: 16px;
 }
 
+.templates-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.templates-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.template-variables-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-variable-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius-xs);
+  font-family: monospace;
+}
+
+.templates-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.template-item {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.template-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--line);
+}
+
+.template-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-icon {
+  font-size: 18px;
+}
+
+.template-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.template-item-body {
+  padding: 16px;
+}
+
+.template-textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.template-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.template-item-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .notification-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -4549,5 +4655,27 @@ button.ghost.tiny {
   
   .history-item-meta {
     flex-wrap: wrap;
+  }
+  
+  .templates-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .template-variables-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .templates-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  .template-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 }

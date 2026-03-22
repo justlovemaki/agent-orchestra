@@ -16,6 +16,7 @@ const scheduledBackup = require('./lib/scheduled-backup');
 const cloudStorage = require('./lib/cloud-storage');
 const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
+const notificationTemplates = require('./lib/notification-templates');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -3316,6 +3317,46 @@ async function requestHandler(req, res) {
         if (req.method === 'GET' && adminPath === 'notification-history/stats') {
           const stats = await notificationHistory.getStatistics();
           return json(res, 200, { stats });
+        }
+
+        if (req.method === 'GET' && adminPath === 'notification-templates') {
+          const templates = await notificationTemplates.getTemplates();
+          const variables = notificationTemplates.TEMPLATE_VARIABLES;
+          return json(res, 200, { templates, variables });
+        }
+
+        if (req.method === 'PUT' && adminPath === 'notification-templates') {
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const templates = await notificationTemplates.updateTemplates(body.templates || {});
+          await addAuditEvent('notification_template.updated', {
+            updatedTypes: Object.keys(body.templates || {})
+          }, userName, currentUser?.id);
+          return json(res, 200, { templates });
+        }
+
+        if (req.method === 'POST' && adminPath.match(/^notification-templates\/[\w_]+\/reset$/)) {
+          const templateType = adminPath.split('/')[2];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          try {
+            const template = await notificationTemplates.resetTemplate(templateType);
+            await addAuditEvent('notification_template.reset', {
+              templateType
+            }, userName, currentUser?.id);
+            return json(res, 200, { template });
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'POST' && adminPath === 'notification-templates/reset-all') {
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const templates = await notificationTemplates.resetAllTemplates();
+          await addAuditEvent('notification_template.reset_all', {}, userName, currentUser?.id);
+          return json(res, 200, { templates });
         }
 
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {

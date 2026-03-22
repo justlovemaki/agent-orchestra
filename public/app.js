@@ -52,7 +52,9 @@ const state = {
   notificationHistoryPage: 1,
   notificationHistoryTotalPages: 1,
   notificationHistoryFilters: {},
-  currentChannelTab: 'channels'
+  currentChannelTab: 'channels',
+  notificationTemplates: null,
+  templateVariables: []
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -235,6 +237,10 @@ const historyTimeFrom = document.getElementById('historyTimeFrom');
 const historyTimeTo = document.getElementById('historyTimeTo');
 const applyHistoryFilterBtn = document.getElementById('applyHistoryFilterBtn');
 const clearHistoryFilterBtn = document.getElementById('clearHistoryFilterBtn');
+const templatesTabContent = document.getElementById('templatesTabContent');
+const templatesListEl = document.getElementById('templatesList');
+const saveTemplatesBtn = document.getElementById('saveTemplatesBtn');
+const resetAllTemplatesBtn = document.getElementById('resetAllTemplatesBtn');
 
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
@@ -4871,6 +4877,9 @@ function initChannelFormHandlers() {
   historyTimeTo.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') applyHistoryFilters();
   });
+
+  saveTemplatesBtn.addEventListener('click', saveTemplates);
+  resetAllTemplatesBtn.addEventListener('click', resetAllTemplates);
 }
 
 function switchChannelTab(tab) {
@@ -4879,12 +4888,15 @@ function switchChannelTab(tab) {
     t.classList.toggle('active', t.dataset.tab === tab);
   });
   
+  channelListEl.classList.toggle('hidden', tab !== 'channels');
+  historyTabContent.classList.toggle('hidden', tab !== 'history');
+  templatesTabContent.classList.toggle('hidden', tab !== 'templates');
+  
   if (tab === 'history') {
-    historyTabContent.classList.remove('hidden');
     loadNotificationHistory();
     loadNotificationStats();
-  } else {
-    historyTabContent.classList.add('hidden');
+  } else if (tab === 'templates') {
+    loadNotificationTemplates();
   }
 }
 
@@ -5054,6 +5066,114 @@ function getChannelTypeName(type) {
     unknown: '未知'
   };
   return names[type] || names.unknown;
+}
+
+async function loadNotificationTemplates() {
+  try {
+    const res = await fetchJson('/api/admin/notification-templates');
+    state.notificationTemplates = res.templates || {};
+    state.templateVariables = res.variables || [];
+    renderTemplates();
+  } catch (err) {
+    console.error('加载通知模板失败:', err);
+    templatesListEl.innerHTML = '<div class="empty-state muted">加载失败</div>';
+  }
+}
+
+function renderTemplates() {
+  if (!state.notificationTemplates) {
+    templatesListEl.innerHTML = '<div class="empty-state muted">暂无模板数据</div>';
+    return;
+  }
+
+  const templateTypes = [
+    { key: 'backup_success', label: '备份成功通知', icon: '✅' },
+    { key: 'backup_failed', label: '备份失败通知', icon: '❌' },
+    { key: 'workload_warning', label: '负载预警警告', icon: '⚠️' },
+    { key: 'workload_critical', label: '负载预警严重', icon: '🚨' }
+  ];
+
+  templatesListEl.innerHTML = templateTypes.map(t => `
+    <div class="template-item" data-type="${t.key}">
+      <div class="template-item-header">
+        <div class="template-item-title">
+          <span class="template-icon">${t.icon}</span>
+          <span class="template-name">${t.label}</span>
+        </div>
+        <button class="ghost small reset-template-btn" data-type="${t.key}">恢复默认</button>
+      </div>
+      <div class="template-item-body">
+        <textarea 
+          id="template-${t.key}" 
+          class="template-textarea" 
+          rows="6"
+          placeholder="输入消息模板..."
+        >${escapeHtml(state.notificationTemplates[t.key]?.template || '')}</textarea>
+        <div class="template-item-meta">
+          <span class="muted small">
+            最后更新: ${state.notificationTemplates[t.key]?.updatedAt 
+              ? new Date(state.notificationTemplates[t.key].updatedAt).toLocaleString('zh-CN') 
+              : '—'}
+          </span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  templatesListEl.querySelectorAll('.reset-template-btn').forEach(btn => {
+    btn.addEventListener('click', () => resetTemplate(btn.dataset.type));
+  });
+}
+
+async function saveTemplates() {
+  const templates = {};
+  const templateKeys = ['backup_success', 'backup_failed', 'workload_warning', 'workload_critical'];
+  
+  for (const key of templateKeys) {
+    const textarea = document.getElementById(`template-${key}`);
+    if (textarea) {
+      templates[key] = {
+        template: textarea.value
+      };
+    }
+  }
+
+  try {
+    await fetchJson('/api/admin/notification-templates', {
+      method: 'PUT',
+      body: JSON.stringify({ templates })
+    });
+    alert('模板保存成功');
+    loadNotificationTemplates();
+  } catch (err) {
+    alert('保存失败：' + err.message);
+  }
+}
+
+async function resetTemplate(type) {
+  if (!confirm('确定要恢复此模板为默认内容吗？')) return;
+
+  try {
+    await fetchJson(`/api/admin/notification-templates/${type}/reset`, {
+      method: 'POST'
+    });
+    loadNotificationTemplates();
+  } catch (err) {
+    alert('重置失败：' + err.message);
+  }
+}
+
+async function resetAllTemplates() {
+  if (!confirm('确定要恢复所有模板为默认内容吗？此操作不可撤销。')) return;
+
+  try {
+    await fetchJson('/api/admin/notification-templates/reset-all', {
+      method: 'POST'
+    });
+    loadNotificationTemplates();
+  } catch (err) {
+    alert('重置失败：' + err.message);
+  }
 }
 
 function showAuditDetailModal(eventId) {
