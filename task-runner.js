@@ -242,6 +242,18 @@ async function runSingle(task, run) {
       agents: latest.agents,
       runs: latest.runs
     }, 'system');
+    
+    // Send task completion notification
+    try {
+      const notifier = require('./lib/task-completion-notifier');
+      const lastRun = latest.runs[latest.runs.length - 1];
+      const notifyResult = await notifier.sendTaskCompletionNotification(latest, lastRun, finalStatus);
+      if (!notifyResult.skipped) {
+        console.log(`[task:${taskId}] notification sent: ${notifyResult.sent}/${notifyResult.sent + notifyResult.failed}`);
+      }
+    } catch (notifyError) {
+      console.error(`[task:${taskId}] failed to send notification:`, notifyError.message);
+    }
   }
 })().catch(async error => {
   console.error(`[task:${taskId}] fatal`, error);
