@@ -3471,6 +3471,15 @@ function renderRecommendations() {
       failure_rate_optimization: '效率优化'
     };
     
+    const feedbackScore = rec.feedbackScore || 0;
+    const feedbackBadge = feedbackScore > 0 
+      ? `<span class="feedback-badge positive">+${feedbackScore} 有帮助</span>`
+      : feedbackScore < 0
+      ? `<span class="feedback-badge negative">${feedbackScore} 无帮助</span>`
+      : rec.proven
+      ? `<span class="feedback-badge proven">✓ 已验证</span>`
+      : '';
+    
     return `
       <div class="recommendation-item" data-recommendation-id="${rec.id}">
         <div class="recommendation-header">
@@ -3481,9 +3490,15 @@ function renderRecommendations() {
           ${agentNames.map(name => `<span class="agent-tag">${escapeHtml(name)}</span>`).join('')}
         </div>
         <div class="recommendation-reason">${escapeHtml(rec.reason)}</div>
+        ${feedbackBadge ? `<div class="recommendation-feedback">${feedbackBadge}</div>` : ''}
         <div class="recommendation-actions">
           <button class="primary small apply-recommendation-btn" data-recommendation-id="${rec.id}">应用推荐</button>
           <button class="ghost small dismiss-recommendation-btn" data-recommendation-id="${rec.id}">忽略</button>
+        </div>
+        <div class="recommendation-feedback-actions">
+          <span class="feedback-label">此推荐有帮助吗？</span>
+          <button class="feedback-btn helpful" data-recommendation-id="${rec.id}" data-feedback="helpful">👍 有帮助</button>
+          <button class="feedback-btn not-helpful" data-recommendation-id="${rec.id}" data-feedback="not_helpful">👎 无帮助</button>
         </div>
       </div>
     `;
@@ -3532,6 +3547,35 @@ function renderRecommendations() {
   });
 }
 
+  
+  // Feedback button handlers
+  recommendationsList.querySelectorAll('.feedback-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const recId = btn.dataset.recommendationId;
+      const feedbackType = btn.dataset.feedback;
+      const item = btn.closest('.recommendation-item');
+      
+      item.querySelectorAll('.feedback-btn').forEach(b => {
+        b.disabled = true;
+        b.textContent = b.dataset.feedback === 'helpful' ? '已提交' : '已提交';
+      });
+      
+      try {
+        await fetchJson(`/api/agent-combinations/recommendations/${recId}/feedback`, {
+          method: 'POST',
+          body: JSON.stringify({ feedbackType })
+        });
+        await loadRecommendations(true);
+        showToast('感谢反馈！');
+      } catch (err) {
+        showToast('提交反馈失败：' + err.message, 'error');
+        item.querySelectorAll('.feedback-btn').forEach(b => {
+          b.disabled = false;
+          b.textContent = b.dataset.feedback === 'helpful' ? '👍 有帮助' : '👎 无帮助';
+        });
+      }
+    });
+  });
 hideCombinationPanelBtn.addEventListener('click', () => {
   combinationPanel.classList.add('hidden');
   hideCombinationForm();

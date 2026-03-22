@@ -1478,6 +1478,7 @@ async function requestHandler(req, res) {
         });
         
         await combinationRecommendations.dismissRecommendation(recommendationId);
+        await combinationRecommendations.recordApplication(recommendationId);
         
         await addAuditEvent('combination.recommended_applied', {
           recommendationId,
@@ -1498,6 +1499,37 @@ async function requestHandler(req, res) {
         }
         
         return json(res, 200, { success: true, dismissed });
+      }
+      // Feedback endpoints for recommendation learning
+      if (req.method === 'POST' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/feedback$/)) {
+        const recommendationId = pathname.split('/')[4];
+        const body = await readJson(req);
+        const { feedbackType, comment } = body;
+        
+        if (!feedbackType || !['helpful', 'not_helpful'].includes(feedbackType)) {
+          return json(res, 400, { error: '无效的反馈类型，必须是 helpful 或 not_helpful' });
+        }
+        
+        const feedback = await combinationRecommendations.recordFeedback(recommendationId, feedbackType, comment || null);
+        
+        const currentUser = await verifyTokenFromRequest(req);
+        await addAuditEvent('recommendation.feedback_submitted', {
+          recommendationId,
+          feedbackType,
+          comment: comment || null
+        }, currentUser?.name || 'System', currentUser?.id);
+        
+        return json(res, 201, { feedback });
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/feedback$/)) {
+        const recommendationId = pathname.split('/')[4];
+        const feedback = await combinationRecommendations.getFeedbackForRecommendation(recommendationId);
+        const stats = await combinationRecommendations.getFeedbackStats();
+        
+        return json(res, 200, { 
+          feedback,
+          stats: stats[recommendationId] || { helpful: 0, notHelpful: 0 }
+        });
       }
       if (req.method === 'GET' && pathname === '/api/presets') {
         return json(res, 200, { presets: await readSharedPresets() });
