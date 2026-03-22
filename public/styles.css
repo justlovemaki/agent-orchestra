@@ -4314,5 +4314,240 @@ button.ghost.tiny {
     max-width: 100%;
   }
 }
+
+.channel-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.channel-tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.channel-tab:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
+
+.channel-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.history-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.notification-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.stat-card-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-card-success .stat-card-value {
+  color: var(--good);
+}
+
+.stat-card-failed .stat-card-value {
+  color: var(--bad);
+}
+
+.stat-card-rate .stat-card-value {
+  color: var(--accent);
+}
+
+.history-filter-bar {
+  flex-wrap: wrap;
+}
+
+.notification-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.history-item.sent {
+  border-left: 3px solid var(--good);
+}
+
+.history-item.failed {
+  border-left: 3px solid var(--bad);
+}
+
+.history-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.history-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.history-channel-name {
+  font-weight: 600;
+}
+
+.history-time {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.history-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.history-item-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-all;
+  max-height: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--bad);
+  padding: 8px;
+  background: var(--bad-bg);
+  border-radius: var(--radius-xs);
+}
+
+.history-item-retry-count {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted-secondary);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.sent {
+  background: var(--good-bg);
+  color: var(--good);
+  border: 1px solid var(--good-border);
+}
+
+.status-badge.failed {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border: 1px solid var(--bad-border);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.pagination-btn {
+  padding: 8px 16px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.pagination-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.retry-btn {
+  padding: 4px 12px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--warn);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.retry-btn:hover {
+  background: var(--warn);
+  color: var(--bg);
+}
+
+@media (max-width: 768px) {
+  .notification-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .history-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .history-item-meta {
+    flex-wrap: wrap;
   }
 }

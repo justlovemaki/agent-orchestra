@@ -484,6 +484,10 @@
             </div>
             <button id="showChannelFormBtn" class="ghost small">新建渠道</button>
           </div>
+          <div class="channel-tabs">
+            <button class="channel-tab active" data-tab="channels">渠道列表</button>
+            <button class="channel-tab" data-tab="history">发送历史</button>
+          </div>
           <div id="channelForm" class="channel-form hidden">
             <div class="channel-form-grid">
               <label>
@@ -510,7 +514,32 @@
               <button id="cancelChannelBtn" class="ghost">取消</button>
             </div>
           </div>
-          <div id="channelList" class="channel-list"></div>
+          <div id="channelTabContent">
+            <div id="channelList" class="channel-list"></div>
+            <div id="historyTabContent" class="history-tab-content hidden">
+              <div id="notificationStats" class="notification-stats"></div>
+              <div id="historyFilterBar" class="filter-bar history-filter-bar">
+                <select id="historyStatusFilter" class="filter-select">
+                  <option value="">全部状态</option>
+                  <option value="sent">成功</option>
+                  <option value="failed">失败</option>
+                </select>
+                <select id="historyChannelTypeFilter" class="filter-select">
+                  <option value="">全部类型</option>
+                  <option value="feishu">飞书</option>
+                  <option value="dingtalk">钉钉</option>
+                  <option value="wecom">企业微信</option>
+                  <option value="slack">Slack</option>
+                </select>
+                <input type="datetime-local" id="historyTimeFrom" class="filter-input filter-time" placeholder="从..." />
+                <input type="datetime-local" id="historyTimeTo" class="filter-input filter-time" placeholder="到..." />
+                <button id="applyHistoryFilterBtn" class="filter-btn">筛选</button>
+                <button id="clearHistoryFilterBtn" class="filter-btn filter-btn-ghost">清除</button>
+              </div>
+              <div id="notificationHistoryList" class="notification-history-list"></div>
+              <div id="historyPagination" class="pagination"></div>
+            </div>
+          </div>
         </section>
 
         <section id="adminPanel" class="panel section-panel hidden">

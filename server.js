@@ -15,6 +15,7 @@ const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
 const cloudStorage = require('./lib/cloud-storage');
 const notificationChannels = require('./lib/notification-channels');
+const notificationHistory = require('./lib/notification-history');
 
 const PORT = process.env.PORT || 3210;
 const ROOT = __dirname;
@@ -3214,8 +3215,22 @@ async function requestHandler(req, res) {
           if (!channel) {
             return json(res, 404, { error: '渠道不存在' });
           }
+          const testMessage = '🔔 Agent Orchestra 测试消息\n这是一条测试通知，用于验证渠道配置是否正确。';
           try {
             const result = await notificationChannels.sendTestMessage(channelId);
+            await notificationHistory.recordNotification({
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              message: testMessage,
+              status: 'sent'
+            });
+            await addAuditEvent('notification.sent', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              source: 'channel_test'
+            }, userName, currentUser?.id);
             await addAuditEvent('notification_channel.tested', {
               channelId: channel.id,
               channelName: channel.name,
@@ -3224,6 +3239,21 @@ async function requestHandler(req, res) {
             }, userName, currentUser?.id);
             return json(res, 200, { success: true, message: '测试消息发送成功', details: result });
           } catch (err) {
+            await notificationHistory.recordNotification({
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              message: testMessage,
+              status: 'failed',
+              error: err.message
+            });
+            await addAuditEvent('notification.failed', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              source: 'channel_test',
+              error: err.message
+            }, userName, currentUser?.id);
             await addAuditEvent('notification_channel.tested', {
               channelId: channel.id,
               channelName: channel.name,
@@ -3247,6 +3277,45 @@ async function requestHandler(req, res) {
             isEnabled: channel.isEnabled
           }, userName, currentUser?.id);
           return json(res, 200, { channel });
+        }
+
+        if (req.method === 'GET' && adminPath === 'notification-history') {
+          const filters = {
+            status: parsed.query?.status,
+            channelType: parsed.query?.channelType,
+            channelId: parsed.query?.channelId,
+            timeFrom: parsed.query?.timeFrom,
+            timeTo: parsed.query?.timeTo,
+            keyword: parsed.query?.keyword,
+            page: parsed.query?.page,
+            pageSize: parsed.query?.pageSize
+          };
+          const result = await notificationHistory.getHistory(filters);
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'POST' && adminPath.match(/^notification-history\/[\w-]+\/retry$/)) {
+          const notificationId = adminPath.split('/')[1];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          try {
+            const notification = await notificationHistory.retryNotification(notificationId);
+            await addAuditEvent('notification.retry', {
+              notificationId: notification.id,
+              channelId: notification.channelId,
+              channelName: notification.channelName,
+              channelType: notification.channelType,
+              retryCount: notification.retryCount
+            }, userName, currentUser?.id);
+            return json(res, 200, { notification });
+          } catch (err) {
+            return json(res, 400, { error: err.message });
+          }
+        }
+
+        if (req.method === 'GET' && adminPath === 'notification-history/stats') {
+          const stats = await notificationHistory.getStatistics();
+          return json(res, 200, { stats });
         }
 
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {
@@ -4824,13 +4893,45 @@ async function handleScheduledBackupNotification(params) {
   message += `━━━━━━━━━━━━━━━━━━━━`;
 
   const results = { sent: [], failed: [] };
+  const channelsList = await notificationChannels.getChannels();
   
   for (const channelId of channels) {
+    const channel = channelsList.find(c => c.id === channelId || c.type === channelId);
     try {
       await notificationChannels.sendToChannel(channelId, message);
+      await notificationHistory.recordNotification({
+        channelId: channel?.id || channelId,
+        channelName: channel?.name || channelId,
+        channelType: channel?.type || 'unknown',
+        message: message,
+        status: 'sent'
+      });
+      await addAuditEvent('notification.sent', {
+        channelId: channel?.id,
+        channelName: channel?.name,
+        channelType: channel?.type,
+        source: 'scheduled_backup',
+        backupType: type
+      }, 'system');
       results.sent.push(channelId);
     } catch (err) {
       console.error(`[ScheduledBackup] 发送通知到渠道 ${channelId} 失败:`, err.message);
+      await notificationHistory.recordNotification({
+        channelId: channel?.id || channelId,
+        channelName: channel?.name || channelId,
+        channelType: channel?.type || 'unknown',
+        message: message,
+        status: 'failed',
+        error: err.message
+      });
+      await addAuditEvent('notification.failed', {
+        channelId: channel?.id,
+        channelName: channel?.name,
+        channelType: channel?.type,
+        source: 'scheduled_backup',
+        backupType: type,
+        error: err.message
+      }, 'system');
       results.failed.push({ channel: channelId, error: err.message });
     }
   }
@@ -5069,13 +5170,45 @@ async function sendWorkloadAlertNotification(agents, threshold, level = 'warning
   const combinedMessage = messages.join('\n\n');
   
   const results = { sent: [], failed: [], level, agentCount: agents.length };
+  const channelsList = await notificationChannels.getChannels();
   
   for (const channelId of config.notifyChannels) {
+    const channel = channelsList.find(c => c.id === channelId || c.type === channelId);
     try {
       await notificationChannels.sendToChannel(channelId, combinedMessage);
+      await notificationHistory.recordNotification({
+        channelId: channel?.id || channelId,
+        channelName: channel?.name || channelId,
+        channelType: channel?.type || 'unknown',
+        message: combinedMessage,
+        status: 'sent'
+      });
+      await addAuditEvent('notification.sent', {
+        channelId: channel?.id,
+        channelName: channel?.name,
+        channelType: channel?.type,
+        source: 'workload_alert',
+        level
+      }, 'system');
       results.sent.push(channelId);
     } catch (err) {
       console.error(`[WorkloadAlert] 发送通知到渠道 ${channelId} 失败:`, err.message);
+      await notificationHistory.recordNotification({
+        channelId: channel?.id || channelId,
+        channelName: channel?.name || channelId,
+        channelType: channel?.type || 'unknown',
+        message: combinedMessage,
+        status: 'failed',
+        error: err.message
+      });
+      await addAuditEvent('notification.failed', {
+        channelId: channel?.id,
+        channelName: channel?.name,
+        channelType: channel?.type,
+        source: 'workload_alert',
+        level,
+        error: err.message
+      }, 'system');
       results.failed.push({ channel: channelId, error: err.message });
     }
   }

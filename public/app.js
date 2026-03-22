@@ -46,7 +46,13 @@ const state = {
   usageTrendsDays: 14,
   usageTrendsCombinationId: null,
   notificationChannels: [],
-  editingChannelId: null
+  editingChannelId: null,
+  notificationHistory: [],
+  notificationHistoryStats: null,
+  notificationHistoryPage: 1,
+  notificationHistoryTotalPages: 1,
+  notificationHistoryFilters: {},
+  currentChannelTab: 'channels'
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -218,6 +224,17 @@ const channelWebhookInput = document.getElementById('channelWebhookInput');
 const saveChannelBtn = document.getElementById('saveChannelBtn');
 const cancelChannelBtn = document.getElementById('cancelChannelBtn');
 const channelListEl = document.getElementById('channelList');
+const channelTabs = document.querySelectorAll('.channel-tab');
+const historyTabContent = document.getElementById('historyTabContent');
+const notificationStatsEl = document.getElementById('notificationStats');
+const notificationHistoryListEl = document.getElementById('notificationHistoryList');
+const historyPaginationEl = document.getElementById('historyPagination');
+const historyStatusFilter = document.getElementById('historyStatusFilter');
+const historyChannelTypeFilter = document.getElementById('historyChannelTypeFilter');
+const historyTimeFrom = document.getElementById('historyTimeFrom');
+const historyTimeTo = document.getElementById('historyTimeTo');
+const applyHistoryFilterBtn = document.getElementById('applyHistoryFilterBtn');
+const clearHistoryFilterBtn = document.getElementById('clearHistoryFilterBtn');
 
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
@@ -4841,6 +4858,202 @@ function initChannelFormHandlers() {
   showChannelFormBtn.addEventListener('click', () => openChannelModal(null));
   saveChannelBtn.addEventListener('click', saveChannel);
   cancelChannelBtn.addEventListener('click', closeChannelModal);
+
+  channelTabs.forEach(tab => {
+    tab.addEventListener('click', () => switchChannelTab(tab.dataset.tab));
+  });
+
+  applyHistoryFilterBtn.addEventListener('click', () => applyHistoryFilters());
+  clearHistoryFilterBtn.addEventListener('click', () => clearHistoryFilters());
+  historyTimeFrom.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyHistoryFilters();
+  });
+  historyTimeTo.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyHistoryFilters();
+  });
+}
+
+function switchChannelTab(tab) {
+  state.currentChannelTab = tab;
+  channelTabs.forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  
+  if (tab === 'history') {
+    historyTabContent.classList.remove('hidden');
+    loadNotificationHistory();
+    loadNotificationStats();
+  } else {
+    historyTabContent.classList.add('hidden');
+  }
+}
+
+async function loadNotificationHistory() {
+  try {
+    const params = new URLSearchParams();
+    params.set('page', state.notificationHistoryPage);
+    params.set('pageSize', '20');
+    
+    if (state.notificationHistoryFilters.status) {
+      params.set('status', state.notificationHistoryFilters.status);
+    }
+    if (state.notificationHistoryFilters.channelType) {
+      params.set('channelType', state.notificationHistoryFilters.channelType);
+    }
+    if (state.notificationHistoryFilters.timeFrom) {
+      params.set('timeFrom', state.notificationHistoryFilters.timeFrom);
+    }
+    if (state.notificationHistoryFilters.timeTo) {
+      params.set('timeTo', state.notificationHistoryFilters.timeTo);
+    }
+    
+    const res = await fetchJson(`/api/admin/notification-history?${params.toString()}`);
+    state.notificationHistory = res.items || [];
+    state.notificationHistoryTotalPages = res.totalPages || 1;
+    renderNotificationHistory();
+    renderHistoryPagination();
+  } catch (err) {
+    console.error('加载通知历史失败:', err);
+    notificationHistoryListEl.innerHTML = '<div class="empty-state muted">加载失败</div>';
+  }
+}
+
+async function loadNotificationStats() {
+  try {
+    const res = await fetchJson('/api/admin/notification-history/stats');
+    state.notificationHistoryStats = res.stats;
+    renderNotificationStats();
+  } catch (err) {
+    console.error('加载通知统计失败:', err);
+  }
+}
+
+function renderNotificationStats() {
+  if (!state.notificationHistoryStats) {
+    notificationStatsEl.innerHTML = '';
+    return;
+  }
+  
+  const stats = state.notificationHistoryStats;
+  notificationStatsEl.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-card-value">${stats.total || 0}</div>
+      <div class="stat-card-label">总发送数</div>
+    </div>
+    <div class="stat-card stat-card-success">
+      <div class="stat-card-value">${stats.sent || 0}</div>
+      <div class="stat-card-label">成功</div>
+    </div>
+    <div class="stat-card stat-card-failed">
+      <div class="stat-card-value">${stats.failed || 0}</div>
+      <div class="stat-card-label">失败</div>
+    </div>
+    <div class="stat-card stat-card-rate">
+      <div class="stat-card-value">${stats.successRate || 0}%</div>
+      <div class="stat-card-label">成功率</div>
+    </div>
+  `;
+}
+
+function renderNotificationHistory() {
+  if (!state.notificationHistory || state.notificationHistory.length === 0) {
+    notificationHistoryListEl.innerHTML = '<div class="empty-state muted">暂无通知记录</div>';
+    return;
+  }
+  
+  notificationHistoryListEl.innerHTML = state.notificationHistory.map(n => `
+    <div class="history-item" data-id="${n.id}">
+      <div class="history-item-header">
+        <div class="history-item-meta">
+          <span class="channel-type-badge">${getChannelTypeName(n.channelType)}</span>
+          <span class="history-channel-name">${escapeHtml(n.channelName || '—')}</span>
+          <span class="history-time">${n.createdAt ? new Date(n.createdAt).toLocaleString('zh-CN') : '—'}</span>
+        </div>
+        <div class="history-item-actions">
+          ${n.status === 'failed' ? `<button class="retry-btn" data-id="${n.id}">重试</button>` : ''}
+        </div>
+      </div>
+      <div class="history-item-message">${escapeHtml(n.message || '')}</div>
+      ${n.status === 'failed' && n.error ? `<div class="history-item-error">${escapeHtml(n.error)}</div>` : ''}
+      ${n.retryCount > 0 ? `<div class="history-item-retry-count">已重试 ${n.retryCount} 次</div>` : ''}
+    </div>
+  `).join('');
+  
+  notificationHistoryListEl.querySelectorAll('.retry-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleRetryNotification(btn.dataset.id));
+  });
+}
+
+function renderHistoryPagination() {
+  if (state.notificationHistoryTotalPages <= 1) {
+    historyPaginationEl.innerHTML = '';
+    return;
+  }
+  
+  let html = '';
+  
+  if (state.notificationHistoryPage > 1) {
+    html += `<button class="pagination-btn" data-page="${state.notificationHistoryPage - 1}">上一页</button>`;
+  }
+  
+  html += `<span class="pagination-info">第 ${state.notificationHistoryPage} / ${state.notificationHistoryTotalPages} 页</span>`;
+  
+  if (state.notificationHistoryPage < state.notificationHistoryTotalPages) {
+    html += `<button class="pagination-btn" data-page="${state.notificationHistoryPage + 1}">下一页</button>`;
+  }
+  
+  historyPaginationEl.innerHTML = html;
+  
+  historyPaginationEl.querySelectorAll('.pagination-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.notificationHistoryPage = parseInt(btn.dataset.page);
+      loadNotificationHistory();
+    });
+  });
+}
+
+function applyHistoryFilters() {
+  state.notificationHistoryFilters = {
+    status: historyStatusFilter.value,
+    channelType: historyChannelTypeFilter.value,
+    timeFrom: historyTimeFrom.value ? new Date(historyTimeFrom.value).toISOString() : '',
+    timeTo: historyTimeTo.value ? new Date(historyTimeTo.value).toISOString() : ''
+  };
+  state.notificationHistoryPage = 1;
+  loadNotificationHistory();
+}
+
+function clearHistoryFilters() {
+  historyStatusFilter.value = '';
+  historyChannelTypeFilter.value = '';
+  historyTimeFrom.value = '';
+  historyTimeTo.value = '';
+  state.notificationHistoryFilters = {};
+  state.notificationHistoryPage = 1;
+  loadNotificationHistory();
+}
+
+async function handleRetryNotification(id) {
+  if (!confirm('确定要重试这条通知吗？')) return;
+  
+  try {
+    await fetchJson(`/api/admin/notification-history/${id}/retry`, { method: 'POST' });
+    loadNotificationHistory();
+    loadNotificationStats();
+  } catch (err) {
+    alert('重试失败：' + err.message);
+  }
+}
+
+function getChannelTypeName(type) {
+  const names = {
+    feishu: '飞书',
+    dingtalk: '钉钉',
+    wecom: '企业微信',
+    slack: 'Slack',
+    unknown: '未知'
+  };
+  return names[type] || names.unknown;
 }
 
 function showAuditDetailModal(eventId) {
