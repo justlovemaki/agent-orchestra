@@ -5,3 +5,6 @@ data/task-logs/
 .opencode-cache/
 .opencode-config/
 node_modules/
+data/tokens.json
+data/users.json
+server.log

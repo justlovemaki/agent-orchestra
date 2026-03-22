@@ -73,7 +73,7 @@ textarea:focus-visible {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) 420px;
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 20px;
   align-items: start;
 }
@@ -160,7 +160,7 @@ h2, h3, h4 { margin: 0; }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 
@@ -1464,7 +1464,6 @@ button.success:hover {
 
 /* Tablet - Large (1024px - 1480px) */
 @media (max-width: 1480px) {
-  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .task-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .shell { padding: 20px; }
 }
@@ -1491,7 +1490,6 @@ button.success:hover {
   }
   .hero-copy h1 { font-size: clamp(24px, 5vw, 32px); }
   .hero-text { font-size: 14px; }
-  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid.two,
   .detail-grid,
   .split-fields {

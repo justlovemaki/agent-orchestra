@@ -18,7 +18,7 @@ const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
 const notificationTemplates = require('./lib/notification-templates');
 
-const PORT = process.env.PORT || 3210;
+const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
@@ -1031,87 +1031,87 @@ async function requestHandler(req, res) {
         const agentsList = await listAgents();
         const agentNameMap = new Map(agentsList.map(a => [a.id, a.identity || a.id]));
         
-        const trends = [];
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - days);
-        cutoffDate.setHours(0, 0, 0, 0);
+        const trendsMap = new Map();
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
         
-        for (let i = days - 1; i >= 0; i--) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
-          date.setHours(0, 0, 0, 0);
-          const nextDate = new Date(date);
-          nextDate.setDate(nextDate.getDate() + 1);
-          const dayTasks = tasks.filter(t => {
-            const createdAt = new Date(t.createdAt);
-            return createdAt >= date && createdAt < nextDate;
-          });
-          const total = dayTasks.length;
-          const completed = dayTasks.filter(t => t.status === 'completed').length;
-          const failed = dayTasks.filter(t => t.status === 'failed').length;
-          trends.push({
-            date: date.toISOString().split('T')[0],
-            total,
-            completed,
-            failed
-          });
+        for (let i = 0; i < days; i++) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          trendsMap.set(d.toISOString().split('T')[0], { total: 0, completed: 0, failed: 0 });
         }
         
+        const cutoffDate = new Date(now);
+        cutoffDate.setDate(cutoffDate.getDate() - days + 1);
+        
         const agentStats = new Map();
-        const recentTasks = tasks.filter(t => new Date(t.createdAt) >= cutoffDate);
-        for (const task of recentTasks) {
-          const runs = task.runs || [];
-          for (const run of runs) {
-            if (!run.agentId) continue;
-            if (!agentStats.has(run.agentId)) {
-              agentStats.set(run.agentId, {
-                agentId: run.agentId,
-                agentName: agentNameMap.get(run.agentId) || run.agentId,
-                taskCount: 0,
-                successCount: 0,
-                failCount: 0
-              });
-            }
-            const stats = agentStats.get(run.agentId);
-            stats.taskCount++;
-            if (run.status === 'completed') {
-              stats.successCount++;
-            } else if (run.status === 'failed' || run.status === 'error') {
-              stats.failCount++;
+        const statusCounts = { queued: 0, running: 0, completed: 0, failed: 0, paused: 0, canceled: 0 };
+        const agentWorkloadMap = new Map();
+
+        for (const task of tasks) {
+          // Status distribution
+          const s = task.status || 'queued';
+          if (statusCounts.hasOwnProperty(s)) {
+            statusCounts[s]++;
+          }
+
+          // Trends calculation
+          const createdAt = new Date(task.createdAt);
+          const dateKey = createdAt.toISOString().split('T')[0];
+          if (trendsMap.has(dateKey)) {
+            const trend = trendsMap.get(dateKey);
+            trend.total++;
+            if (task.status === 'completed') trend.completed++;
+            else if (task.status === 'failed') trend.failed++;
+          }
+
+          // Agent Usage & Workload
+          if (createdAt >= cutoffDate || task.status === 'running' || task.status === 'queued') {
+            const runs = task.runs || [];
+            for (const run of runs) {
+              if (!run.agentId) continue;
+              
+              // Recent usage (within days)
+              if (createdAt >= cutoffDate) {
+                if (!agentStats.has(run.agentId)) {
+                  agentStats.set(run.agentId, {
+                    agentId: run.agentId,
+                    agentName: agentNameMap.get(run.agentId) || run.agentId,
+                    taskCount: 0,
+                    successCount: 0,
+                    failCount: 0
+                  });
+                }
+                const stats = agentStats.get(run.agentId);
+                stats.taskCount++;
+                if (run.status === 'completed') stats.successCount++;
+                else if (run.status === 'failed' || run.status === 'error') stats.failCount++;
+              }
+
+              // Workload (running or queued)
+              if (task.status === 'running' || task.status === 'queued') {
+                if (run.status === 'running' || run.status === 'queued') {
+                  const current = agentWorkloadMap.get(run.agentId) || { agentId: run.agentId, workloadCount: 0 };
+                  current.workloadCount += 1;
+                  agentWorkloadMap.set(run.agentId, current);
+                }
+              }
             }
           }
         }
+        
+        const trends = Array.from(trendsMap.entries())
+          .map(([date, data]) => ({ date, ...data }))
+          .reverse();
         
         const agentUsage = Array.from(agentStats.values()).sort((a, b) => b.taskCount - a.taskCount);
         
-        const statusCounts = { pending: 0, running: 0, completed: 0, failed: 0, paused: 0, cancelled: 0 };
-        for (const task of tasks) {
-          const s = task.status || 'pending';
-          if (statusCounts.hasOwnProperty(s)) {
-            statusCounts[s]++;
-          } else {
-            statusCounts.pending++;
-          }
-        }
         const totalTasks = tasks.length;
         const taskStatusDistribution = Object.entries(statusCounts).map(([status, count]) => ({
           status,
           count,
           percentage: totalTasks > 0 ? parseFloat(((count / totalTasks) * 100).toFixed(1)) : 0
         }));
-
-        const agentWorkloadMap = new Map();
-        for (const task of tasks) {
-          if (task.status !== 'running' && task.status !== 'queued') continue;
-          const runs = task.runs || [];
-          for (const run of runs) {
-            if (!run.agentId) continue;
-            if (run.status !== 'running' && run.status !== 'queued') continue;
-            const current = agentWorkloadMap.get(run.agentId) || { agentId: run.agentId, workloadCount: 0 };
-            current.workloadCount += 1;
-            agentWorkloadMap.set(run.agentId, current);
-          }
-        }
 
         for (const [agentId, data] of agentWorkloadMap) {
           data.agentName = agentNameMap.get(agentId) || agentId;
