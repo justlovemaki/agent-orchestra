@@ -3096,10 +3096,14 @@ async function requestHandler(req, res) {
             if (!Array.isArray(notifyChannels)) {
               throw new Error('notifyChannels 必须是数组');
             }
-            const validChannels = ['feishu', 'dingtalk', 'wecom', 'slack'];
+            const legacyChannelTypes = ['feishu', 'dingtalk', 'wecom', 'slack'];
+            const allChannels = await notificationChannels.getChannels();
             for (const channel of notifyChannels) {
-              if (!validChannels.includes(channel)) {
-                throw new Error(`无效的通知渠道: ${channel}，可选值: ${validChannels.join(', ')}`);
+              const isUuid = channel.includes('-') && channel.length > 20;
+              const isLegacyType = legacyChannelTypes.includes(channel);
+              const isValidChannelId = allChannels.some(c => c.id === channel);
+              if (!isUuid && !isLegacyType && !isValidChannelId) {
+                throw new Error(`无效的通知渠道: ${channel}，请使用渠道 ID 或有效的渠道类型`);
               }
             }
           }
@@ -3291,10 +3295,14 @@ async function requestHandler(req, res) {
               if (!Array.isArray(notification.channels)) {
                 throw new Error('notification.channels 必须是数组');
               }
-              const validChannels = ['feishu', 'dingtalk', 'wecom', 'slack'];
+              const legacyChannelTypes = ['feishu', 'dingtalk', 'wecom', 'slack'];
+              const allChannels = await notificationChannels.getChannels();
               for (const ch of notification.channels) {
-                if (!validChannels.includes(ch)) {
-                  throw new Error(`无效的通知渠道: ${ch}，有效值为: ${validChannels.join(', ')}`);
+                const isUuid = ch.includes('-') && ch.length > 20;
+                const isLegacyType = legacyChannelTypes.includes(ch);
+                const isValidChannelId = allChannels.some(c => c.id === ch);
+                if (!isUuid && !isLegacyType && !isValidChannelId) {
+                  throw new Error(`无效的通知渠道: ${ch}，请使用渠道 ID 或有效的渠道类型`);
                 }
               }
             }
@@ -4817,36 +4825,13 @@ async function handleScheduledBackupNotification(params) {
 
   const results = { sent: [], failed: [] };
   
-  for (const channel of channels) {
+  for (const channelId of channels) {
     try {
-      if (channel === 'feishu') {
-        const feishuConfig = getFeishuConfig();
-        if (feishuConfig && feishuConfig.channelId) {
-          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, message);
-          results.sent.push('feishu');
-        }
-      } else if (channel === 'dingtalk') {
-        const dingtalkConfig = getDingTalkConfig();
-        if (dingtalkConfig && dingtalkConfig.webhook) {
-          await sendDingTalkTextMessage(dingtalkConfig.webhook, message);
-          results.sent.push('dingtalk');
-        }
-      } else if (channel === 'wecom') {
-        const wecomConfig = getWecomConfig();
-        if (wecomConfig && wecomConfig.webhook) {
-          await sendWecomTextMessage(wecomConfig.webhook, message);
-          results.sent.push('wecom');
-        }
-      } else if (channel === 'slack') {
-        const slackConfig = getSlackConfig();
-        if (slackConfig && slackConfig.channelId) {
-          await sendSlackTextMessage(slackConfig, slackConfig.channelId, message);
-          results.sent.push('slack');
-        }
-      }
+      await notificationChannels.sendToChannel(channelId, message);
+      results.sent.push(channelId);
     } catch (err) {
-      console.error(`[ScheduledBackup] 发送${channel}通知失败:`, err.message);
-      results.failed.push({ channel, error: err.message });
+      console.error(`[ScheduledBackup] 发送通知到渠道 ${channelId} 失败:`, err.message);
+      results.failed.push({ channel: channelId, error: err.message });
     }
   }
 
@@ -5085,36 +5070,13 @@ async function sendWorkloadAlertNotification(agents, threshold, level = 'warning
   
   const results = { sent: [], failed: [], level, agentCount: agents.length };
   
-  for (const channel of config.notifyChannels) {
+  for (const channelId of config.notifyChannels) {
     try {
-      if (channel === 'feishu') {
-        const feishuConfig = getFeishuConfig();
-        if (feishuConfig && feishuConfig.channelId) {
-          await sendFeishuTextMessage(feishuConfig, feishuConfig.channelId, combinedMessage);
-          results.sent.push('feishu');
-        }
-      } else if (channel === 'dingtalk') {
-        const dingtalkConfig = getDingTalkConfig();
-        if (dingtalkConfig && dingtalkConfig.webhook) {
-          await sendDingTalkTextMessage(dingtalkConfig.webhook, combinedMessage);
-          results.sent.push('dingtalk');
-        }
-      } else if (channel === 'wecom') {
-        const wecomConfig = getWecomConfig();
-        if (wecomConfig && wecomConfig.webhook) {
-          await sendWecomTextMessage(wecomConfig.webhook, combinedMessage);
-          results.sent.push('wecom');
-        }
-      } else if (channel === 'slack') {
-        const slackConfig = getSlackConfig();
-        if (slackConfig && slackConfig.channelId) {
-          await sendSlackTextMessage(slackConfig, slackConfig.channelId, combinedMessage);
-          results.sent.push('slack');
-        }
-      }
+      await notificationChannels.sendToChannel(channelId, combinedMessage);
+      results.sent.push(channelId);
     } catch (err) {
-      console.error(`[WorkloadAlert] 发送${channel}通知失败:`, err.message);
-      results.failed.push({ channel, error: err.message });
+      console.error(`[WorkloadAlert] 发送通知到渠道 ${channelId} 失败:`, err.message);
+      results.failed.push({ channel: channelId, error: err.message });
     }
   }
   
