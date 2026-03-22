@@ -178,6 +178,7 @@
           </div>
           <div class="combination-tabs">
             <button class="combination-tab active" data-tab="combinations">我的组合</button>
+            <button class="combination-tab" data-tab="popular">热门组合</button>
             <button class="combination-tab" data-tab="recommendations">智能推荐</button>
           </div>
           <div id="combinationForm" class="combination-form hidden">
@@ -194,6 +195,10 @@
                 <span class="field-label">描述</span>
                 <input id="combinationDescInput" placeholder="简要描述用途" />
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="combinationShareCheck" />
+                <span>共享给团队</span>
+              </label>
               <label>
                 <span class="field-label">选择 Agents</span>
                 <div id="combinationAgentCheckboxes" class="checkbox-list compact"></div>
@@ -205,6 +210,17 @@
             </div>
           </div>
           <div id="combinationList" class="combination-list"></div>
+          <div id="popularCombinationsContainer" class="popular-combinations-container hidden">
+            <div class="popular-combinations-header">
+              <p class="muted">团队中使用频率最高的组合，按使用次数排序。</p>
+            </div>
+            <div id="popularCombinationsList" class="combination-list"></div>
+            <div id="popularCombinationsEmpty" class="popular-combinations-empty hidden">
+              <div class="empty-icon">🔥</div>
+              <p>暂无热门组合</p>
+              <p class="muted small">共享给团队的组合被使用后会自动统计使用次数</p>
+            </div>
+          </div>
           <div id="recommendationsContainer" class="recommendations-container hidden">
             <div class="recommendations-header">
               <p class="muted">基于 Agent 使用趋势和组合协同分析，为您智能推荐高效的 Agent 组合。</p>

@@ -57,7 +57,8 @@ const state = {
   templateVariables: [],
   recommendations: [],
   recommendationsGeneratedAt: null,
-  currentCombinationTab: 'combinations'
+  currentCombinationTab: 'combinations',
+  popularCombinations: []
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -158,6 +159,7 @@ const combinationNameInput = document.getElementById('combinationNameInput');
 const combinationColorInput = document.getElementById('combinationColorInput');
 const combinationDescInput = document.getElementById('combinationDescInput');
 const combinationAgentCheckboxes = document.getElementById('combinationAgentCheckboxes');
+const combinationShareCheck = document.getElementById('combinationShareCheck');
 const saveCombinationBtn = document.getElementById('saveCombinationBtn');
 const cancelCombinationBtn = document.getElementById('cancelCombinationBtn');
 const combinationListEl = document.getElementById('combinationList');
@@ -173,6 +175,9 @@ const recommendationsList = document.getElementById('recommendationsList');
 const recommendationsEmpty = document.getElementById('recommendationsEmpty');
 const refreshRecommendationsBtn = document.getElementById('refreshRecommendationsBtn');
 const combinationTabs = document.querySelectorAll('.combination-tab');
+const popularCombinationsContainer = document.getElementById('popularCombinationsContainer');
+const popularCombinationsList = document.getElementById('popularCombinationsList');
+const popularCombinationsEmpty = document.getElementById('popularCombinationsEmpty');
 
 const usageTrendsModal = document.getElementById('usageTrendsModal');
 const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
@@ -2465,6 +2470,11 @@ async function loadCombinations() {
   state.combinations = res.combinations || [];
 }
 
+async function loadPopularCombinations() {
+  const res = await fetchJson('/api/agent-combinations/popular');
+  state.popularCombinations = res.combinations || [];
+}
+
 async function loadSharedPresets() {
   try {
     const res = await fetchJson('/api/presets');
@@ -3400,6 +3410,8 @@ combinationTabs.forEach(tab => {
     updateCombinationTabs();
     if (tabName === 'recommendations') {
       loadRecommendations();
+    } else if (tabName === 'popular') {
+      loadPopularCombinations().then(() => renderPopularCombinations());
     } else {
       renderCombinations();
     }
@@ -3422,10 +3434,18 @@ function updateCombinationTabs() {
   if (state.currentCombinationTab === 'recommendations') {
     combinationListEl.classList.add('hidden');
     combinationForm.classList.add('hidden');
+    popularCombinationsContainer.classList.add('hidden');
     recommendationsContainer.classList.remove('hidden');
+  } else if (state.currentCombinationTab === 'popular') {
+    combinationListEl.classList.add('hidden');
+    combinationForm.classList.add('hidden');
+    recommendationsContainer.classList.add('hidden');
+    popularCombinationsContainer.classList.remove('hidden');
   } else {
     combinationListEl.classList.remove('hidden');
     recommendationsContainer.classList.add('hidden');
+    popularCombinationsContainer.classList.add('hidden');
+    combinationForm.classList.add('hidden');
   }
 }
 
@@ -3590,12 +3610,14 @@ function showCombinationForm(combination = null) {
     combinationNameInput.value = combination.name;
     combinationColorInput.value = combination.color || '#6b7280';
     combinationDescInput.value = combination.description || '';
+    combinationShareCheck.checked = combination.sharedWithTeam === true;
     state.editingCombinationId = combination.id;
     renderCombinationAgentCheckboxes(combination.agentIds);
   } else {
     combinationNameInput.value = '';
     combinationColorInput.value = '#6b7280';
     combinationDescInput.value = '';
+    combinationShareCheck.checked = false;
     state.editingCombinationId = null;
     renderCombinationAgentCheckboxes([]);
   }
@@ -3606,6 +3628,7 @@ function hideCombinationForm() {
   combinationNameInput.value = '';
   combinationColorInput.value = '#6b7280';
   combinationDescInput.value = '';
+  combinationShareCheck.checked = false;
   state.editingCombinationId = null;
 }
 
@@ -3632,7 +3655,8 @@ async function saveCombination() {
     name,
     description: combinationDescInput.value.trim(),
     color: combinationColorInput.value,
-    agentIds
+    agentIds,
+    sharedWithTeam: combinationShareCheck.checked
   };
   try {
     if (state.editingCombinationId) {
@@ -3672,13 +3696,19 @@ function formatUsageTime(timestamp) {
   return date.toLocaleDateString('zh-CN');
 }
 
-function renderCombinations() {
+function renderCombinations(sortBy = 'recent') {
   if (!state.combinations || state.combinations.length === 0) {
     combinationListEl.innerHTML = '<div class="muted small">还没有创建任何组合</div>';
     return;
   }
+  
+  let sortedCombinations = [...state.combinations];
+  if (sortBy === 'usage') {
+    sortedCombinations.sort((a, b) => (b.usedCount || 0) - (a.usedCount || 0));
+  }
+  
   const agents = state.overview?.agents || [];
-  combinationListEl.innerHTML = state.combinations.map(combination => {
+  combinationListEl.innerHTML = sortedCombinations.map(combination => {
     const agentCount = combination.agentIds?.length || 0;
     const agentNames = (combination.agentIds || []).slice(0, 3).map(id => {
       const agent = agents.find(a => a.id === id);
@@ -3687,12 +3717,14 @@ function renderCombinations() {
     const moreText = agentCount > 3 ? ` 等${agentCount}个` : '';
     const usedCount = combination.usedCount || 0;
     const lastUsedAt = formatUsageTime(combination.lastUsedAt);
+    const isShared = combination.sharedWithTeam === true;
+    const shareBadge = isShared ? '<span class="combination-share-badge">团队共享</span>' : '';
     return `
       <div class="combination-item" data-combination-id="${combination.id}">
         <div class="combination-header">
           <div class="combination-color" style="background-color: ${combination.color || '#6b7280'}"></div>
           <div class="combination-info">
-            <div class="combination-name">${escapeHtml(combination.name)}</div>
+            <div class="combination-name">${escapeHtml(combination.name)} ${shareBadge}</div>
             <div class="combination-desc">${escapeHtml(combination.description || '暂无描述')}</div>
             <div class="combination-meta">
               <span>${agentCount} 个 Agent</span>
@@ -3705,6 +3737,7 @@ function renderCombinations() {
           </div>
           <div class="combination-actions">
             <button class="ghost tiny view-usage-trends-btn" data-combination-id="${combination.id}" title="查看使用趋势">趋势</button>
+            <button class="ghost tiny toggle-share-btn" data-combination-id="${combination.id}" title="${isShared ? '取消共享' : '共享给团队'}">${isShared ? '取消共享' : '共享'}</button>
             <button class="ghost tiny edit-combination-btn" data-combination-id="${combination.id}" title="编辑组合">编辑</button>
             <button class="ghost tiny danger delete-combination-btn" data-combination-id="${combination.id}" title="删除组合">删除</button>
           </div>
@@ -3747,6 +3780,86 @@ function renderCombinations() {
       e.stopPropagation();
       const combinationId = btn.dataset.combinationId;
       openUsageTrendsModal(combinationId);
+    });
+  });
+
+  combinationListEl.querySelectorAll('.toggle-share-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      try {
+        await fetchJson(`/api/agent-combinations/${combinationId}/share`, { method: 'PUT' });
+        await loadCombinations();
+        renderCombinations();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+function renderPopularCombinations() {
+  if (!state.popularCombinations || state.popularCombinations.length === 0) {
+    popularCombinationsList.innerHTML = '';
+    popularCombinationsEmpty.classList.remove('hidden');
+    return;
+  }
+  popularCombinationsEmpty.classList.add('hidden');
+  
+  const agents = state.overview?.agents || [];
+  popularCombinationsList.innerHTML = state.popularCombinations.map(combination => {
+    const agentCount = combination.agentIds?.length || 0;
+    const agentNames = (combination.agentIds || []).slice(0, 3).map(id => {
+      const agent = agents.find(a => a.id === id);
+      return agent ? escapeHtml(agent.name) : id;
+    }).join(', ');
+    const moreText = agentCount > 3 ? ` 等${agentCount}个` : '';
+    const usedCount = combination.usedCount || 0;
+    return `
+      <div class="combination-item" data-combination-id="${combination.id}">
+        <div class="combination-header">
+          <div class="combination-color" style="background-color: ${combination.color || '#6b7280'}"></div>
+          <div class="combination-info">
+            <div class="combination-name">${escapeHtml(combination.name)} <span class="combination-share-badge">团队共享</span></div>
+            <div class="combination-desc">${escapeHtml(combination.description || '暂无描述')}</div>
+            <div class="combination-meta">
+              <span>${agentCount} 个 Agent</span>
+              <span class="combination-agents">${agentNames}${moreText}</span>
+            </div>
+            <div class="combination-usage">
+              <span class="combination-used-count popular">🔥 使用 ${usedCount} 次</span>
+            </div>
+          </div>
+          <div class="combination-actions">
+            <button class="ghost tiny view-usage-trends-btn" data-combination-id="${combination.id}" title="查看使用趋势">趋势</button>
+            <button class="ghost tiny use-combination-btn" data-combination-id="${combination.id}" title="使用组合">使用</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  popularCombinationsList.querySelectorAll('.view-usage-trends-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      openUsageTrendsModal(combinationId);
+    });
+  });
+
+  popularCombinationsList.querySelectorAll('.use-combination-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      const combination = state.popularCombinations.find(c => c.id === combinationId);
+      if (combination) {
+        const agentCheckboxes = agentCheckboxesEl.querySelectorAll('input[type="checkbox"]');
+        agentCheckboxes.forEach(cb => {
+          cb.checked = combination.agentIds && combination.agentIds.includes(cb.value);
+        });
+        combinationPanel.classList.add('hidden');
+        document.querySelector('.composer-card')?.scrollIntoView({ behavior: 'smooth' });
+      }
     });
   });
 }

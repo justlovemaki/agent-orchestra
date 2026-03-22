@@ -3677,6 +3677,63 @@ button.ghost.tiny {
   flex-shrink: 0;
 }
 
+.combination-share-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3b82f6;
+  color: #fff;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.combination-used-count.popular {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.popular-combinations-header {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+}
+
+.popular-combinations-empty {
+  text-align: center;
+  padding: 24px;
+}
+
+.popular-combinations-empty .empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.combination-list .combination-item + .combination-item {
+  margin-top: 8px;
+}
+
+.combination-usage {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+}
+
 .combination-selection-list {
   display: flex;
   flex-direction: column;

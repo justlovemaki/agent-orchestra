@@ -1311,7 +1311,12 @@ async function requestHandler(req, res) {
         return json(res, 200, { success: true });
       }
       if (req.method === 'GET' && pathname === '/api/agent-combinations') {
-        return json(res, 200, { combinations: await agentCombinations.getAgentCombinations() });
+        const scope = parsed.query?.scope;
+        let combinations = await agentCombinations.getAgentCombinations();
+        if (scope === 'all') {
+          combinations = combinations.filter(c => c.sharedWithTeam === true);
+        }
+        return json(res, 200, { combinations });
       }
       if (req.method === 'POST' && pathname === '/api/agent-combinations') {
         const body = await readJson(req);
@@ -1322,12 +1327,15 @@ async function requestHandler(req, res) {
           name: body.name.trim(),
           description: body.description?.trim() || '',
           color: body.color || '#6b7280',
-          agentIds: body.agentIds || []
+          agentIds: body.agentIds || [],
+          sharedWithTeam: body.sharedWithTeam || false,
+          createdBy: currentUser?.id || null
         });
         await addAuditEvent('agent_combination.created', {
           combinationId: newCombination.id,
           combinationName: newCombination.name,
-          agentCount: newCombination.agentIds.length
+          agentCount: newCombination.agentIds.length,
+          sharedWithTeam: newCombination.sharedWithTeam
         }, userName, currentUser?.id);
         return json(res, 201, { combination: newCombination });
       }
@@ -1337,7 +1345,26 @@ async function requestHandler(req, res) {
         if (!combination) throw new Error('组合不存在');
         return json(res, 200, { combination });
       }
-      if (req.method === 'PUT' && pathname.startsWith('/api/agent-combinations/')) {
+      if (req.method === 'PUT' && pathname.startsWith('/api/agent-combinations/') && pathname.match(/\/share$/)) {
+        const combinationId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const combination = await agentCombinations.getAgentCombination(combinationId);
+        if (!combination) throw new Error('组合不存在');
+        const isAdmin = currentUser?.role === 'admin';
+        const isOwner = combination.createdBy === currentUser?.id;
+        if (!isOwner && !isAdmin) throw new Error('仅创建者或管理员可切换共享状态');
+        const updated = await agentCombinations.toggleShare(combinationId);
+        if (!updated) throw new Error('组合不存在');
+        const auditEventType = updated.sharedWithTeam ? 'agent_combination.shared' : 'agent_combination.unshared';
+        await addAuditEvent(auditEventType, {
+          combinationId: updated.id,
+          combinationName: updated.name,
+          sharedWithTeam: updated.sharedWithTeam
+        }, userName, currentUser?.id);
+        return json(res, 200, { combination: updated });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/agent-combinations/') && !pathname.match(/\/share$/)) {
         const combinationId = pathname.split('/')[3];
         const body = await readJson(req);
         const currentUser = await verifyTokenFromRequest(req);
@@ -1346,13 +1373,15 @@ async function requestHandler(req, res) {
           name: body.name?.trim(),
           description: body.description?.trim(),
           color: body.color,
-          agentIds: body.agentIds
+          agentIds: body.agentIds,
+          sharedWithTeam: body.sharedWithTeam
         });
         if (!updated) throw new Error('组合不存在');
         await addAuditEvent('agent_combination.updated', {
           combinationId: updated.id,
           combinationName: updated.name,
-          agentCount: updated.agentIds.length
+          agentCount: updated.agentIds.length,
+          sharedWithTeam: updated.sharedWithTeam
         }, userName, currentUser?.id);
         return json(res, 200, { combination: updated });
       }
@@ -1369,6 +1398,11 @@ async function requestHandler(req, res) {
           agentCount: combination.agentIds.length
         }, userName, currentUser?.id);
         return json(res, 200, { success: true });
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-combinations/popular') {
+        const limit = parseInt(parsed.query?.limit) || 10;
+        const popular = await agentCombinations.getPopularCombinations(limit);
+        return json(res, 200, { combinations: popular });
       }
       if (req.method === 'GET' && pathname === '/api/agent-combinations/export') {
         const combinations = await agentCombinations.getAgentCombinations();
