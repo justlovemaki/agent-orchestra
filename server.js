@@ -10,6 +10,7 @@ const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkfl
 const { runWorkflow, getWorkflowRun, getWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
 const agentCombinations = require('./lib/agent-combinations');
+const combinationRecommendations = require('./lib/combination-recommendations');
 const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, setUserGroupId, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
 const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
@@ -1447,6 +1448,56 @@ async function requestHandler(req, res) {
         const days = parseInt(parsed.query?.days) || 14;
         const trends = await agentCombinations.getUsageTrends(combinationId, days);
         return json(res, 200, { combination, trends });
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-combinations/recommendations') {
+        const forceRefresh = parsed.query?.refresh === 'true';
+        const result = await combinationRecommendations.getRecommendations(forceRefresh);
+        return json(res, 200, result);
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-combinations/recommendations/types') {
+        const types = combinationRecommendations.getRecommendationTypes();
+        return json(res, 200, { types });
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/apply$/)) {
+        const recommendationId = pathname.split('/')[4];
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'System';
+        
+        const result = await combinationRecommendations.getRecommendations();
+        const recommendation = result.recommendations.find(r => r.id === recommendationId);
+        
+        if (!recommendation) {
+          return json(res, 404, { error: '推荐不存在或已过期' });
+        }
+        
+        const newCombination = await agentCombinations.createAgentCombination({
+          name: `推荐组合 ${new Date().toLocaleDateString('zh-CN')}`,
+          description: recommendation.reason,
+          agentIds: recommendation.agentIds,
+          color: '#8b5cf6'
+        });
+        
+        await combinationRecommendations.dismissRecommendation(recommendationId);
+        
+        await addAuditEvent('combination.recommended_applied', {
+          recommendationId,
+          recommendationType: recommendation.type,
+          agentIds: recommendation.agentIds,
+          combinationId: newCombination.id,
+          combinationName: newCombination.name
+        }, userName, currentUser?.id);
+        
+        return json(res, 201, { combination: newCombination });
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/dismiss$/)) {
+        const recommendationId = pathname.split('/')[4];
+        const dismissed = await combinationRecommendations.dismissRecommendation(recommendationId);
+        
+        if (!dismissed) {
+          return json(res, 404, { error: '推荐不存在或已过期' });
+        }
+        
+        return json(res, 200, { success: true, dismissed });
       }
       if (req.method === 'GET' && pathname === '/api/presets') {
         return json(res, 200, { presets: await readSharedPresets() });

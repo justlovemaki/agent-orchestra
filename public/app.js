@@ -54,7 +54,10 @@ const state = {
   notificationHistoryFilters: {},
   currentChannelTab: 'channels',
   notificationTemplates: null,
-  templateVariables: []
+  templateVariables: [],
+  recommendations: [],
+  recommendationsGeneratedAt: null,
+  currentCombinationTab: 'combinations'
 };
 
 const AUTH_TOKEN_KEY = 'authToken';
@@ -165,6 +168,11 @@ const combinationSelectionList = document.getElementById('combinationSelectionLi
 const confirmSelectCombinationBtn = document.getElementById('confirmSelectCombinationBtn');
 const cancelSelectCombinationBtn = document.getElementById('cancelSelectCombinationBtn');
 const selectCombinationMsg = document.getElementById('selectCombinationMsg');
+const recommendationsContainer = document.getElementById('recommendationsContainer');
+const recommendationsList = document.getElementById('recommendationsList');
+const recommendationsEmpty = document.getElementById('recommendationsEmpty');
+const refreshRecommendationsBtn = document.getElementById('refreshRecommendationsBtn');
+const combinationTabs = document.querySelectorAll('.combination-tab');
 
 const usageTrendsModal = document.getElementById('usageTrendsModal');
 const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
@@ -3379,9 +3387,150 @@ filterGroupEl.addEventListener('change', () => {
 showCombinationPanelBtn.addEventListener('click', () => {
   combinationPanel.classList.remove('hidden');
   state.editingCombinationId = null;
+  state.currentCombinationTab = 'combinations';
+  updateCombinationTabs();
   showCombinationForm();
   renderCombinations();
 });
+
+combinationTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const tabName = tab.dataset.tab;
+    state.currentCombinationTab = tabName;
+    updateCombinationTabs();
+    if (tabName === 'recommendations') {
+      loadRecommendations();
+    } else {
+      renderCombinations();
+    }
+  });
+});
+
+refreshRecommendationsBtn.addEventListener('click', () => {
+  loadRecommendations(true);
+});
+
+function updateCombinationTabs() {
+  combinationTabs.forEach(tab => {
+    if (tab.dataset.tab === state.currentCombinationTab) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
+  
+  if (state.currentCombinationTab === 'recommendations') {
+    combinationListEl.classList.add('hidden');
+    combinationForm.classList.add('hidden');
+    recommendationsContainer.classList.remove('hidden');
+  } else {
+    combinationListEl.classList.remove('hidden');
+    recommendationsContainer.classList.add('hidden');
+  }
+}
+
+async function loadRecommendations(forceRefresh = false) {
+  recommendationsList.innerHTML = '<div class="loading">加载中...</div>';
+  recommendationsEmpty.classList.add('hidden');
+  recommendationsContainer.classList.remove('hidden');
+  
+  try {
+    const params = forceRefresh ? '?refresh=true' : '';
+    const res = await fetchJson(`/api/agent-combinations/recommendations${params}`);
+    state.recommendations = res.recommendations || [];
+    state.recommendationsGeneratedAt = res.generatedAt;
+    renderRecommendations();
+  } catch (err) {
+    recommendationsList.innerHTML = `<div class="error">加载推荐失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderRecommendations() {
+  if (!state.recommendations || state.recommendations.length === 0) {
+    recommendationsList.innerHTML = '';
+    recommendationsEmpty.classList.remove('hidden');
+    return;
+  }
+  
+  recommendationsEmpty.classList.add('hidden');
+  const agents = state.overview?.agents || [];
+  
+  recommendationsList.innerHTML = state.recommendations.map(rec => {
+    const agentNames = rec.agentNames || rec.agentIds.map(id => {
+      const agent = agents.find(a => a.id === id);
+      return agent ? agent.name : id;
+    });
+    
+    const confidencePercent = Math.round(rec.confidence * 100);
+    const confidenceClass = confidencePercent >= 80 ? 'high' : confidencePercent >= 60 ? 'medium' : 'low';
+    
+    const typeLabels = {
+      frequent_co_occurrence: '高频协同',
+      load_balance: '负载均衡',
+      hot_combination_completion: '热门补全',
+      failure_rate_optimization: '效率优化'
+    };
+    
+    return `
+      <div class="recommendation-item" data-recommendation-id="${rec.id}">
+        <div class="recommendation-header">
+          <span class="recommendation-type">${typeLabels[rec.type] || rec.type}</span>
+          <span class="recommendation-confidence ${confidenceClass}">置信度 ${confidencePercent}%</span>
+        </div>
+        <div class="recommendation-agents">
+          ${agentNames.map(name => `<span class="agent-tag">${escapeHtml(name)}</span>`).join('')}
+        </div>
+        <div class="recommendation-reason">${escapeHtml(rec.reason)}</div>
+        <div class="recommendation-actions">
+          <button class="primary small apply-recommendation-btn" data-recommendation-id="${rec.id}">应用推荐</button>
+          <button class="ghost small dismiss-recommendation-btn" data-recommendation-id="${rec.id}">忽略</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  recommendationsList.querySelectorAll('.apply-recommendation-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const recId = btn.dataset.recommendationId;
+      btn.disabled = true;
+      btn.textContent = '应用中...';
+      try {
+        const res = await fetchJson(`/api/agent-combinations/recommendations/${recId}/apply`, {
+          method: 'POST'
+        });
+        await loadCombinations();
+        state.recommendations = state.recommendations.filter(r => r.id !== recId);
+        renderRecommendations();
+        showToast('已根据推荐创建组合');
+      } catch (err) {
+        showToast('应用推荐失败: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '应用推荐';
+      }
+    });
+  });
+  
+  recommendationsList.querySelectorAll('.dismiss-recommendation-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const recId = btn.dataset.recommendationId;
+      const item = btn.closest('.recommendation-item');
+      try {
+        await fetchJson(`/api/agent-combinations/recommendations/${recId}/dismiss`, {
+          method: 'POST'
+        });
+        state.recommendations = state.recommendations.filter(r => r.id !== recId);
+        if (item) {
+          item.style.opacity = '0';
+          item.style.transform = 'translateX(20px)';
+          setTimeout(() => item.remove(), 300);
+        }
+        setTimeout(renderRecommendations, 300);
+      } catch (err) {
+        showToast('忽略推荐失败: ' + err.message, 'error');
+      }
+    });
+  });
+}
 
 hideCombinationPanelBtn.addEventListener('click', () => {
   combinationPanel.classList.add('hidden');

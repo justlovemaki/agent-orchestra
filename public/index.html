@@ -176,6 +176,10 @@
             </div>
             <button id="hideCombinationPanelBtn" class="ghost small">关闭</button>
           </div>
+          <div class="combination-tabs">
+            <button class="combination-tab active" data-tab="combinations">我的组合</button>
+            <button class="combination-tab" data-tab="recommendations">智能推荐</button>
+          </div>
           <div id="combinationForm" class="combination-form hidden">
             <div class="combination-form-fields">
               <label>
@@ -201,6 +205,20 @@
             </div>
           </div>
           <div id="combinationList" class="combination-list"></div>
+          <div id="recommendationsContainer" class="recommendations-container hidden">
+            <div class="recommendations-header">
+              <p class="muted">基于 Agent 使用趋势和组合协同分析，为您智能推荐高效的 Agent 组合。</p>
+              <button id="refreshRecommendationsBtn" class="ghost small">
+                <span>刷新推荐</span>
+              </button>
+            </div>
+            <div id="recommendationsList" class="recommendations-list"></div>
+            <div id="recommendationsEmpty" class="recommendations-empty hidden">
+              <div class="empty-icon">💡</div>
+              <p>暂无推荐</p>
+              <p class="muted small">使用 Agent 执行更多任务后，系统将为您生成智能推荐</p>
+            </div>
+          </div>
           <div class="combination-actions-bar">
             <button id="exportCombinationsBtn" class="ghost small">导出</button>
             <button id="importCombinationsBtn" class="ghost small">导入</button>
