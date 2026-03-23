@@ -62,6 +62,7 @@ const state = {
   recommendations: [],
   recommendationsGeneratedAt: null,
   currentCombinationTab: 'combinations',
+  combinationSortBy: 'recent',
   popularCombinations: []
 };
 
@@ -183,6 +184,7 @@ const combinationTabs = document.querySelectorAll('.combination-tab');
 const popularCombinationsContainer = document.getElementById('popularCombinationsContainer');
 const popularCombinationsList = document.getElementById('popularCombinationsList');
 const popularCombinationsEmpty = document.getElementById('popularCombinationsEmpty');
+const combinationSortSelect = document.getElementById('combinationSortSelect');
 
 const usageTrendsModal = document.getElementById('usageTrendsModal');
 const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
@@ -3425,7 +3427,7 @@ showCombinationPanelBtn.addEventListener('click', () => {
   state.currentCombinationTab = 'combinations';
   updateCombinationTabs();
   showCombinationForm();
-  renderCombinations();
+  renderCombinations(state.combinationSortBy);
 });
 
 combinationTabs.forEach(tab => {
@@ -3438,10 +3440,17 @@ combinationTabs.forEach(tab => {
     } else if (tabName === 'popular') {
       loadPopularCombinations().then(() => renderPopularCombinations());
     } else {
-      renderCombinations();
+      renderCombinations(state.combinationSortBy);
     }
   });
 });
+
+if (combinationSortSelect) {
+  combinationSortSelect.addEventListener('change', () => {
+    state.combinationSortBy = combinationSortSelect.value;
+    renderCombinations(state.combinationSortBy);
+  });
+}
 
 refreshRecommendationsBtn.addEventListener('click', () => {
   loadRecommendations(true);
@@ -3699,7 +3708,7 @@ async function saveCombination() {
     }
     await loadCombinations();
     hideCombinationForm();
-    renderCombinations();
+    renderCombinations(state.combinationSortBy);
   } catch (err) {
     alert(err.message);
   }
@@ -3793,7 +3802,7 @@ function renderCombinations(sortBy = 'recent') {
       try {
         await fetchJson(`/api/agent-combinations/${combinationId}`, { method: 'DELETE' });
         await loadCombinations();
-        renderCombinations();
+        renderCombinations(state.combinationSortBy);
       } catch (err) {
         alert(err.message);
       }
@@ -3815,7 +3824,7 @@ function renderCombinations(sortBy = 'recent') {
       try {
         await fetchJson(`/api/agent-combinations/${combinationId}/share`, { method: 'PUT' });
         await loadCombinations();
-        renderCombinations();
+        renderCombinations(state.combinationSortBy);
       } catch (err) {
         alert(err.message);
       }
@@ -4191,7 +4200,7 @@ async function handleImportCombinations() {
     setTimeout(async () => {
       hideImportCombinationsModal();
       await loadCombinations();
-      renderCombinations();
+      renderCombinations(state.combinationSortBy);
     }, 1000);
   } catch (err) {
     importCombinationMsg.textContent = '导入失败：' + err.message;
