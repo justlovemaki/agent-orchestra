@@ -16,6 +16,8 @@ const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
 const taskCompletionConfig = require('./lib/task-completion-config');
 const taskCompletionNotifier = require('./lib/task-completion-notifier');
+const workflowCompletionConfig = require('./lib/workflow-completion-config');
+const workflowCompletionNotifier = require('./lib/workflow-completion-notifier');
 const cloudStorage = require('./lib/cloud-storage');
 const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
@@ -3328,6 +3330,62 @@ async function requestHandler(req, res) {
           });
           
           await addAuditEvent('task_completion.config_changed', {
+            enabled: config.enabled,
+            notifyOnComplete: config.notifyOnComplete,
+            notifyOnFailed: config.notifyOnFailed,
+            notifyChannels: config.notifyChannels,
+            changedBy: userName
+          }, userName, currentUser?.id);
+          
+          return json(res, 200, config);
+        }
+
+        // Workflow Completion Notification APIs
+        if (req.method === 'GET' && adminPath === 'workflow-completion/config') {
+          const config = await workflowCompletionConfig.getConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'workflow-completion/config') {
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          
+          const { enabled, notifyOnComplete, notifyOnFailed, notifyChannels } = body;
+          
+          if (enabled !== undefined && typeof enabled !== 'boolean') {
+            throw new Error('enabled 必须是布尔值');
+          }
+          if (notifyOnComplete !== undefined && typeof notifyOnComplete !== 'boolean') {
+            throw new Error('notifyOnComplete 必须是布尔值');
+          }
+          if (notifyOnFailed !== undefined && typeof notifyOnFailed !== 'boolean') {
+            throw new Error('notifyOnFailed 必须是布尔值');
+          }
+          if (notifyChannels !== undefined) {
+            if (!Array.isArray(notifyChannels)) {
+              throw new Error('notifyChannels 必须是数组');
+            }
+            const legacyChannelTypes = ['feishu', 'dingtalk', 'wecom', 'slack'];
+            const allChannels = await notificationChannels.getChannels();
+            for (const channel of notifyChannels) {
+              const isUuid = channel.includes('-') && channel.length > 20;
+              const isLegacyType = legacyChannelTypes.includes(channel);
+              const isValidChannelId = allChannels.some(c => c.id === channel);
+              if (!isUuid && !isLegacyType && !isValidChannelId) {
+                throw new Error(`无效的通知渠道：${channel}，请使用渠道 ID 或有效的渠道类型`);
+              }
+            }
+          }
+          
+          const config = await workflowCompletionConfig.updateConfig({
+            enabled,
+            notifyOnComplete,
+            notifyOnFailed,
+            notifyChannels
+          });
+          
+          await addAuditEvent('workflow_completion.config_changed', {
             enabled: config.enabled,
             notifyOnComplete: config.notifyOnComplete,
             notifyOnFailed: config.notifyOnFailed,

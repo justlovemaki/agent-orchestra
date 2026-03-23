@@ -522,6 +522,7 @@
             <button class="channel-tab active" data-tab="channels">渠道列表</button>
             <button class="channel-tab" data-tab="templates">消息模板</button>
             <button class="channel-tab" data-tab="history">发送历史</button>
+            <button class="channel-tab" data-tab="workflow">工作流通知</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
             <div class="channel-form-grid">
@@ -596,6 +597,41 @@
               </div>
               <div id="notificationHistoryList" class="notification-history-list"></div>
               <div id="historyPagination" class="pagination"></div>
+            </div>
+            <div id="workflowNotificationTab" class="workflow-notification-tab hidden">
+              <div class="workflow-notification-config">
+                <div class="workflow-notification-header">
+                  <div class="workflow-notification-toggle">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="workflowNotificationEnabled" />
+                      <span>启用工作流完成通知</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="workflow-notification-form">
+                  <div class="workflow-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="workflowNotifyOnComplete" />
+                      <span>工作流完成时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="workflow-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="workflowNotifyOnFailed" />
+                      <span>工作流失败时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="workflow-form-row">
+                    <span class="field-label">通知渠道</span>
+                    <div id="workflowNotifyChannels" class="channel-checkboxes"></div>
+                    <span class="muted small">选择要发送工作流通知的渠道（需提前配置相应的 Webhook）</span>
+                  </div>
+                  <div class="workflow-form-actions">
+                    <button id="saveWorkflowNotificationConfigBtn" class="primary">保存配置</button>
+                  </div>
+                </div>
+                <div id="workflowNotificationMsg" class="form-msg"></div>
+              </div>
             </div>
           </div>
         </section>

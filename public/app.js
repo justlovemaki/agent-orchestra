@@ -55,6 +55,7 @@ const state = {
   currentChannelTab: 'channels',
   notificationTemplates: null,
   templateVariables: [],
+  workflowNotificationConfig: null,
   recommendations: [],
   recommendationsGeneratedAt: null,
   currentCombinationTab: 'combinations',
@@ -254,6 +255,13 @@ const templatesTabContent = document.getElementById('templatesTabContent');
 const templatesListEl = document.getElementById('templatesList');
 const saveTemplatesBtn = document.getElementById('saveTemplatesBtn');
 const resetAllTemplatesBtn = document.getElementById('resetAllTemplatesBtn');
+
+const workflowNotificationEnabled = document.getElementById('workflowNotificationEnabled');
+const workflowNotifyOnComplete = document.getElementById('workflowNotifyOnComplete');
+const workflowNotifyOnFailed = document.getElementById('workflowNotifyOnFailed');
+const workflowNotifyChannels = document.getElementById('workflowNotifyChannels');
+const saveWorkflowNotificationConfigBtn = document.getElementById('saveWorkflowNotificationConfigBtn');
+const workflowNotificationMsg = document.getElementById('workflowNotificationMsg');
 
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
@@ -5197,12 +5205,18 @@ function switchChannelTab(tab) {
   channelListEl.classList.toggle('hidden', tab !== 'channels');
   historyTabContent.classList.toggle('hidden', tab !== 'history');
   templatesTabContent.classList.toggle('hidden', tab !== 'templates');
+  const workflowNotificationTab = document.getElementById('workflowNotificationTab');
+  if (workflowNotificationTab) {
+    workflowNotificationTab.classList.toggle('hidden', tab !== 'workflow');
+  }
   
   if (tab === 'history') {
     loadNotificationHistory();
     loadNotificationStats();
   } else if (tab === 'templates') {
     loadNotificationTemplates();
+  } else if (tab === 'workflow') {
+    loadWorkflowNotificationConfig();
   }
 }
 
@@ -5480,6 +5494,91 @@ async function resetAllTemplates() {
   } catch (err) {
     alert('重置失败：' + err.message);
   }
+}
+
+async function loadWorkflowNotificationConfig() {
+  try {
+    const config = await fetchJson('/api/admin/workflow-completion/config');
+    state.workflowNotificationConfig = config;
+    
+    if (workflowNotificationEnabled) {
+      workflowNotificationEnabled.checked = config.enabled === true;
+    }
+    if (workflowNotifyOnComplete) {
+      workflowNotifyOnComplete.checked = config.notifyOnComplete === true;
+    }
+    if (workflowNotifyOnFailed) {
+      workflowNotifyOnFailed.checked = config.notifyOnFailed === true;
+    }
+    
+    renderWorkflowNotificationChannels(config.notifyChannels || []);
+  } catch (err) {
+    console.error('加载工作流通知配置失败:', err);
+    if (workflowNotificationMsg) {
+      workflowNotificationMsg.textContent = '加载配置失败: ' + err.message;
+      workflowNotificationMsg.className = 'form-msg error';
+    }
+  }
+}
+
+function renderWorkflowNotificationChannels(selectedChannels) {
+  if (!workflowNotifyChannels) return;
+  
+  if (!state.notificationChannels || state.notificationChannels.length === 0) {
+    workflowNotifyChannels.innerHTML = '<div class="empty-state muted small">暂无通知渠道，请先创建渠道</div>';
+    return;
+  }
+  
+  workflowNotifyChannels.innerHTML = state.notificationChannels.map(ch => `
+    <label class="channel-checkbox">
+      <input type="checkbox" name="workflowNotifyChannel" value="${ch.id}" ${selectedChannels.includes(ch.id) ? 'checked' : ''} />
+      <span>${escapeHtml(ch.name)}</span>
+    </label>
+  `).join('');
+}
+
+async function saveWorkflowNotificationConfig() {
+  if (!saveWorkflowNotificationConfigBtn) return;
+  
+  saveWorkflowNotificationConfigBtn.disabled = true;
+  
+  try {
+    const selectedChannels = Array.from(document.querySelectorAll('input[name="workflowNotifyChannel"]:checked'))
+      .map(cb => cb.value);
+    
+    const config = {
+      enabled: workflowNotificationEnabled?.checked === true,
+      notifyOnComplete: workflowNotifyOnComplete?.checked === true,
+      notifyOnFailed: workflowNotifyOnFailed?.checked === true,
+      notifyChannels: selectedChannels
+    };
+    
+    await fetchJson('/api/admin/workflow-completion/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    
+    if (workflowNotificationMsg) {
+      workflowNotificationMsg.textContent = '配置保存成功';
+      workflowNotificationMsg.className = 'form-msg success';
+    }
+    
+    state.workflowNotificationConfig = config;
+  } catch (err) {
+    console.error('保存工作流通知配置失败:', err);
+    if (workflowNotificationMsg) {
+      workflowNotificationMsg.textContent = '保存失败: ' + err.message;
+      workflowNotificationMsg.className = 'form-msg error';
+    }
+  } finally {
+    if (saveWorkflowNotificationConfigBtn) {
+      saveWorkflowNotificationConfigBtn.disabled = false;
+    }
+  }
+}
+
+if (saveWorkflowNotificationConfigBtn) {
+  saveWorkflowNotificationConfigBtn.addEventListener('click', saveWorkflowNotificationConfig);
 }
 
 function showAuditDetailModal(eventId) {
