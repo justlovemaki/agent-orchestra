@@ -1518,7 +1518,7 @@ async function requestHandler(req, res) {
         await combinationRecommendations.dismissRecommendation(recommendationId);
         await combinationRecommendations.recordApplication(recommendationId);
         
-        await addAuditEvent('combination.recommended_applied', {
+        await addAuditEvent('combination_recommendation.applied', {
           recommendationId,
           recommendationType: recommendation.type,
           agentIds: recommendation.agentIds,
@@ -1530,10 +1530,24 @@ async function requestHandler(req, res) {
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/dismiss$/)) {
         const recommendationId = pathname.split('/')[4];
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'System';
+        
+        const result = await combinationRecommendations.getRecommendations();
+        const recommendation = result.recommendations.find(r => r.id === recommendationId);
+        
         const dismissed = await combinationRecommendations.dismissRecommendation(recommendationId);
         
         if (!dismissed) {
           return json(res, 404, { error: '推荐不存在或已过期' });
+        }
+        
+        if (recommendation) {
+          await addAuditEvent('combination_recommendation.dismissed', {
+            recommendationId,
+            recommendationType: recommendation.type,
+            agentIds: recommendation.agentIds
+          }, userName, currentUser?.id);
         }
         
         return json(res, 200, { success: true, dismissed });
