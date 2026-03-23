@@ -3588,7 +3588,7 @@ function renderRecommendations() {
   recommendationsList.querySelectorAll('.feedback-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const recId = btn.dataset.recommendationId;
-      const feedbackType = btn.dataset.feedback;
+      const isHelpful = btn.dataset.feedback === 'helpful';
       const item = btn.closest('.recommendation-item');
       
       item.querySelectorAll('.feedback-btn').forEach(b => {
@@ -3599,7 +3599,7 @@ function renderRecommendations() {
       try {
         await fetchJson(`/api/agent-combinations/recommendations/${recId}/feedback`, {
           method: 'POST',
-          body: JSON.stringify({ feedbackType })
+          body: JSON.stringify({ isHelpful })
         });
         await loadRecommendations(true);
         showToast('感谢反馈！');

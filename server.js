@@ -1556,32 +1556,27 @@ async function requestHandler(req, res) {
       if (req.method === 'POST' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/feedback$/)) {
         const recommendationId = pathname.split('/')[4];
         const body = await readJson(req);
-        const { feedbackType, comment } = body;
+        const { isHelpful } = body;
         
-        if (!feedbackType || !['helpful', 'not_helpful'].includes(feedbackType)) {
-          return json(res, 400, { error: '无效的反馈类型，必须是 helpful 或 not_helpful' });
+        if (typeof isHelpful !== 'boolean') {
+          return json(res, 400, { error: '无效的反馈，必须是布尔值' });
         }
         
-        const feedback = await combinationRecommendations.recordFeedback(recommendationId, feedbackType, comment || null);
+        const feedback = await combinationRecommendations.recordFeedback(recommendationId, isHelpful);
         
         const currentUser = await verifyTokenFromRequest(req);
-        await addAuditEvent('recommendation.feedback_submitted', {
+        await addAuditEvent('recommendation_feedback.submitted', {
           recommendationId,
-          feedbackType,
-          comment: comment || null
+          isHelpful
         }, currentUser?.name || 'System', currentUser?.id);
         
         return json(res, 201, { feedback });
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/agent-combinations\/recommendations\/[^/]+\/feedback$/)) {
         const recommendationId = pathname.split('/')[4];
-        const feedback = await combinationRecommendations.getFeedbackForRecommendation(recommendationId);
-        const stats = await combinationRecommendations.getFeedbackStats();
+        const stats = await combinationRecommendations.getFeedbackStats(recommendationId);
         
-        return json(res, 200, { 
-          feedback,
-          stats: stats[recommendationId] || { helpful: 0, notHelpful: 0 }
-        });
+        return json(res, 200, { stats });
       }
       if (req.method === 'GET' && pathname === '/api/presets') {
         return json(res, 200, { presets: await readSharedPresets() });
