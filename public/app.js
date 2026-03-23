@@ -56,6 +56,7 @@ const state = {
   notificationTemplates: null,
   templateVariables: [],
   workflowNotificationConfig: null,
+  scheduledBackupNotificationConfig: null,
   recommendations: [],
   recommendationsGeneratedAt: null,
   currentCombinationTab: 'combinations',
@@ -262,6 +263,13 @@ const workflowNotifyOnFailed = document.getElementById('workflowNotifyOnFailed')
 const workflowNotifyChannels = document.getElementById('workflowNotifyChannels');
 const saveWorkflowNotificationConfigBtn = document.getElementById('saveWorkflowNotificationConfigBtn');
 const workflowNotificationMsg = document.getElementById('workflowNotificationMsg');
+
+const scheduledBackupNotificationEnabled = document.getElementById('scheduledBackupNotificationEnabled');
+const scheduledBackupNotifyOnComplete = document.getElementById('scheduledBackupNotifyOnComplete');
+const scheduledBackupNotifyOnFailed = document.getElementById('scheduledBackupNotifyOnFailed');
+const scheduledBackupNotifyChannelList = document.getElementById('scheduledBackupNotifyChannelList');
+const saveScheduledBackupNotificationConfigBtn = document.getElementById('saveScheduledBackupNotificationConfigBtn');
+const scheduledBackupNotificationMsg = document.getElementById('scheduledBackupNotificationMsg');
 
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
@@ -5209,6 +5217,10 @@ function switchChannelTab(tab) {
   if (workflowNotificationTab) {
     workflowNotificationTab.classList.toggle('hidden', tab !== 'workflow');
   }
+  const scheduledBackupNotificationTab = document.getElementById('scheduledBackupNotificationTab');
+  if (scheduledBackupNotificationTab) {
+    scheduledBackupNotificationTab.classList.toggle('hidden', tab !== 'scheduledbackup');
+  }
   
   if (tab === 'history') {
     loadNotificationHistory();
@@ -5217,6 +5229,8 @@ function switchChannelTab(tab) {
     loadNotificationTemplates();
   } else if (tab === 'workflow') {
     loadWorkflowNotificationConfig();
+  } else if (tab === 'scheduledbackup') {
+    loadScheduledBackupNotificationConfig();
   }
 }
 
@@ -5579,6 +5593,91 @@ async function saveWorkflowNotificationConfig() {
 
 if (saveWorkflowNotificationConfigBtn) {
   saveWorkflowNotificationConfigBtn.addEventListener('click', saveWorkflowNotificationConfig);
+}
+
+async function loadScheduledBackupNotificationConfig() {
+  try {
+    const config = await fetchJson('/api/admin/scheduled-backup-notification/config');
+    state.scheduledBackupNotificationConfig = config;
+    
+    if (scheduledBackupNotificationEnabled) {
+      scheduledBackupNotificationEnabled.checked = config.enabled === true;
+    }
+    if (scheduledBackupNotifyOnComplete) {
+      scheduledBackupNotifyOnComplete.checked = config.notifyOnComplete === true;
+    }
+    if (scheduledBackupNotifyOnFailed) {
+      scheduledBackupNotifyOnFailed.checked = config.notifyOnFailed === true;
+    }
+    
+    renderScheduledBackupNotificationChannels(config.notifyChannels || []);
+  } catch (err) {
+    console.error('加载定时备份通知配置失败:', err);
+    if (scheduledBackupNotificationMsg) {
+      scheduledBackupNotificationMsg.textContent = '加载配置失败: ' + err.message;
+      scheduledBackupNotificationMsg.className = 'form-msg error';
+    }
+  }
+}
+
+function renderScheduledBackupNotificationChannels(selectedChannels) {
+  if (!scheduledBackupNotifyChannelList) return;
+  
+  if (!state.notificationChannels || state.notificationChannels.length === 0) {
+    scheduledBackupNotifyChannelList.innerHTML = '<div class="empty-state muted small">暂无通知渠道，请先创建渠道</div>';
+    return;
+  }
+  
+  scheduledBackupNotifyChannelList.innerHTML = state.notificationChannels.map(ch => `
+    <label class="channel-checkbox">
+      <input type="checkbox" name="scheduledBackupNotifyChannel" value="${ch.id}" ${selectedChannels.includes(ch.id) ? 'checked' : ''} />
+      <span>${escapeHtml(ch.name)}</span>
+    </label>
+  `).join('');
+}
+
+async function saveScheduledBackupNotificationConfig() {
+  if (!saveScheduledBackupNotificationConfigBtn) return;
+  
+  saveScheduledBackupNotificationConfigBtn.disabled = true;
+  
+  try {
+    const selectedChannels = Array.from(document.querySelectorAll('input[name="scheduledBackupNotifyChannel"]:checked'))
+      .map(cb => cb.value);
+    
+    const config = {
+      enabled: scheduledBackupNotificationEnabled?.checked === true,
+      notifyOnComplete: scheduledBackupNotifyOnComplete?.checked === true,
+      notifyOnFailed: scheduledBackupNotifyOnFailed?.checked === true,
+      notifyChannels: selectedChannels
+    };
+    
+    await fetchJson('/api/admin/scheduled-backup-notification/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    
+    if (scheduledBackupNotificationMsg) {
+      scheduledBackupNotificationMsg.textContent = '配置保存成功';
+      scheduledBackupNotificationMsg.className = 'form-msg success';
+    }
+    
+    state.scheduledBackupNotificationConfig = config;
+  } catch (err) {
+    console.error('保存定时备份通知配置失败:', err);
+    if (scheduledBackupNotificationMsg) {
+      scheduledBackupNotificationMsg.textContent = '保存失败: ' + err.message;
+      scheduledBackupNotificationMsg.className = 'form-msg error';
+    }
+  } finally {
+    if (saveScheduledBackupNotificationConfigBtn) {
+      saveScheduledBackupNotificationConfigBtn.disabled = false;
+    }
+  }
+}
+
+if (saveScheduledBackupNotificationConfigBtn) {
+  saveScheduledBackupNotificationConfigBtn.addEventListener('click', saveScheduledBackupNotificationConfig);
 }
 
 function showAuditDetailModal(eventId) {

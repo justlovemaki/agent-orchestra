@@ -4198,6 +4198,41 @@ button.ghost.tiny {
   padding-top: 8px;
 }
 
+.scheduled-backup-notification-config {
+  padding: 16px 0;
+}
+
+.scheduled-backup-notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.scheduled-backup-notification-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scheduled-backup-notification-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scheduled-backup-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scheduled-backup-form-actions {
+  display: flex;
+  gap: 12px;
+  padding-top: 8px;
+}
+
 .toggle-label {
   display: flex;
   align-items: center;

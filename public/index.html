@@ -523,6 +523,7 @@
             <button class="channel-tab" data-tab="templates">消息模板</button>
             <button class="channel-tab" data-tab="history">发送历史</button>
             <button class="channel-tab" data-tab="workflow">工作流通知</button>
+            <button class="channel-tab" data-tab="scheduledbackup">定时备份通知</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
             <div class="channel-form-grid">
@@ -631,6 +632,41 @@
                   </div>
                 </div>
                 <div id="workflowNotificationMsg" class="form-msg"></div>
+              </div>
+            </div>
+            <div id="scheduledBackupNotificationTab" class="scheduled-backup-notification-tab hidden">
+              <div class="scheduled-backup-notification-config">
+                <div class="scheduled-backup-notification-header">
+                  <div class="scheduled-backup-notification-toggle">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="scheduledBackupNotificationEnabled" />
+                      <span>启用定时备份通知</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="scheduled-backup-notification-form">
+                  <div class="scheduled-backup-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="scheduledBackupNotifyOnComplete" />
+                      <span>备份成功时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="scheduled-backup-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="scheduledBackupNotifyOnFailed" />
+                      <span>备份失败时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="scheduled-backup-form-row">
+                    <span class="field-label">通知渠道</span>
+                    <div id="scheduledBackupNotifyChannelList" class="channel-checkboxes"></div>
+                    <span class="muted small">选择要发送定时备份通知的渠道（需提前配置相应的 Webhook）</span>
+                  </div>
+                  <div class="scheduled-backup-form-actions">
+                    <button id="saveScheduledBackupNotificationConfigBtn" class="primary">保存配置</button>
+                  </div>
+                </div>
+                <div id="scheduledBackupNotificationMsg" class="form-msg"></div>
               </div>
             </div>
           </div>

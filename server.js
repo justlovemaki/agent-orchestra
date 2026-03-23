@@ -18,6 +18,8 @@ const taskCompletionConfig = require('./lib/task-completion-config');
 const taskCompletionNotifier = require('./lib/task-completion-notifier');
 const workflowCompletionConfig = require('./lib/workflow-completion-config');
 const workflowCompletionNotifier = require('./lib/workflow-completion-notifier');
+const scheduledBackupConfig = require('./lib/scheduled-backup-config');
+const scheduledBackupNotifier = require('./lib/scheduled-backup-notifier');
 const cloudStorage = require('./lib/cloud-storage');
 const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
@@ -3696,6 +3698,56 @@ async function requestHandler(req, res) {
           }
           
           return json(res, 200, result);
+        }
+
+        // Scheduled Backup Notification Configuration
+        if (req.method === 'GET' && adminPath === 'scheduled-backup-notification/config') {
+          const config = await scheduledBackupConfig.getConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'scheduled-backup-notification/config') {
+          const body = await readJson(req);
+          const { enabled, notifyOnComplete, notifyOnFailed, notifyChannels } = body;
+          
+          if (enabled !== undefined && typeof enabled !== 'boolean') {
+            throw new Error('enabled 必须是布尔值');
+          }
+          if (notifyOnComplete !== undefined && typeof notifyOnComplete !== 'boolean') {
+            throw new Error('notifyOnComplete 必须是布尔值');
+          }
+          if (notifyOnFailed !== undefined && typeof notifyOnFailed !== 'boolean') {
+            throw new Error('notifyOnFailed 必须是布尔值');
+          }
+          if (notifyChannels !== undefined) {
+            if (!Array.isArray(notifyChannels)) {
+              throw new Error('notifyChannels 必须是数组');
+            }
+            const legacyChannelTypes = ['feishu', 'dingtalk', 'wecom', 'slack'];
+            const allChannels = await notificationChannels.getChannels();
+            for (const ch of notifyChannels) {
+              const isUuid = ch.includes('-') && ch.length > 20;
+              const isLegacyType = legacyChannelTypes.includes(ch);
+              const isValidChannelId = allChannels.some(c => c.id === ch);
+              if (!isUuid && !isLegacyType && !isValidChannelId) {
+                throw new Error(`无效的通知渠道: ${ch}，请使用渠道 ID 或有效的渠道类型`);
+              }
+            }
+          }
+          
+          const config = await scheduledBackupConfig.updateConfig({
+            enabled,
+            notifyOnComplete,
+            notifyOnFailed,
+            notifyChannels
+          });
+          
+          await addAuditEvent('scheduled_backup.notification_config_changed', {
+            changedBy: currentUser?.name || 'system',
+            config
+          }, currentUser?.name || 'system', currentUser?.id);
+          
+          return json(res, 200, config);
         }
 
         // Cloud Storage Configuration
