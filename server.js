@@ -3563,6 +3563,15 @@ async function requestHandler(req, res) {
           return json(res, 200, { stats });
         }
 
+        if (req.method === 'GET' && adminPath === 'notification-history/trends') {
+          const days = parseInt(parsed.query?.days) || 7;
+          if (![7, 14, 30].includes(days)) {
+            return json(res, 400, { error: '无效的天数，请使用 7、14 或 30' });
+          }
+          const trends = await notificationHistory.getTrends(days);
+          return json(res, 200, trends);
+        }
+
         if (req.method === 'GET' && adminPath === 'notification-templates') {
           const templates = await notificationTemplates.getTemplates();
           const variables = notificationTemplates.TEMPLATE_VARIABLES;

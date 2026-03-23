@@ -52,6 +52,8 @@ const state = {
   notificationHistoryPage: 1,
   notificationHistoryTotalPages: 1,
   notificationHistoryFilters: {},
+  notificationTrends: null,
+  notificationTrendsDays: 7,
   currentChannelTab: 'channels',
   notificationTemplates: null,
   templateVariables: [],
@@ -88,6 +90,7 @@ let taskStatusChartInstance = null;
 let agentWorkloadChartInstance = null;
 let trendDetailPopup = null;
 let usageTrendsChartInstance = null;
+let notificationTrendsChartInstance = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -252,6 +255,12 @@ const historyTimeFrom = document.getElementById('historyTimeFrom');
 const historyTimeTo = document.getElementById('historyTimeTo');
 const applyHistoryFilterBtn = document.getElementById('applyHistoryFilterBtn');
 const clearHistoryFilterBtn = document.getElementById('clearHistoryFilterBtn');
+const notificationTrendsChartEl = document.getElementById('notificationTrendsChart');
+const notificationTrendsLoadingEl = document.getElementById('notificationTrendsLoading');
+const notificationTrendsEmptyEl = document.getElementById('notificationTrendsEmpty');
+const notificationTrends7dBtn = document.getElementById('notificationTrends7d');
+const notificationTrends14dBtn = document.getElementById('notificationTrends14d');
+const notificationTrends30dBtn = document.getElementById('notificationTrends30d');
 const templatesTabContent = document.getElementById('templatesTabContent');
 const templatesListEl = document.getElementById('templatesList');
 const saveTemplatesBtn = document.getElementById('saveTemplatesBtn');
@@ -5225,6 +5234,7 @@ function switchChannelTab(tab) {
   if (tab === 'history') {
     loadNotificationHistory();
     loadNotificationStats();
+    loadNotificationTrends(7);
   } else if (tab === 'templates') {
     loadNotificationTemplates();
   } else if (tab === 'workflow') {
@@ -5272,6 +5282,139 @@ async function loadNotificationStats() {
   } catch (err) {
     console.error('加载通知统计失败:', err);
   }
+}
+
+async function loadNotificationTrends(days = state.notificationTrendsDays) {
+  notificationTrendsLoadingEl.classList.remove('hidden');
+  notificationTrendsEmptyEl.classList.add('hidden');
+  notificationTrendsChartEl.style.display = 'none';
+  
+  try {
+    const res = await fetchJson(`/api/admin/notification-history/trends?days=${days}`);
+    state.notificationTrends = res.trends || [];
+    state.notificationTrendsDays = res.days || days;
+    renderNotificationTrendsChart();
+    updateNotificationTrendsButtons();
+  } catch (err) {
+    console.error('加载通知趋势失败:', err);
+    state.notificationTrends = [];
+    renderNotificationTrendsChart();
+  }
+}
+
+function updateNotificationTrendsButtons() {
+  document.querySelectorAll('#notificationTrendsSection .filter-btn').forEach(btn => {
+    const btnDays = parseInt(btn.dataset.days);
+    btn.classList.toggle('filter-btn-active', btnDays === state.notificationTrendsDays);
+  });
+}
+
+function renderNotificationTrendsChart() {
+  notificationTrendsLoadingEl.classList.add('hidden');
+  
+  if (!state.notificationTrends || state.notificationTrends.length === 0) {
+    notificationTrendsEmptyEl.classList.remove('hidden');
+    notificationTrendsChartEl.style.display = 'none';
+    if (notificationTrendsChartInstance) {
+      notificationTrendsChartInstance.destroy();
+      notificationTrendsChartInstance = null;
+    }
+    return;
+  }
+  
+  notificationTrendsEmptyEl.classList.add('hidden');
+  notificationTrendsChartEl.style.display = 'block';
+  
+  const labels = state.notificationTrends.map(t => {
+    const d = new Date(t.date);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+  
+  const sentData = state.notificationTrends.map(t => t.sent);
+  const failedData = state.notificationTrends.map(t => t.failed);
+  
+  if (notificationTrendsChartInstance) {
+    notificationTrendsChartInstance.destroy();
+  }
+  
+  const ctx = notificationTrendsChartEl.getContext('2d');
+  notificationTrendsChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '发送成功',
+          data: sentData,
+          borderColor: '#44d19f',
+          backgroundColor: 'rgba(68, 209, 159, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        },
+        {
+          label: '发送失败',
+          data: failedData,
+          borderColor: '#ff718d',
+          backgroundColor: 'rgba(255, 113, 141, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1
+          }
+        }
+      }
+    }
+  });
 }
 
 function renderNotificationStats() {
@@ -7761,5 +7904,15 @@ trends14dBtn.addEventListener('click', async () => {
   trends7dBtn.classList.remove('filter-btn-active');
   await loadTrends(14);
 });
+
+if (notificationTrends7dBtn) {
+  notificationTrends7dBtn.addEventListener('click', () => loadNotificationTrends(7));
+}
+if (notificationTrends14dBtn) {
+  notificationTrends14dBtn.addEventListener('click', () => loadNotificationTrends(14));
+}
+if (notificationTrends30dBtn) {
+  notificationTrends30dBtn.addEventListener('click', () => loadNotificationTrends(30));
+}
 
 loadTrends();

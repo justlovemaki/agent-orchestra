@@ -578,6 +578,23 @@
             </div>
             <div id="historyTabContent" class="history-tab-content hidden">
               <div id="notificationStats" class="notification-stats"></div>
+              <div id="notificationTrendsSection" class="notification-trends-section">
+                <div class="trends-controls">
+                  <button id="notificationTrends7d" class="filter-btn filter-btn-active" data-days="7">7天</button>
+                  <button id="notificationTrends14d" class="filter-btn" data-days="14">14天</button>
+                  <button id="notificationTrends30d" class="filter-btn" data-days="30">30天</button>
+                </div>
+                <div id="notificationTrendsChartContainer" class="trends-chart-container">
+                  <div id="notificationTrendsLoading" class="trends-loading hidden">
+                    <div class="loading-spinner"></div>
+                    <span>加载中...</span>
+                  </div>
+                  <div id="notificationTrendsEmpty" class="trends-empty hidden">
+                    <span class="muted">暂无通知数据</span>
+                  </div>
+                  <canvas id="notificationTrendsChart"></canvas>
+                </div>
+              </div>
               <div id="historyFilterBar" class="filter-bar history-filter-bar">
                 <select id="historyStatusFilter" class="filter-select">
                   <option value="">全部状态</option>
