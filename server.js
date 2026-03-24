@@ -3334,7 +3334,7 @@ async function requestHandler(req, res) {
           const currentUser = await verifyTokenFromRequest(req);
           const userName = currentUser?.name || 'Master';
           
-          const { enabled, notifyOnComplete, notifyOnFailed, notifyChannels } = body;
+          const { enabled, notifyOnComplete, notifyOnFailed, notifyChannels, priorityFilter, agentGroupFilter } = body;
           
           if (enabled !== undefined && typeof enabled !== 'boolean') {
             throw new Error('enabled 必须是布尔值');
@@ -3360,12 +3360,46 @@ async function requestHandler(req, res) {
               }
             }
           }
+          if (priorityFilter !== undefined) {
+            if (typeof priorityFilter !== 'object' || priorityFilter === null) {
+              throw new Error('priorityFilter 必须是对象');
+            }
+            if (priorityFilter.enabled !== undefined && typeof priorityFilter.enabled !== 'boolean') {
+              throw new Error('priorityFilter.enabled 必须是布尔值');
+            }
+            if (priorityFilter.priorities !== undefined) {
+              if (!Array.isArray(priorityFilter.priorities)) {
+                throw new Error('priorityFilter.priorities 必须是数组');
+              }
+              const validPriorities = ['critical', 'high', 'medium', 'low'];
+              for (const p of priorityFilter.priorities) {
+                if (!validPriorities.includes(p)) {
+                  throw new Error(`无效的优先级：${p}，有效值: ${validPriorities.join(', ')}`);
+                }
+              }
+            }
+          }
+          if (agentGroupFilter !== undefined) {
+            if (typeof agentGroupFilter !== 'object' || agentGroupFilter === null) {
+              throw new Error('agentGroupFilter 必须是对象');
+            }
+            if (agentGroupFilter.enabled !== undefined && typeof agentGroupFilter.enabled !== 'boolean') {
+              throw new Error('agentGroupFilter.enabled 必须是布尔值');
+            }
+            if (agentGroupFilter.groups !== undefined) {
+              if (!Array.isArray(agentGroupFilter.groups)) {
+                throw new Error('agentGroupFilter.groups 必须是数组');
+              }
+            }
+          }
           
           const config = await taskCompletionConfig.updateConfig({
             enabled,
             notifyOnComplete,
             notifyOnFailed,
-            notifyChannels
+            notifyChannels,
+            priorityFilter,
+            agentGroupFilter
           });
           
           await addAuditEvent('task_completion.config_changed', {
@@ -3373,6 +3407,8 @@ async function requestHandler(req, res) {
             notifyOnComplete: config.notifyOnComplete,
             notifyOnFailed: config.notifyOnFailed,
             notifyChannels: config.notifyChannels,
+            priorityFilter: config.priorityFilter,
+            agentGroupFilter: config.agentGroupFilter,
             changedBy: userName
           }, userName, currentUser?.id);
           

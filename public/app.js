@@ -305,6 +305,18 @@ const scheduledBackupNotifyChannelList = document.getElementById('scheduledBacku
 const saveScheduledBackupNotificationConfigBtn = document.getElementById('saveScheduledBackupNotificationConfigBtn');
 const scheduledBackupNotificationMsg = document.getElementById('scheduledBackupNotificationMsg');
 
+const taskCompletionNotificationEnabled = document.getElementById('taskCompletionNotificationEnabled');
+const taskCompletionNotifyOnComplete = document.getElementById('taskCompletionNotifyOnComplete');
+const taskCompletionNotifyOnFailed = document.getElementById('taskCompletionNotifyOnFailed');
+const taskCompletionNotifyChannels = document.getElementById('taskCompletionNotifyChannels');
+const taskCompletionPriorityFilterEnabled = document.getElementById('taskCompletionPriorityFilterEnabled');
+const taskCompletionPriorityFilterOptions = document.getElementById('taskCompletionPriorityFilterOptions');
+const taskCompletionAgentGroupFilterEnabled = document.getElementById('taskCompletionAgentGroupFilterEnabled');
+const taskCompletionAgentGroupFilterOptions = document.getElementById('taskCompletionAgentGroupFilterOptions');
+const taskCompletionAgentGroupCheckboxes = document.getElementById('taskCompletionAgentGroupCheckboxes');
+const saveTaskCompletionNotificationConfigBtn = document.getElementById('saveTaskCompletionNotificationConfigBtn');
+const taskCompletionNotificationMsg = document.getElementById('taskCompletionNotificationMsg');
+
 const auditDetailModal = document.getElementById('auditDetailModal');
 const closeAuditDetailModal = document.getElementById('closeAuditDetailModal');
 const auditDetailBodyEl = document.getElementById('auditDetailBody');
@@ -5814,6 +5826,10 @@ function switchChannelTab(tab) {
   if (healthCheckTab) {
     healthCheckTab.classList.toggle('hidden', tab !== 'healthcheck');
   }
+  const taskCompletionNotificationTab = document.getElementById('taskCompletionNotificationTab');
+  if (taskCompletionNotificationTab) {
+    taskCompletionNotificationTab.classList.toggle('hidden', tab !== 'taskcompletion');
+  }
   
   if (tab === 'history') {
     loadNotificationHistory();
@@ -5825,6 +5841,8 @@ function switchChannelTab(tab) {
     loadWorkflowNotificationConfig();
   } else if (tab === 'scheduledbackup') {
     loadScheduledBackupNotificationConfig();
+  } else if (tab === 'taskcompletion') {
+    loadTaskCompletionNotificationConfig();
   } else if (tab === 'stats') {
     loadNotificationChartStats(state.notificationChartDays);
   } else if (tab === 'healthcheck') {
@@ -6757,6 +6775,158 @@ async function saveScheduledBackupNotificationConfig() {
 
 if (saveScheduledBackupNotificationConfigBtn) {
   saveScheduledBackupNotificationConfigBtn.addEventListener('click', saveScheduledBackupNotificationConfig);
+}
+
+async function loadTaskCompletionNotificationConfig() {
+  try {
+    const config = await fetchJson('/api/admin/task-completion/config');
+    state.taskCompletionNotificationConfig = config;
+    
+    if (taskCompletionNotificationEnabled) {
+      taskCompletionNotificationEnabled.checked = config.enabled === true;
+    }
+    if (taskCompletionNotifyOnComplete) {
+      taskCompletionNotifyOnComplete.checked = config.notifyOnComplete === true;
+    }
+    if (taskCompletionNotifyOnFailed) {
+      taskCompletionNotifyOnFailed.checked = config.notifyOnFailed === true;
+    }
+    
+    renderTaskCompletionNotificationChannels(config.notifyChannels || []);
+    
+    if (taskCompletionPriorityFilterEnabled) {
+      taskCompletionPriorityFilterEnabled.checked = config.priorityFilter?.enabled === true;
+      taskCompletionPriorityFilterOptions.classList.toggle('hidden', !config.priorityFilter?.enabled);
+      
+      if (config.priorityFilter?.priorities) {
+        document.querySelectorAll('.priority-checkbox').forEach(cb => {
+          cb.checked = config.priorityFilter.priorities.includes(cb.value);
+        });
+      }
+    }
+    
+    if (taskCompletionAgentGroupFilterEnabled) {
+      taskCompletionAgentGroupFilterEnabled.checked = config.agentGroupFilter?.enabled === true;
+      taskCompletionAgentGroupFilterOptions.classList.toggle('hidden', !config.agentGroupFilter?.enabled);
+    }
+    
+    loadAgentGroupsForTaskCompletionFilter(config.agentGroupFilter?.groups || []);
+  } catch (err) {
+    console.error('加载任务通知配置失败:', err);
+    if (taskCompletionNotificationMsg) {
+      taskCompletionNotificationMsg.textContent = '加载配置失败: ' + err.message;
+      taskCompletionNotificationMsg.className = 'form-msg error';
+    }
+  }
+}
+
+function renderTaskCompletionNotificationChannels(selectedChannels) {
+  if (!taskCompletionNotifyChannels) return;
+  
+  if (!state.notificationChannels || state.notificationChannels.length === 0) {
+    taskCompletionNotifyChannels.innerHTML = '<div class="empty-state muted small">暂无通知渠道，请先创建渠道</div>';
+    return;
+  }
+  
+  taskCompletionNotifyChannels.innerHTML = state.notificationChannels.map(ch => `
+    <label class="channel-checkbox">
+      <input type="checkbox" name="taskCompletionNotifyChannel" value="${ch.id}" ${selectedChannels.includes(ch.id) ? 'checked' : ''} />
+      <span>${escapeHtml(ch.name)}</span>
+    </label>
+  `).join('');
+}
+
+async function loadAgentGroupsForTaskCompletionFilter(selectedGroups) {
+  try {
+    const groups = await fetchJson('/api/agent-groups');
+    state.agentGroups = groups;
+    
+    if (taskCompletionAgentGroupCheckboxes) {
+      if (!groups || groups.length === 0) {
+        taskCompletionAgentGroupCheckboxes.innerHTML = '<div class="empty-state muted small">暂无智能体分组，请在"智能体管理"中创建分组</div>';
+        return;
+      }
+      
+      taskCompletionAgentGroupCheckboxes.innerHTML = groups.map(g => `
+        <label class="channel-checkbox">
+          <input type="checkbox" name="taskCompletionAgentGroup" value="${escapeHtml(g.name)}" ${selectedGroups.includes(g.name) ? 'checked' : ''} />
+          <span>${escapeHtml(g.name)}</span>
+        </label>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('加载智能体分组失败:', err);
+  }
+}
+
+async function saveTaskCompletionNotificationConfig() {
+  if (!saveTaskCompletionNotificationConfigBtn) return;
+  
+  saveTaskCompletionNotificationConfigBtn.disabled = true;
+  
+  try {
+    const selectedChannels = Array.from(document.querySelectorAll('input[name="taskCompletionNotifyChannel"]:checked'))
+      .map(cb => cb.value);
+    
+    const selectedPriorities = Array.from(document.querySelectorAll('.priority-checkbox:checked'))
+      .map(cb => cb.value);
+    
+    const selectedGroups = Array.from(document.querySelectorAll('input[name="taskCompletionAgentGroup"]:checked'))
+      .map(cb => cb.value);
+    
+    const config = {
+      enabled: taskCompletionNotificationEnabled?.checked === true,
+      notifyOnComplete: taskCompletionNotifyOnComplete?.checked === true,
+      notifyOnFailed: taskCompletionNotifyOnFailed?.checked === true,
+      notifyChannels: selectedChannels,
+      priorityFilter: {
+        enabled: taskCompletionPriorityFilterEnabled?.checked === true,
+        priorities: selectedPriorities
+      },
+      agentGroupFilter: {
+        enabled: taskCompletionAgentGroupFilterEnabled?.checked === true,
+        groups: selectedGroups
+      }
+    };
+    
+    await fetchJson('/api/admin/task-completion/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    
+    if (taskCompletionNotificationMsg) {
+      taskCompletionNotificationMsg.textContent = '配置保存成功';
+      taskCompletionNotificationMsg.className = 'form-msg success';
+    }
+    
+    state.taskCompletionNotificationConfig = config;
+  } catch (err) {
+    console.error('保存任务通知配置失败:', err);
+    if (taskCompletionNotificationMsg) {
+      taskCompletionNotificationMsg.textContent = '保存失败: ' + err.message;
+      taskCompletionNotificationMsg.className = 'form-msg error';
+    }
+  } finally {
+    if (saveTaskCompletionNotificationConfigBtn) {
+      saveTaskCompletionNotificationConfigBtn.disabled = false;
+    }
+  }
+}
+
+if (saveTaskCompletionNotificationConfigBtn) {
+  saveTaskCompletionNotificationConfigBtn.addEventListener('click', saveTaskCompletionNotificationConfig);
+}
+
+if (taskCompletionPriorityFilterEnabled) {
+  taskCompletionPriorityFilterEnabled.addEventListener('change', function() {
+    taskCompletionPriorityFilterOptions.classList.toggle('hidden', !this.checked);
+  });
+}
+
+if (taskCompletionAgentGroupFilterEnabled) {
+  taskCompletionAgentGroupFilterEnabled.addEventListener('change', function() {
+    taskCompletionAgentGroupFilterOptions.classList.toggle('hidden', !this.checked);
+  });
 }
 
 function showAuditDetailModal(eventId) {

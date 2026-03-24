@@ -541,6 +541,7 @@
             <button class="channel-tab" data-tab="stats">统计图表</button>
             <button class="channel-tab" data-tab="workflow">工作流通知</button>
             <button class="channel-tab" data-tab="scheduledbackup">定时备份通知</button>
+            <button class="channel-tab" data-tab="taskcompletion">任务通知</button>
             <button class="channel-tab" data-tab="healthcheck">健康检查</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
@@ -782,6 +783,82 @@
                   </div>
                 </div>
                 <div id="scheduledBackupNotificationMsg" class="form-msg"></div>
+              </div>
+            </div>
+            <div id="taskCompletionNotificationTab" class="task-completion-notification-tab hidden">
+              <div class="task-completion-notification-config">
+                <div class="task-completion-notification-header">
+                  <div class="task-completion-notification-toggle">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="taskCompletionNotificationEnabled" />
+                      <span>启用任务完成通知</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="task-completion-notification-form">
+                  <div class="task-completion-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="taskCompletionNotifyOnComplete" />
+                      <span>任务完成时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="task-completion-form-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="taskCompletionNotifyOnFailed" />
+                      <span>任务失败时发送通知</span>
+                    </label>
+                  </div>
+                  <div class="task-completion-form-row">
+                    <span class="field-label">通知渠道</span>
+                    <div id="taskCompletionNotifyChannels" class="channel-checkboxes"></div>
+                    <span class="muted small">选择要发送任务通知的渠道（需提前配置相应的 Webhook）</span>
+                  </div>
+                  <div class="task-completion-filter-section">
+                    <div class="task-completion-filter-header">
+                      <label class="toggle-label">
+                        <input type="checkbox" id="taskCompletionPriorityFilterEnabled" />
+                        <span>按任务优先级过滤</span>
+                      </label>
+                    </div>
+                    <div id="taskCompletionPriorityFilterOptions" class="priority-filter-options hidden">
+                      <span class="field-label-small">允许的通知优先级：</span>
+                      <div class="priority-checkboxes">
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="priority-checkbox" value="critical" />
+                          <span>critical</span>
+                        </label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="priority-checkbox" value="high" />
+                          <span>high</span>
+                        </label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="priority-checkbox" value="medium" />
+                          <span>medium</span>
+                        </label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" class="priority-checkbox" value="low" />
+                          <span>low</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="task-completion-filter-section">
+                    <div class="task-completion-filter-header">
+                      <label class="toggle-label">
+                        <input type="checkbox" id="taskCompletionAgentGroupFilterEnabled" />
+                        <span>按智能体分组过滤</span>
+                      </label>
+                    </div>
+                    <div id="taskCompletionAgentGroupFilterOptions" class="agent-group-filter-options hidden">
+                      <span class="field-label-small">允许的智能体分组：</span>
+                      <div id="taskCompletionAgentGroupCheckboxes" class="agent-group-checkboxes"></div>
+                    </div>
+                  </div>
+                  <div class="task-completion-form-actions">
+                    <button id="saveTaskCompletionNotificationConfigBtn" class="primary">保存配置</button>
+                  </div>
+                </div>
+                <div id="taskCompletionNotificationMsg" class="form-msg"></div>
               </div>
             </div>
             <div id="healthCheckTab" class="health-check-tab hidden">
