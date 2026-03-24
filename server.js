@@ -24,6 +24,7 @@ const cloudStorage = require('./lib/cloud-storage');
 const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
 const notificationTemplates = require('./lib/notification-templates');
+const channelHealthCheck = require('./lib/channel-health-check');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -3471,6 +3472,7 @@ async function requestHandler(req, res) {
           const currentUser = await verifyTokenFromRequest(req);
           const userName = currentUser?.name || 'Master';
           const channel = await notificationChannels.deleteChannel(channelId);
+          await channelHealthCheck.removeChannelHealth(channelId);
           await addAuditEvent('notification_channel.deleted', {
             channelId: channel.id,
             channelName: channel.name,
@@ -3702,6 +3704,154 @@ async function requestHandler(req, res) {
           const templates = await notificationTemplates.resetAllTemplates();
           await addAuditEvent('notification_template.reset_all', {}, userName, currentUser?.id);
           return json(res, 200, { templates });
+        }
+
+        if (req.method === 'GET' && adminPath === 'channel-health/config') {
+          const config = await channelHealthCheck.getConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'channel-health/config') {
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+
+          const allowedFields = ['enabled', 'intervalMinutes', 'timeoutMs', 'unhealthyThreshold', 'autoDisable'];
+          const filteredBody = {};
+          for (const key of allowedFields) {
+            if (body[key] !== undefined) {
+              filteredBody[key] = body[key];
+            }
+          }
+
+          if (filteredBody.intervalMinutes !== undefined && (filteredBody.intervalMinutes < 1 || filteredBody.intervalMinutes > 1440)) {
+            throw new Error('intervalMinutes 必须在 1-1440 之间');
+          }
+          if (filteredBody.timeoutMs !== undefined && (filteredBody.timeoutMs < 1000 || filteredBody.timeoutMs > 30000)) {
+            throw new Error('timeoutMs 必须在 1000-30000 之间');
+          }
+          if (filteredBody.unhealthyThreshold !== undefined && (filteredBody.unhealthyThreshold < 1 || filteredBody.unhealthyThreshold > 10)) {
+            throw new Error('unhealthyThreshold 必须在 1-10 之间');
+          }
+
+          const oldConfig = await channelHealthCheck.getConfig();
+          const config = await channelHealthCheck.updateConfig(filteredBody);
+          await addAuditEvent('channel_health.config_changed', {
+            oldConfig,
+            newConfig: config,
+            changedBy: userName
+          }, userName, currentUser?.id);
+          // Restart or stop periodic check based on new config
+          if (config.enabled) {
+            channelHealthCheck.startPeriodicCheck(config.intervalMinutes);
+          } else {
+            channelHealthCheck.stopPeriodicCheck();
+          }
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'POST' && adminPath === 'channel-health/check') {
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const results = await channelHealthCheck.checkAllChannels();
+
+          for (const result of results) {
+            const healthStatus = await channelHealthCheck.getHealthStatus();
+            const channelHealth = healthStatus.find(h => h.channelId === result.channelId);
+            if (channelHealth?.status === 'unhealthy') {
+              await addAuditEvent('channel_health.channel_unhealthy', {
+                channelId: result.channelId,
+                channelName: result.channelName,
+                channelType: result.channelType,
+                consecutiveFailures: result.consecutiveFailures,
+                error: result.error
+              }, userName, currentUser?.id);
+            } else if (channelHealth?.status === 'healthy' && result.status === 'healthy') {
+              await addAuditEvent('channel_health.channel_recovered', {
+                channelId: result.channelId,
+                channelName: result.channelName,
+                channelType: result.channelType
+              }, userName, currentUser?.id);
+            }
+          }
+
+          await addAuditEvent('channel_health.checked', {
+            channelCount: results.length,
+            healthyCount: results.filter(r => r.healthy).length,
+            unhealthyCount: results.filter(r => !r.healthy).length
+          }, userName, currentUser?.id);
+          return json(res, 200, { results, checkedAt: Date.now() });
+        }
+
+        if (req.method === 'POST' && adminPath.match(/^channel-health\/check\/[\w-]+$/)) {
+          const channelId = adminPath.split('/')[3];
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+
+          const channel = await notificationChannels.getChannel(channelId);
+          if (!channel) {
+            return json(res, 404, { error: '渠道不存在' });
+          }
+
+          const result = await channelHealthCheck.healthCheck(channelId);
+          const healthStatus = await channelHealthCheck.getHealthStatus();
+          const channelHealth = healthStatus.find(h => h.channelId === channelId);
+
+          if (channelHealth?.status === 'unhealthy') {
+            await addAuditEvent('channel_health.channel_unhealthy', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type,
+              consecutiveFailures: channelHealth.consecutiveFailures,
+              error: result.error
+            }, userName, currentUser?.id);
+          } else if (channelHealth?.status === 'healthy') {
+            await addAuditEvent('channel_health.channel_recovered', {
+              channelId: channel.id,
+              channelName: channel.name,
+              channelType: channel.type
+            }, userName, currentUser?.id);
+          }
+
+          await addAuditEvent('channel_health.checked', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            healthy: result.healthy,
+            latencyMs: result.latencyMs
+          }, userName, currentUser?.id);
+
+          return json(res, 200, {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            ...result,
+            status: channelHealth?.status || 'unchecked'
+          });
+        }
+
+        if (req.method === 'GET' && adminPath === 'channel-health/status') {
+          const status = await channelHealthCheck.getHealthStatus();
+          return json(res, 200, { status });
+        }
+
+        if (req.method === 'GET' && adminPath.match(/^channel-health\/history\/[\w-]+$/)) {
+          const channelId = adminPath.split('/')[3];
+          const days = parseInt(parsed.query?.days) || 7;
+
+          const channel = await notificationChannels.getChannel(channelId);
+          if (!channel) {
+            return json(res, 404, { error: '渠道不存在' });
+          }
+
+          const history = await channelHealthCheck.getHealthHistory(channelId, days);
+          return json(res, 200, {
+            channelId,
+            channelName: channel.name,
+            channelType: channel.type,
+            days,
+            history
+          });
         }
 
         if (req.method === 'GET' && adminPath === 'scheduled-backup/config') {
@@ -4888,6 +5038,12 @@ ensureData().then(async () => {
   await scheduledBackup.init();
   console.log('Scheduled backup initialized');
 
+  await channelHealthCheck.init();
+  const healthConfig = await channelHealthCheck.getConfig();
+  if (healthConfig.enabled) {
+    console.log(`Channel health check started (interval: ${healthConfig.intervalMinutes}min)`);
+  }
+
   startWorkloadAlertScheduler();
   const workloadConfig = await getWorkloadAlertsConfig();
   if (workloadConfig.enabled) {
@@ -4931,6 +5087,13 @@ ensureData().then(async () => {
   });
   serverInstance.listen(currentPort, () => {
     console.log(`Agent Orchestra running at http://127.0.0.1:${currentPort}`);
+    // Start periodic channel health check if enabled
+    channelHealthCheck.getConfig().then(healthConfig => {
+      if (healthConfig.enabled) {
+        channelHealthCheck.startPeriodicCheck(healthConfig.intervalMinutes);
+        console.log(`Channel health check started (interval: ${healthConfig.intervalMinutes}min)`);
+      }
+    }).catch(() => {});
   });
 }).catch(async (error) => {
   console.error(error);

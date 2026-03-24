@@ -541,6 +541,7 @@
             <button class="channel-tab" data-tab="stats">统计图表</button>
             <button class="channel-tab" data-tab="workflow">工作流通知</button>
             <button class="channel-tab" data-tab="scheduledbackup">定时备份通知</button>
+            <button class="channel-tab" data-tab="healthcheck">健康检查</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
             <div class="channel-form-grid">
@@ -781,6 +782,54 @@
                   </div>
                 </div>
                 <div id="scheduledBackupNotificationMsg" class="form-msg"></div>
+              </div>
+            </div>
+            <div id="healthCheckTab" class="health-check-tab hidden">
+              <div class="health-check-config">
+                <div class="health-check-header">
+                  <h3>健康检查配置</h3>
+                </div>
+                <div class="health-check-form">
+                  <div class="health-check-form-row">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="healthCheckEnabled" />
+                      <span>启用健康检查</span>
+                    </label>
+                  </div>
+                  <div class="health-check-form-row health-check-form-row-inline">
+                    <label class="health-check-field">
+                      <span class="field-label">检查间隔（分钟）</span>
+                      <input type="number" id="healthCheckInterval" min="1" max="1440" value="30" />
+                    </label>
+                    <label class="health-check-field">
+                      <span class="field-label">超时时间（毫秒）</span>
+                      <input type="number" id="healthCheckTimeout" min="1000" max="30000" step="1000" value="5000" />
+                    </label>
+                    <label class="health-check-field">
+                      <span class="field-label">不健康阈值</span>
+                      <input type="number" id="healthCheckUnhealthyThreshold" min="1" max="10" value="3" />
+                    </label>
+                  </div>
+                  <div class="health-check-form-row">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="healthCheckAutoDisable" />
+                      <span>连续失败超过阈值时自动禁用渠道</span>
+                    </label>
+                  </div>
+                  <div class="health-check-form-actions">
+                    <button id="saveHealthCheckConfigBtn" class="primary">保存配置</button>
+                  </div>
+                  <div id="healthCheckConfigMsg" class="form-msg"></div>
+                </div>
+              </div>
+              <div class="health-check-status">
+                <div class="health-check-status-header">
+                  <h3>渠道健康状态</h3>
+                  <button id="triggerAllHealthCheckBtn" class="ghost small">立即检查所有</button>
+                </div>
+                <div id="channelHealthStatusList" class="channel-health-status-list">
+                  <div class="muted small">加载中...</div>
+                </div>
               </div>
             </div>
           </div>
@@ -1634,6 +1683,26 @@
               <div class="modal-actions">
                 <button id="saveVersionTagBtn" class="primary">保存</button>
                 <button id="cancelVersionTagBtn" class="ghost">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="channelHealthHistoryModal" class="modal hidden">
+          <div class="modal-backdrop"></div>
+          <div class="modal-content modal-wide">
+            <div class="modal-header">
+              <h3 id="channelHealthHistoryTitle">渠道健康历史</h3>
+              <button class="modal-close" id="closeChannelHealthHistoryModal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="health-history-controls">
+                <button id="healthHistory7d" class="filter-btn filter-btn-active" data-days="7">7天</button>
+                <button id="healthHistory14d" class="filter-btn" data-days="14">14天</button>
+                <button id="healthHistory30d" class="filter-btn" data-days="30">30天</button>
+              </div>
+              <div id="channelHealthHistoryList" class="channel-health-history-list">
+                <div class="muted small">加载中...</div>
               </div>
             </div>
           </div>

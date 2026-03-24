@@ -5500,6 +5500,297 @@ function initChannelFormHandlers() {
 
   saveTemplatesBtn.addEventListener('click', saveTemplates);
   resetAllTemplatesBtn.addEventListener('click', resetAllTemplates);
+
+  initHealthCheckHandlers();
+}
+
+function initHealthCheckHandlers() {
+  const saveHealthCheckConfigBtn = document.getElementById('saveHealthCheckConfigBtn');
+  if (saveHealthCheckConfigBtn) {
+    saveHealthCheckConfigBtn.addEventListener('click', saveChannelHealthConfig);
+  }
+
+  const triggerAllHealthCheckBtn = document.getElementById('triggerAllHealthCheckBtn');
+  if (triggerAllHealthCheckBtn) {
+    triggerAllHealthCheckBtn.addEventListener('click', triggerHealthCheck);
+  }
+
+  const closeChannelHealthHistoryModal = document.getElementById('closeChannelHealthHistoryModal');
+  if (closeChannelHealthHistoryModal) {
+    closeChannelHealthHistoryModal.addEventListener('click', closeHealthHistoryModal);
+  }
+
+  const healthHistoryButtons = document.querySelectorAll('#healthHistory7d, #healthHistory14d, #healthHistory30d');
+  healthHistoryButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const days = parseInt(btn.dataset.days);
+      state.healthHistoryDays = days;
+      healthHistoryButtons.forEach(b => b.classList.toggle('filter-btn-active', b === btn));
+      if (state.currentHealthChannelId) {
+        loadChannelHealthHistory(state.currentHealthChannelId);
+      }
+    });
+  });
+}
+
+async function loadChannelHealthConfig() {
+  try {
+    const res = await fetchJson('/api/admin/channel-health/config');
+    const healthCheckEnabled = document.getElementById('healthCheckEnabled');
+    const healthCheckInterval = document.getElementById('healthCheckInterval');
+    const healthCheckTimeout = document.getElementById('healthCheckTimeout');
+    const healthCheckUnhealthyThreshold = document.getElementById('healthCheckUnhealthyThreshold');
+    const healthCheckAutoDisable = document.getElementById('healthCheckAutoDisable');
+
+    if (healthCheckEnabled) healthCheckEnabled.checked = res.enabled;
+    if (healthCheckInterval) healthCheckInterval.value = res.intervalMinutes || 30;
+    if (healthCheckTimeout) healthCheckTimeout.value = res.timeoutMs || 5000;
+    if (healthCheckUnhealthyThreshold) healthCheckUnhealthyThreshold.value = res.unhealthyThreshold || 3;
+    if (healthCheckAutoDisable) healthCheckAutoDisable.checked = res.autoDisable || false;
+  } catch (err) {
+    console.error('加载健康检查配置失败:', err);
+  }
+}
+
+async function saveChannelHealthConfig() {
+  const healthCheckEnabled = document.getElementById('healthCheckEnabled');
+  const healthCheckInterval = document.getElementById('healthCheckInterval');
+  const healthCheckTimeout = document.getElementById('healthCheckTimeout');
+  const healthCheckUnhealthyThreshold = document.getElementById('healthCheckUnhealthyThreshold');
+  const healthCheckAutoDisable = document.getElementById('healthCheckAutoDisable');
+  const healthCheckConfigMsg = document.getElementById('healthCheckConfigMsg');
+
+  const config = {
+    enabled: healthCheckEnabled ? healthCheckEnabled.checked : false,
+    intervalMinutes: parseInt(healthCheckInterval?.value) || 30,
+    timeoutMs: parseInt(healthCheckTimeout?.value) || 5000,
+    unhealthyThreshold: parseInt(healthCheckUnhealthyThreshold?.value) || 3,
+    autoDisable: healthCheckAutoDisable ? healthCheckAutoDisable.checked : false
+  };
+
+  try {
+    await fetchJson('/api/admin/channel-health/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    if (healthCheckConfigMsg) {
+      healthCheckConfigMsg.textContent = '配置已保存';
+      healthCheckConfigMsg.className = 'form-msg success';
+      setTimeout(() => {
+        healthCheckConfigMsg.textContent = '';
+        healthCheckConfigMsg.className = 'form-msg';
+      }, 3000);
+    }
+  } catch (err) {
+    if (healthCheckConfigMsg) {
+      healthCheckConfigMsg.textContent = '保存失败: ' + err.message;
+      healthCheckConfigMsg.className = 'form-msg error';
+    }
+  }
+}
+
+async function loadChannelHealthStatus() {
+  const channelHealthStatusList = document.getElementById('channelHealthStatusList');
+  if (!channelHealthStatusList) return;
+
+  try {
+    const res = await fetchJson('/api/admin/channel-health/status');
+    state.channelHealthStatus = res.statuses || res.status || [];
+    renderChannelHealthStatus(res.statuses || res.status || []);
+  } catch (err) {
+    console.error('加载渠道健康状态失败:', err);
+    channelHealthStatusList.innerHTML = '<div class="empty-state muted">加载失败</div>';
+  }
+}
+
+function renderChannelHealthStatus(statusList) {
+  const channelHealthStatusList = document.getElementById('channelHealthStatusList');
+  if (!channelHealthStatusList) return;
+
+  if (!statusList || statusList.length === 0) {
+    channelHealthStatusList.innerHTML = '<div class="empty-state muted">暂无渠道</div>';
+    return;
+  }
+
+  const channelTypeLabels = {
+    feishu: '飞书',
+    dingtalk: '钉钉',
+    wecom: '企业微信',
+    slack: 'Slack'
+  };
+
+  const statusLabels = {
+    healthy: '健康',
+    unhealthy: '不健康',
+    unchecked: '未检查'
+  };
+
+  const statusIcons = {
+    healthy: '✅',
+    unhealthy: '❌',
+    unchecked: '⚠️'
+  };
+
+  channelHealthStatusList.innerHTML = statusList.map(channel => {
+    const lastCheckTime = channel.lastCheck ? new Date(channel.lastCheck).toLocaleString('zh-CN') : '从未检查';
+    const latency = channel.lastLatency != null ? `${channel.lastLatency}ms` : '-';
+    const statusIcon = statusIcons[channel.status] || statusIcons.unchecked;
+    const statusText = statusLabels[channel.status] || statusLabels.unchecked;
+    const statusClass = channel.status === 'healthy' ? 'status-healthy' : (channel.status === 'unhealthy' ? 'status-unhealthy' : 'status-unchecked');
+
+    return `
+    <div class="channel-health-item" data-channel-id="${channel.channelId}">
+      <div class="channel-health-info">
+        <div class="channel-health-name">
+          <span class="health-status-icon ${statusClass}">${statusIcon}</span>
+          ${escapeHtml(channel.channelName)}
+          <span class="channel-type-badge">${channelTypeLabels[channel.channelType] || channel.channelType}</span>
+        </div>
+        <div class="channel-health-meta">
+          <span>状态: ${statusText}</span>
+          <span>延迟: ${latency}</span>
+          <span>最后检查: ${lastCheckTime}</span>
+          <span>连续失败: ${channel.consecutiveFailures || 0}</span>
+        </div>
+      </div>
+      <div class="channel-health-actions">
+        <button class="ghost small channel-health-history-btn" data-channel-id="${channel.channelId}" data-channel-name="${escapeHtml(channel.channelName)}">查看历史</button>
+        <button class="ghost small channel-health-check-btn" data-channel-id="${channel.channelId}">检查</button>
+      </div>
+    </div>
+  `}).join('');
+
+  channelHealthStatusList.querySelectorAll('.channel-health-history-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const channelId = btn.dataset.channelId;
+      const channelName = btn.dataset.channelName;
+      openHealthHistoryModal(channelId, channelName);
+    });
+  });
+
+  channelHealthStatusList.querySelectorAll('.channel-health-check-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const channelId = btn.dataset.channelId;
+      triggerSingleHealthCheck(channelId);
+    });
+  });
+}
+
+async function triggerHealthCheck() {
+  const triggerAllHealthCheckBtn = document.getElementById('triggerAllHealthCheckBtn');
+  if (triggerAllHealthCheckBtn) {
+    triggerAllHealthCheckBtn.textContent = '检查中...';
+    triggerAllHealthCheckBtn.disabled = true;
+  }
+
+  try {
+    await fetchJson('/api/admin/channel-health/check', {
+      method: 'POST'
+    });
+    await loadChannelHealthStatus();
+  } catch (err) {
+    alert('健康检查失败: ' + err.message);
+  } finally {
+    if (triggerAllHealthCheckBtn) {
+      triggerAllHealthCheckBtn.textContent = '立即检查所有';
+      triggerAllHealthCheckBtn.disabled = false;
+    }
+  }
+}
+
+async function triggerSingleHealthCheck(channelId) {
+  const btn = document.querySelector(`.channel-health-check-btn[data-channel-id="${channelId}"]`);
+  if (btn) {
+    btn.textContent = '检查中...';
+    btn.disabled = true;
+  }
+
+  try {
+    await fetchJson(`/api/admin/channel-health/check/${channelId}`, {
+      method: 'POST'
+    });
+    await loadChannelHealthStatus();
+  } catch (err) {
+    alert('健康检查失败: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.textContent = '检查';
+      btn.disabled = false;
+    }
+  }
+}
+
+function openHealthHistoryModal(channelId, channelName) {
+  state.currentHealthChannelId = channelId;
+  state.healthHistoryDays = 7;
+
+  const modal = document.getElementById('channelHealthHistoryModal');
+  const title = document.getElementById('channelHealthHistoryTitle');
+  if (title) {
+    title.textContent = `渠道健康历史 - ${channelName}`;
+  }
+
+  const healthHistoryButtons = document.querySelectorAll('#healthHistory7d, #healthHistory14d, #healthHistory30d');
+  healthHistoryButtons.forEach(btn => {
+    btn.classList.toggle('filter-btn-active', btn.dataset.days === '7');
+  });
+
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+
+  loadChannelHealthHistory(channelId);
+}
+
+function closeHealthHistoryModal() {
+  const modal = document.getElementById('channelHealthHistoryModal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+  state.currentHealthChannelId = null;
+}
+
+async function loadChannelHealthHistory(channelId) {
+  const channelHealthHistoryList = document.getElementById('channelHealthHistoryList');
+  if (!channelHealthHistoryList) return;
+
+  try {
+    const days = state.healthHistoryDays || 7;
+    const res = await fetchJson(`/api/admin/channel-health/history/${channelId}?days=${days}`);
+    renderChannelHealthHistory(res.history || []);
+  } catch (err) {
+    console.error('加载健康历史失败:', err);
+    channelHealthHistoryList.innerHTML = '<div class="empty-state muted">加载失败</div>';
+  }
+}
+
+function renderChannelHealthHistory(history) {
+  const channelHealthHistoryList = document.getElementById('channelHealthHistoryList');
+  if (!channelHealthHistoryList) return;
+
+  if (!history || history.length === 0) {
+    channelHealthHistoryList.innerHTML = '<div class="empty-state muted">暂无健康检查记录</div>';
+    return;
+  }
+
+  channelHealthHistoryList.innerHTML = history.map(item => {
+    const time = new Date(item.checkedAt || item.timestamp).toLocaleString('zh-CN');
+    const statusIcon = item.healthy ? '✅' : '❌';
+    const statusText = item.healthy ? '健康' : '不健康';
+    const statusClass = item.healthy ? 'status-healthy' : 'status-unhealthy';
+    const latency = item.latencyMs != null ? `${item.latencyMs}ms` : '-';
+    const errorMsg = item.error ? `<span class="health-error">${escapeHtml(item.error)}</span>` : '';
+
+    return `
+    <div class="health-history-item">
+      <div class="health-history-time">${time}</div>
+      <div class="health-history-status ${statusClass}">
+        <span>${statusIcon} ${statusText}</span>
+        <span>延迟: ${latency}</span>
+        ${errorMsg}
+      </div>
+    </div>
+  `}).join('');
 }
 
 function switchChannelTab(tab) {
@@ -5519,6 +5810,10 @@ function switchChannelTab(tab) {
   if (scheduledBackupNotificationTab) {
     scheduledBackupNotificationTab.classList.toggle('hidden', tab !== 'scheduledbackup');
   }
+  const healthCheckTab = document.getElementById('healthCheckTab');
+  if (healthCheckTab) {
+    healthCheckTab.classList.toggle('hidden', tab !== 'healthcheck');
+  }
   
   if (tab === 'history') {
     loadNotificationHistory();
@@ -5532,6 +5827,9 @@ function switchChannelTab(tab) {
     loadScheduledBackupNotificationConfig();
   } else if (tab === 'stats') {
     loadNotificationChartStats(state.notificationChartDays);
+  } else if (tab === 'healthcheck') {
+    loadChannelHealthConfig();
+    loadChannelHealthStatus();
   }
 }
 
