@@ -54,6 +54,8 @@ const state = {
   notificationHistoryFilters: {},
   notificationTrends: null,
   notificationTrendsDays: 7,
+  notificationChartStats: null,
+  notificationChartDays: 14,
   currentChannelTab: 'channels',
   notificationTemplates: null,
   templateVariables: [],
@@ -92,6 +94,9 @@ let agentWorkloadChartInstance = null;
 let trendDetailPopup = null;
 let usageTrendsChartInstance = null;
 let notificationTrendsChartInstance = null;
+let notificationStatsChartInstance = null;
+let channelDistChartInstance = null;
+let typeDistChartInstance = null;
 const agentsGridEl = document.getElementById('agentsGrid');
 const systemInfoEl = document.getElementById('systemInfo');
 const taskBoardEl = document.getElementById('taskBoard');
@@ -263,6 +268,19 @@ const notificationTrendsEmptyEl = document.getElementById('notificationTrendsEmp
 const notificationTrends7dBtn = document.getElementById('notificationTrends7d');
 const notificationTrends14dBtn = document.getElementById('notificationTrends14d');
 const notificationTrends30dBtn = document.getElementById('notificationTrends30d');
+const statsTabContent = document.getElementById('statsTabContent');
+const notificationStatsChart = document.getElementById('notificationStatsChart');
+const notificationStatsLoading = document.getElementById('notificationStatsLoading');
+const notificationStatsEmpty = document.getElementById('notificationStatsEmpty');
+const notificationStats7d = document.getElementById('notificationStats7d');
+const notificationStats14d = document.getElementById('notificationStats14d');
+const notificationStats30d = document.getElementById('notificationStats30d');
+const channelDistChart = document.getElementById('channelDistChart');
+const channelDistLoading = document.getElementById('channelDistLoading');
+const channelDistEmpty = document.getElementById('channelDistEmpty');
+const typeDistChart = document.getElementById('typeDistChart');
+const typeDistLoading = document.getElementById('typeDistLoading');
+const typeDistEmpty = document.getElementById('typeDistEmpty');
 const templatesTabContent = document.getElementById('templatesTabContent');
 const templatesListEl = document.getElementById('templatesList');
 const saveTemplatesBtn = document.getElementById('saveTemplatesBtn');
@@ -5250,6 +5268,8 @@ function switchChannelTab(tab) {
     loadWorkflowNotificationConfig();
   } else if (tab === 'scheduledbackup') {
     loadScheduledBackupNotificationConfig();
+  } else if (tab === 'stats') {
+    loadNotificationChartStats(state.notificationChartDays);
   }
 }
 
@@ -5419,6 +5439,353 @@ function renderNotificationTrendsChart() {
           ticks: {
             color: '#6f81a8',
             stepSize: 1
+          }
+        }
+      }
+    }
+  });
+}
+
+async function loadNotificationChartStats(days = 14) {
+  notificationStatsLoading.classList.remove('hidden');
+  notificationStatsEmpty.classList.add('hidden');
+  notificationStatsChart.style.display = 'none';
+  channelDistLoading.classList.remove('hidden');
+  channelDistEmpty.classList.add('hidden');
+  channelDistChart.style.display = 'none';
+  typeDistLoading.classList.remove('hidden');
+  typeDistEmpty.classList.add('hidden');
+  typeDistChart.style.display = 'none';
+
+  state.notificationChartDays = days;
+
+  document.querySelectorAll('#statsTabContent .filter-btn').forEach(btn => {
+    btn.classList.toggle('filter-btn-active', parseInt(btn.dataset.days) === days);
+  });
+
+  try {
+    const res = await fetchJson(`/api/admin/notification-history/chart-stats?days=${days}`);
+    state.notificationChartStats = res;
+    renderStatsSummary(res.summary);
+    renderNotificationStatsChart(res.trends, days);
+    renderChannelDistributionChart(res.channelDistribution);
+    renderNotificationTypeDistributionChart(res.notificationTypeDistribution);
+  } catch (err) {
+    state.notificationChartStats = null;
+    notificationStatsEmpty.textContent = '加载失败';
+    notificationStatsEmpty.classList.remove('hidden');
+    channelDistEmpty.textContent = '加载失败';
+    channelDistEmpty.classList.remove('hidden');
+    typeDistEmpty.textContent = '加载失败';
+    typeDistEmpty.classList.remove('hidden');
+  }
+}
+
+function renderStatsSummary(summary) {
+  document.getElementById('statsTotalCount').textContent = summary?.total || 0;
+  document.getElementById('statsSuccessRate').textContent = summary?.successRate ? `${summary.successRate}%` : '0%';
+  document.getElementById('statsTodayCount').textContent = summary?.todayTotal || 0;
+  document.getElementById('statsTodaySuccess').textContent = summary?.todaySent || 0;
+  document.getElementById('statsTodayFailed').textContent = summary?.todayFailed || 0;
+  document.getElementById('statsSuccessCount').textContent = summary?.sent || 0;
+  document.getElementById('statsSuccessPercent').textContent = summary?.total > 0 ? `${Math.round((summary.sent / summary.total) * 100)}%` : '0%';
+  document.getElementById('statsFailedCount').textContent = summary?.failed || 0;
+  document.getElementById('statsFailedPercent').textContent = summary?.total > 0 ? `${Math.round((summary.failed / summary.total) * 100)}%` : '0%';
+}
+
+function renderNotificationStatsChart(trends, days) {
+  notificationStatsLoading.classList.add('hidden');
+
+  if (!trends || trends.length === 0) {
+    notificationStatsEmpty.classList.remove('hidden');
+    notificationStatsChart.style.display = 'none';
+    if (notificationStatsChartInstance) {
+      notificationStatsChartInstance.destroy();
+      notificationStatsChartInstance = null;
+    }
+    return;
+  }
+
+  notificationStatsEmpty.classList.add('hidden');
+  notificationStatsChart.style.display = 'block';
+
+  const labels = trends.map(t => {
+    const d = new Date(t.date);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  });
+
+  const totalData = trends.map(t => t.total);
+  const sentData = trends.map(t => t.sent);
+  const failedData = trends.map(t => t.failed);
+
+  if (notificationStatsChartInstance) {
+    notificationStatsChartInstance.destroy();
+  }
+
+  const ctx = notificationStatsChart.getContext('2d');
+  notificationStatsChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '总发送',
+          data: totalData,
+          borderColor: '#7aa2ff',
+          backgroundColor: 'rgba(122, 162, 255, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        },
+        {
+          label: '发送成功',
+          data: sentData,
+          borderColor: '#44d19f',
+          backgroundColor: 'rgba(68, 209, 159, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        },
+        {
+          label: '发送失败',
+          data: failedData,
+          borderColor: '#ff718d',
+          backgroundColor: 'rgba(255, 113, 141, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 16
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderChannelDistributionChart(channelDistribution) {
+  channelDistLoading.classList.add('hidden');
+
+  if (!channelDistribution || channelDistribution.length === 0) {
+    channelDistEmpty.classList.remove('hidden');
+    channelDistChart.style.display = 'none';
+    if (channelDistChartInstance) {
+      channelDistChartInstance.destroy();
+      channelDistChartInstance = null;
+    }
+    return;
+  }
+
+  channelDistEmpty.classList.add('hidden');
+  channelDistChart.style.display = 'block';
+
+  const channelTypeLabels = {
+    feishu: '飞书',
+    dingtalk: '钉钉',
+    wecom: '企业微信',
+    slack: 'Slack',
+    unknown: '未知'
+  };
+
+  const labels = channelDistribution.map(c => channelTypeLabels[c.channelType] || c.channelType);
+  const data = channelDistribution.map(c => c.total);
+  const colors = ['#7aa2ff', '#44d19f', '#ff718d', '#ffc857', '#9d65c9'];
+
+  if (channelDistChartInstance) {
+    channelDistChartInstance.destroy();
+  }
+
+  const ctx = channelDistChart.getContext('2d');
+  channelDistChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: colors.slice(0, data.length),
+        borderColor: '#1a2332',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 12,
+            font: {
+              size: 11
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: {
+            label: function(context) {
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? ((context.raw / total) * 100).toFixed(1) : 0;
+              return `${context.label}: ${context.raw} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderNotificationTypeDistributionChart(typeDistribution) {
+  typeDistLoading.classList.add('hidden');
+
+  if (!typeDistribution || typeDistribution.length === 0) {
+    typeDistEmpty.classList.remove('hidden');
+    typeDistChart.style.display = 'none';
+    if (typeDistChartInstance) {
+      typeDistChartInstance.destroy();
+      typeDistChartInstance = null;
+    }
+    return;
+  }
+
+  typeDistEmpty.classList.add('hidden');
+  typeDistChart.style.display = 'block';
+
+  const labels = typeDistribution.map(t => t.name || t.type);
+  const successData = typeDistribution.map(t => t.sent);
+  const failedData = typeDistribution.map(t => t.failed);
+  const colors = ['#44d19f', '#ff718d', '#7aa2ff', '#ffc857', '#9d65c9', '#64b5f6', '#ffb74d', '#e57373', '#81c784', '#ba68c8'];
+
+  if (typeDistChartInstance) {
+    typeDistChartInstance.destroy();
+  }
+
+  const ctx = typeDistChart.getContext('2d');
+  typeDistChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '成功',
+          data: successData,
+          backgroundColor: '#44d19f',
+          borderRadius: 4
+        },
+        {
+          label: '失败',
+          data: failedData,
+          backgroundColor: '#ff718d',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#95a5c6',
+            usePointStyle: true,
+            padding: 12,
+            font: {
+              size: 11
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(11, 20, 36, 0.95)',
+          titleColor: '#eff4ff',
+          bodyColor: '#c5d0e8',
+          borderColor: 'rgba(144, 168, 220, 0.24)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8
+        }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(144, 168, 220, 0.08)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#6f81a8',
+            stepSize: 1
+          }
+        },
+        y: {
+          stacked: true,
+          grid: {
+            display: false
+          },
+          ticks: {
+            color: '#95a5c6',
+            font: {
+              size: 10
+            }
           }
         }
       }
@@ -7922,6 +8289,28 @@ if (notificationTrends14dBtn) {
 }
 if (notificationTrends30dBtn) {
   notificationTrends30dBtn.addEventListener('click', () => loadNotificationTrends(30));
+}
+
+if (notificationStats7d) {
+  notificationStats7d.addEventListener('click', () => {
+    if (state.currentChannelTab === 'stats') {
+      loadNotificationChartStats(7);
+    }
+  });
+}
+if (notificationStats14d) {
+  notificationStats14d.addEventListener('click', () => {
+    if (state.currentChannelTab === 'stats') {
+      loadNotificationChartStats(14);
+    }
+  });
+}
+if (notificationStats30d) {
+  notificationStats30d.addEventListener('click', () => {
+    if (state.currentChannelTab === 'stats') {
+      loadNotificationChartStats(30);
+    }
+  });
 }
 
 loadTrends();

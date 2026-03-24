@@ -3572,6 +3572,38 @@ async function requestHandler(req, res) {
           return json(res, 200, trends);
         }
 
+        if (req.method === 'GET' && adminPath === 'notification-history/chart-stats') {
+          const days = parseInt(parsed.query?.days) || 14;
+          if (![7, 14, 30].includes(days)) {
+            return json(res, 400, { error: '无效的天数，请使用 7、14 或 30' });
+          }
+          const [statistics, trends] = await Promise.all([
+            notificationHistory.getStatistics(),
+            notificationHistory.getTrends(days)
+          ]);
+          const channelDistribution = Object.entries(statistics.byChannelType || {}).map(([channelType, stats]) => ({
+            channelType,
+            name: notificationHistory.NOTIFICATION_TYPE_NAMES[channelType] || channelType,
+            ...stats
+          }));
+          const notificationTypeStats = statistics.byNotificationType || [];
+          return json(res, 200, {
+            summary: {
+              total: statistics.total,
+              sent: statistics.sent,
+              failed: statistics.failed,
+              successRate: statistics.successRate,
+              todayTotal: statistics.today.total,
+              todaySent: statistics.today.sent,
+              todayFailed: statistics.today.failed
+            },
+            channelDistribution,
+            notificationTypeDistribution: notificationTypeStats,
+            trends: trends.trends,
+            days
+          });
+        }
+
         if (req.method === 'GET' && adminPath === 'notification-templates') {
           const templates = await notificationTemplates.getTemplates();
           const variables = notificationTemplates.TEMPLATE_VARIABLES;

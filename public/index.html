@@ -526,6 +526,7 @@
             <button class="channel-tab active" data-tab="channels">渠道列表</button>
             <button class="channel-tab" data-tab="templates">消息模板</button>
             <button class="channel-tab" data-tab="history">发送历史</button>
+            <button class="channel-tab" data-tab="stats">统计图表</button>
             <button class="channel-tab" data-tab="workflow">工作流通知</button>
             <button class="channel-tab" data-tab="scheduledbackup">定时备份通知</button>
           </div>
@@ -619,6 +620,82 @@
               </div>
               <div id="notificationHistoryList" class="notification-history-list"></div>
               <div id="historyPagination" class="pagination"></div>
+            </div>
+            <div id="statsTabContent" class="stats-tab-content hidden">
+              <div class="stats-summary-cards">
+                <div class="stats-card">
+                  <div class="stats-card-label">总发送量</div>
+                  <div class="stats-card-value" id="statsTotalCount">0</div>
+                  <div class="stats-card-sub">成功率 <span id="statsSuccessRate">0%</span></div>
+                </div>
+                <div class="stats-card">
+                  <div class="stats-card-label">今日发送</div>
+                  <div class="stats-card-value" id="statsTodayCount">0</div>
+                  <div class="stats-card-sub">成功 <span id="statsTodaySuccess">0</span> / 失败 <span id="statsTodayFailed">0</span></div>
+                </div>
+                <div class="stats-card stats-card-success">
+                  <div class="stats-card-label">成功</div>
+                  <div class="stats-card-value" id="statsSuccessCount">0</div>
+                  <div class="stats-card-sub">占比 <span id="statsSuccessPercent">0%</span></div>
+                </div>
+                <div class="stats-card stats-card-danger">
+                  <div class="stats-card-label">失败</div>
+                  <div class="stats-card-value" id="statsFailedCount">0</div>
+                  <div class="stats-card-sub">占比 <span id="statsFailedPercent">0%</span></div>
+                </div>
+              </div>
+              <div class="stats-trends-section">
+                <div class="stats-section-header">
+                  <h3>通知发送趋势</h3>
+                  <div class="stats-controls">
+                    <button id="notificationStats7d" class="filter-btn filter-btn-active" data-days="7">7天</button>
+                    <button id="notificationStats14d" class="filter-btn" data-days="14">14天</button>
+                    <button id="notificationStats30d" class="filter-btn" data-days="30">30天</button>
+                  </div>
+                </div>
+                <div class="stats-chart-wrapper">
+                  <div id="notificationStatsLoading" class="trends-loading hidden">
+                    <div class="loading-spinner"></div>
+                    <span>加载中...</span>
+                  </div>
+                  <div id="notificationStatsEmpty" class="trends-empty hidden">
+                    <span class="muted">暂无通知数据</span>
+                  </div>
+                  <canvas id="notificationStatsChart"></canvas>
+                </div>
+              </div>
+              <div class="stats-distribution-row">
+                <div class="stats-distribution-section">
+                  <div class="stats-section-header">
+                    <h3>渠道分布</h3>
+                  </div>
+                  <div class="stats-chart-wrapper stats-chart-small">
+                    <div id="channelDistLoading" class="trends-loading hidden">
+                      <div class="loading-spinner"></div>
+                      <span>加载中...</span>
+                    </div>
+                    <div id="channelDistEmpty" class="trends-empty hidden">
+                      <span class="muted">暂无数据</span>
+                    </div>
+                    <canvas id="channelDistChart"></canvas>
+                  </div>
+                </div>
+                <div class="stats-distribution-section">
+                  <div class="stats-section-header">
+                    <h3>通知类型分布</h3>
+                  </div>
+                  <div class="stats-chart-wrapper stats-chart-small">
+                    <div id="typeDistLoading" class="trends-loading hidden">
+                      <div class="loading-spinner"></div>
+                      <span>加载中...</span>
+                    </div>
+                    <div id="typeDistEmpty" class="trends-empty hidden">
+                      <span class="muted">暂无数据</span>
+                    </div>
+                    <canvas id="typeDistChart"></canvas>
+                  </div>
+                </div>
+              </div>
             </div>
             <div id="workflowNotificationTab" class="workflow-notification-tab hidden">
               <div class="workflow-notification-config">
