@@ -1502,8 +1502,17 @@ async function requestHandler(req, res) {
         const combination = await agentCombinations.getAgentCombination(combinationId);
         if (!combination) throw new Error('组合不存在');
         const days = parseInt(parsed.query?.days) || 14;
-        const trends = await agentCombinations.getUsageTrends(combinationId, days);
-        return json(res, 200, { combination, trends });
+        const validDays = [7, 14, 30].includes(days) ? days : 14;
+        const trendsData = await agentCombinations.getUsageTrends(combinationId, validDays);
+        const formattedTrends = trendsData.trends.map(t => ({
+          date: t.date,
+          usageCount: t.count
+        }));
+        return json(res, 200, {
+          combinationId,
+          combinationName: combination.name,
+          trends: formattedTrends
+        });
       }
       if (req.method === 'GET' && pathname === '/api/agent-combinations/recommendations') {
         const forceRefresh = parsed.query?.refresh === 'true';

@@ -199,6 +199,7 @@ const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
 const usageTrendsHeader = document.getElementById('usageTrendsHeader');
 const usageTrends7dBtn = document.getElementById('usageTrends7d');
 const usageTrends14dBtn = document.getElementById('usageTrends14d');
+const usageTrends30dBtn = document.getElementById('usageTrends30d');
 const usageTrendsLoadingEl = document.getElementById('usageTrendsLoading');
 const usageTrendsEmptyEl = document.getElementById('usageTrendsEmpty');
 const usageTrendsChartEl = document.getElementById('usageTrendsChart');
@@ -4068,6 +4069,7 @@ async function openUsageTrendsModal(combinationId) {
 
   usageTrends14dBtn.classList.add('filter-btn-active');
   usageTrends7dBtn.classList.remove('filter-btn-active');
+  usageTrends30dBtn.classList.remove('filter-btn-active');
 
   await loadUsageTrends(combinationId, 14);
   usageTrendsModal.classList.remove('hidden');
@@ -4080,7 +4082,7 @@ async function loadUsageTrends(combinationId, days) {
 
   try {
     const res = await fetchJson(`/api/agent-combinations/${combinationId}/usage-trends?days=${days}`);
-    state.usageTrends = res.trends?.trends || [];
+    state.usageTrends = res.trends || [];
     state.usageTrendsDays = days;
     renderUsageTrends();
   } catch (err) {
@@ -4111,7 +4113,7 @@ function renderUsageTrends() {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   });
 
-  const data = state.usageTrends.map(t => t.count);
+  const data = state.usageTrends.map(t => t.usageCount);
   const totalUsage = data.reduce((sum, val) => sum + val, 0);
   const avgUsage = totalUsage > 0 ? (totalUsage / data.length).toFixed(1) : 0;
   const maxUsage = Math.max(...data, 0);
@@ -4390,13 +4392,22 @@ usageTrendsModal.querySelector('.modal-backdrop').addEventListener('click', () =
 usageTrends7dBtn.addEventListener('click', async () => {
   usageTrends7dBtn.classList.add('filter-btn-active');
   usageTrends14dBtn.classList.remove('filter-btn-active');
+  usageTrends30dBtn.classList.remove('filter-btn-active');
   await loadUsageTrends(state.usageTrendsCombinationId, 7);
 });
 
 usageTrends14dBtn.addEventListener('click', async () => {
   usageTrends14dBtn.classList.add('filter-btn-active');
   usageTrends7dBtn.classList.remove('filter-btn-active');
+  usageTrends30dBtn.classList.remove('filter-btn-active');
   await loadUsageTrends(state.usageTrendsCombinationId, 14);
+});
+
+usageTrends30dBtn.addEventListener('click', async () => {
+  usageTrends30dBtn.classList.add('filter-btn-active');
+  usageTrends7dBtn.classList.remove('filter-btn-active');
+  usageTrends14dBtn.classList.remove('filter-btn-active');
+  await loadUsageTrends(state.usageTrendsCombinationId, 30);
 });
 
 cancelSelectCombinationBtn.addEventListener('click', () => {
