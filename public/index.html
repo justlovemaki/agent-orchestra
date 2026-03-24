@@ -178,6 +178,7 @@
           </div>
           <div class="combination-tabs">
             <button class="combination-tab active" data-tab="combinations">我的组合</button>
+            <button class="combination-tab" data-tab="favorites">我的收藏</button>
             <button class="combination-tab" data-tab="popular">热门组合</button>
             <button class="combination-tab" data-tab="recommendations">智能推荐</button>
             <select id="combinationSortSelect" class="combination-sort-select">
@@ -214,6 +215,17 @@
             </div>
           </div>
           <div id="combinationList" class="combination-list"></div>
+          <div id="favoritesCombinationsContainer" class="favorites-combinations-container hidden">
+            <div class="favorites-combinations-header">
+              <p class="muted">您收藏的 Agent 组合，方便快速访问。</p>
+            </div>
+            <div id="favoritesCombinationsList" class="combination-list"></div>
+            <div id="favoritesCombinationsEmpty" class="favorites-combinations-empty hidden">
+              <div class="empty-icon">❤️</div>
+              <p>暂无收藏组合</p>
+              <p class="muted small">点击组合卡片上的心形图标即可收藏</p>
+            </div>
+          </div>
           <div id="popularCombinationsContainer" class="popular-combinations-container hidden">
             <div class="popular-combinations-header">
               <p class="muted">团队中使用频率最高的组合，按使用次数排序。</p>

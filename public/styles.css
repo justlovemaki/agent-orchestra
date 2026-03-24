@@ -3637,6 +3637,48 @@ button.ghost.tiny {
   gap: 12px;
 }
 
+.favorite-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+  min-height: auto;
+  min-width: auto;
+  width: 28px;
+  height: 28px;
+}
+
+.favorite-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.15);
+}
+
+.favorite-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--muted-secondary);
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+
+.favorite-icon.favorited,
+.favorite-btn.favorited .favorite-icon {
+  color: #f5c66a;
+}
+
+.favorite-btn:hover .favorite-icon {
+  color: var(--text);
+  transform: scale(1.1);
+}
+
+.favorite-btn.favorited:hover .favorite-icon {
+  color: #ff718d;
+}
+
 .combination-color {
   width: 12px;
   height: 12px;
@@ -3707,6 +3749,27 @@ button.ghost.tiny {
 }
 
 .popular-combinations-empty .empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.favorites-combinations-container {
+  margin-top: 12px;
+}
+
+.favorites-combinations-header {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+}
+
+.favorites-combinations-empty {
+  text-align: center;
+  padding: 24px;
+}
+
+.favorites-combinations-empty .empty-icon {
   font-size: 32px;
   margin-bottom: 8px;
 }

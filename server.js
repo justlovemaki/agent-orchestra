@@ -1320,6 +1320,9 @@ async function requestHandler(req, res) {
         if (scope === 'all') {
           combinations = combinations.filter(c => c.sharedWithTeam === true);
         }
+        if (scope === 'favorites') {
+          combinations = combinations.filter(c => c.isFavorite === true);
+        }
         return json(res, 200, { combinations });
       }
       if (req.method === 'POST' && pathname === '/api/agent-combinations') {
@@ -1365,6 +1368,21 @@ async function requestHandler(req, res) {
           combinationId: updated.id,
           combinationName: updated.name,
           sharedWithTeam: updated.sharedWithTeam
+        }, userName, currentUser?.id);
+        return json(res, 200, { combination: updated });
+      }
+      if (req.method === 'PUT' && pathname.startsWith('/api/agent-combinations/') && pathname.match(/\/favorite$/)) {
+        const combinationId = pathname.split('/')[3];
+        const currentUser = await verifyTokenFromRequest(req);
+        const userName = currentUser?.name || 'Master';
+        const combination = await agentCombinations.getAgentCombination(combinationId);
+        if (!combination) throw new Error('组合不存在');
+        const updated = await agentCombinations.toggleFavorite(combinationId);
+        if (!updated) throw new Error('组合不存在');
+        const auditEventType = updated.isFavorite ? 'agent_combination.favorited' : 'agent_combination.unfavorited';
+        await addAuditEvent(auditEventType, {
+          combinationId: updated.id,
+          combinationName: updated.name
         }, userName, currentUser?.id);
         return json(res, 200, { combination: updated });
       }

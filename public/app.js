@@ -190,6 +190,9 @@ const popularCombinationsContainer = document.getElementById('popularCombination
 const popularCombinationsList = document.getElementById('popularCombinationsList');
 const popularCombinationsEmpty = document.getElementById('popularCombinationsEmpty');
 const combinationSortSelect = document.getElementById('combinationSortSelect');
+const favoritesCombinationsContainer = document.getElementById('favoritesCombinationsContainer');
+const favoritesCombinationsList = document.getElementById('favoritesCombinationsList');
+const favoritesCombinationsEmpty = document.getElementById('favoritesCombinationsEmpty');
 
 const usageTrendsModal = document.getElementById('usageTrendsModal');
 const closeUsageTrendsModal = document.getElementById('closeUsageTrendsModal');
@@ -3457,6 +3460,8 @@ combinationTabs.forEach(tab => {
       loadRecommendations();
     } else if (tabName === 'popular') {
       loadPopularCombinations().then(() => renderPopularCombinations());
+    } else if (tabName === 'favorites') {
+      loadFavoriteCombinations();
     } else {
       renderCombinations(state.combinationSortBy);
     }
@@ -3487,16 +3492,25 @@ function updateCombinationTabs() {
     combinationListEl.classList.add('hidden');
     combinationForm.classList.add('hidden');
     popularCombinationsContainer.classList.add('hidden');
+    favoritesCombinationsContainer.classList.add('hidden');
     recommendationsContainer.classList.remove('hidden');
   } else if (state.currentCombinationTab === 'popular') {
     combinationListEl.classList.add('hidden');
     combinationForm.classList.add('hidden');
     recommendationsContainer.classList.add('hidden');
+    favoritesCombinationsContainer.classList.add('hidden');
     popularCombinationsContainer.classList.remove('hidden');
+  } else if (state.currentCombinationTab === 'favorites') {
+    combinationListEl.classList.add('hidden');
+    combinationForm.classList.add('hidden');
+    recommendationsContainer.classList.add('hidden');
+    popularCombinationsContainer.classList.add('hidden');
+    favoritesCombinationsContainer.classList.remove('hidden');
   } else {
     combinationListEl.classList.remove('hidden');
     recommendationsContainer.classList.add('hidden');
     popularCombinationsContainer.classList.add('hidden');
+    favoritesCombinationsContainer.classList.add('hidden');
     combinationForm.classList.add('hidden');
   }
 }
@@ -3771,9 +3785,16 @@ function renderCombinations(sortBy = 'recent') {
     const lastUsedAt = formatUsageTime(combination.lastUsedAt);
     const isShared = combination.sharedWithTeam === true;
     const shareBadge = isShared ? '<span class="combination-share-badge">团队共享</span>' : '';
+    const isFavorite = combination.isFavorite === true;
+    const favoriteIcon = isFavorite 
+      ? '<svg class="favorite-icon favorited" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'
+      : '<svg class="favorite-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
     return `
       <div class="combination-item" data-combination-id="${combination.id}">
         <div class="combination-header">
+          <button class="favorite-btn" data-combination-id="${combination.id}" title="${isFavorite ? '取消收藏' : '收藏组合'}" aria-label="${isFavorite ? '取消收藏' : '收藏组合'}">
+            ${favoriteIcon}
+          </button>
           <div class="combination-color" style="background-color: ${combination.color || '#6b7280'}"></div>
           <div class="combination-info">
             <div class="combination-name">${escapeHtml(combination.name)} ${shareBadge}</div>
@@ -3848,6 +3869,21 @@ function renderCombinations(sortBy = 'recent') {
       }
     });
   });
+
+  combinationListEl.querySelectorAll('.favorite-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      try {
+        await fetchJson(`/api/agent-combinations/${combinationId}/favorite`, { method: 'PUT' });
+        await loadCombinations();
+        renderCombinations(state.combinationSortBy);
+        renderFavoriteCombinations();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
 
 function renderPopularCombinations() {
@@ -3911,6 +3947,108 @@ function renderPopularCombinations() {
         });
         combinationPanel.classList.add('hidden');
         document.querySelector('.composer-card')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+}
+
+let favoriteCombinations = [];
+
+async function loadFavoriteCombinations() {
+  try {
+    const res = await fetchJson('/api/agent-combinations?scope=favorites');
+    favoriteCombinations = res.combinations || [];
+    renderFavoriteCombinations();
+  } catch (err) {
+    favoriteCombinations = [];
+    renderFavoriteCombinations();
+  }
+}
+
+function renderFavoriteCombinations() {
+  if (!favoriteCombinations || favoriteCombinations.length === 0) {
+    favoritesCombinationsList.innerHTML = '';
+    favoritesCombinationsEmpty.classList.remove('hidden');
+    return;
+  }
+  
+  favoritesCombinationsEmpty.classList.add('hidden');
+  
+  const agents = state.overview?.agents || [];
+  favoritesCombinationsList.innerHTML = favoriteCombinations.map(combination => {
+    const agentCount = combination.agentIds?.length || 0;
+    const agentNames = (combination.agentIds || []).slice(0, 3).map(id => {
+      const agent = agents.find(a => a.id === id);
+      return agent ? escapeHtml(agent.name) : id;
+    }).join(', ');
+    const moreText = agentCount > 3 ? ` 等${agentCount}个` : '';
+    const usedCount = combination.usedCount || 0;
+    const lastUsedAt = formatUsageTime(combination.lastUsedAt);
+    const isShared = combination.sharedWithTeam === true;
+    const shareBadge = isShared ? '<span class="combination-share-badge">团队共享</span>' : '';
+    const favoriteIcon = '<svg class="favorite-icon favorited" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+    return `
+      <div class="combination-item" data-combination-id="${combination.id}">
+        <div class="combination-header">
+          <button class="favorite-btn favorited" data-combination-id="${combination.id}" title="取消收藏" aria-label="取消收藏">
+            ${favoriteIcon}
+          </button>
+          <div class="combination-color" style="background-color: ${combination.color || '#6b7280'}"></div>
+          <div class="combination-info">
+            <div class="combination-name">${escapeHtml(combination.name)} ${shareBadge}</div>
+            <div class="combination-desc">${escapeHtml(combination.description || '暂无描述')}</div>
+            <div class="combination-meta">
+              <span>${agentCount} 个 Agent</span>
+              <span class="combination-agents">${agentNames}${moreText}</span>
+            </div>
+            <div class="combination-usage">
+              <span class="combination-used-count">使用 ${usedCount} 次</span>
+              <span class="combination-last-used">最后使用: ${lastUsedAt}</span>
+            </div>
+          </div>
+          <div class="combination-actions">
+            <button class="ghost tiny view-usage-trends-btn" data-combination-id="${combination.id}" title="查看使用趋势">趋势</button>
+            <button class="ghost tiny use-combination-btn" data-combination-id="${combination.id}" title="使用组合">使用</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  favoritesCombinationsList.querySelectorAll('.view-usage-trends-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      openUsageTrendsModal(combinationId);
+    });
+  });
+
+  favoritesCombinationsList.querySelectorAll('.use-combination-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      const combination = favoriteCombinations.find(c => c.id === combinationId);
+      if (combination) {
+        const agentCheckboxes = agentCheckboxesEl.querySelectorAll('input[type="checkbox"]');
+        agentCheckboxes.forEach(cb => {
+          cb.checked = combination.agentIds && combination.agentIds.includes(cb.value);
+        });
+        combinationPanel.classList.add('hidden');
+        document.querySelector('.composer-card')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  favoritesCombinationsList.querySelectorAll('.favorite-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const combinationId = btn.dataset.combinationId;
+      try {
+        await fetchJson(`/api/agent-combinations/${combinationId}/favorite`, { method: 'PUT' });
+        await loadCombinations();
+        await loadFavoriteCombinations();
+      } catch (err) {
+        alert(err.message);
       }
     });
   });
