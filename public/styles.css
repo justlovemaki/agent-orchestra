@@ -5714,3 +5714,196 @@ button.ghost.tiny {
     gap: 4px;
   }
 }
+
+.quiet-hours-tab {
+  padding: 16px;
+}
+
+.quiet-hours-header h3,
+.quiet-hours-status h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quiet-hours-config,
+.quiet-hours-status {
+  margin-bottom: 24px;
+}
+
+.quiet-hours-form-row {
+  margin-bottom: 16px;
+}
+
+.quiet-hours-time-range {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.quiet-hours-time-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quiet-hours-time-field input {
+  padding: 8px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background: #1f2937;
+  color: #f3f4f6;
+  font-size: 14px;
+}
+
+.quiet-hours-timezone {
+  margin-bottom: 16px;
+}
+
+.quiet-hours-timezone select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background: #1f2937;
+  color: #f3f4f6;
+  font-size: 14px;
+}
+
+.quiet-hours-days {
+  margin-bottom: 16px;
+}
+
+.quiet-hours-days .field-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.quiet-hours-days-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.quiet-hours-queue-mode {
+  margin-bottom: 16px;
+}
+
+.quiet-hours-queue-mode .field-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.queue-mode-options {
+  display: flex;
+  gap: 16px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.radio-label input[type="radio"] {
+  width: 16px;
+  height: 16px;
+}
+
+.quiet-hours-form-actions {
+  margin-top: 20px;
+}
+
+.quiet-hours-status-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiet-hours-status-row {
+  display: flex;
+  gap: 8px;
+}
+
+.quiet-hours-status-label {
+  color: #9ca3af;
+  min-width: 80px;
+}
+
+.quiet-hours-status-value {
+  font-weight: 500;
+}
+
+.quiet-hours-status-value.in-quiet {
+  color: #f59e0b;
+}
+
+.quiet-hours-status-value.not-in-quiet {
+  color: #10b981;
+}
+
+.quiet-hours-queue-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #374151;
+}
+
+.quiet-hours-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.quiet-hours-queue-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quiet-hours-queue-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.quiet-hours-queue-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.quiet-hours-queue-item {
+  padding: 12px;
+  background: #1f2937;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.quiet-hours-queue-item-time {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.quiet-hours-queue-item-message {
+  font-size: 14px;
+  color: #f3f4f6;
+  word-break: break-all;
+}
+
+@media (max-width: 768px) {
+  .quiet-hours-time-range {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .quiet-hours-days-checkboxes {
+    flex-wrap: wrap;
+  }
+  
+  .queue-mode-options {
+    flex-direction: column;
+    gap: 8px;
+  }
+}

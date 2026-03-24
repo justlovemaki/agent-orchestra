@@ -5514,6 +5514,7 @@ function initChannelFormHandlers() {
   resetAllTemplatesBtn.addEventListener('click', resetAllTemplates);
 
   initHealthCheckHandlers();
+  initQuietHoursHandlers();
 }
 
 function initHealthCheckHandlers() {
@@ -5805,6 +5806,219 @@ function renderChannelHealthHistory(history) {
   `}).join('');
 }
 
+// Quiet Hours Functions
+async function loadQuietHoursConfig() {
+  try {
+    const res = await fetchJson('/api/admin/quiet-hours/config');
+    const config = res;
+    
+    const quietHoursEnabled = document.getElementById('quietHoursEnabled');
+    const quietHoursStartTime = document.getElementById('quietHoursStartTime');
+    const quietHoursEndTime = document.getElementById('quietHoursEndTime');
+    const quietHoursTimezone = document.getElementById('quietHoursTimezone');
+    const quietHoursAllowCritical = document.getElementById('quietHoursAllowCritical');
+    
+    if (quietHoursEnabled) quietHoursEnabled.checked = config.enabled;
+    if (quietHoursStartTime) quietHoursStartTime.value = config.schedule?.startTime || '22:00';
+    if (quietHoursEndTime) quietHoursEndTime.value = config.schedule?.endTime || '08:00';
+    if (quietHoursTimezone) quietHoursTimezone.value = config.schedule?.timezone || 'Asia/Shanghai';
+    if (quietHoursAllowCritical) quietHoursAllowCritical.checked = config.allowCritical !== false;
+    
+    const dayCheckboxes = document.querySelectorAll('.quiet-hours-day-checkbox');
+    const daysOfWeek = config.daysOfWeek || [0, 1, 2, 3, 4, 5, 6];
+    dayCheckboxes.forEach(cb => {
+      cb.checked = daysOfWeek.includes(parseInt(cb.value));
+    });
+    
+    const queueModeRadios = document.querySelectorAll('input[name="queueMode"]');
+    queueModeRadios.forEach(radio => {
+      radio.checked = radio.value === (config.queueMode || 'discard');
+    });
+  } catch (err) {
+    console.error('加载免打扰配置失败:', err);
+  }
+}
+
+async function loadQuietHoursStatus() {
+  try {
+    const res = await fetchJson('/api/admin/quiet-hours/status');
+    const status = res;
+    
+    const currentStatusEl = document.getElementById('quietHoursCurrentStatus');
+    const nextStartEl = document.getElementById('quietHoursNextStart');
+    const nextEndEl = document.getElementById('quietHoursNextEnd');
+    const queueCountEl = document.getElementById('quietHoursQueueCount');
+    const queueSection = document.getElementById('quietHoursQueueSection');
+    
+    if (currentStatusEl) {
+      currentStatusEl.textContent = status.isQuietHours ? '是' : '否';
+      currentStatusEl.className = 'quiet-hours-status-value ' + (status.isQuietHours ? 'in-quiet' : 'not-in-quiet');
+    }
+    
+    if (nextStartEl && nextEndEl) {
+      if (status.nextTransition) {
+        const time = status.nextTransition.time;
+        const timeStr = `${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+        if (status.nextTransition.type === 'start') {
+          nextStartEl.textContent = timeStr;
+          nextEndEl.textContent = '—';
+        } else {
+          nextStartEl.textContent = '—';
+          nextEndEl.textContent = timeStr;
+        }
+      } else {
+        nextStartEl.textContent = '—';
+        nextEndEl.textContent = '—';
+      }
+    }
+    
+    if (queueCountEl) {
+      queueCountEl.textContent = status.queueCount || 0;
+    }
+    
+    if (queueSection) {
+      queueSection.classList.toggle('hidden', status.queueCount === 0);
+    }
+    
+    if (status.queueCount > 0) {
+      loadQuietHoursQueue();
+    }
+  } catch (err) {
+    console.error('加载免打扰状态失败:', err);
+  }
+}
+
+async function loadQuietHoursQueue() {
+  try {
+    const res = await fetchJson('/api/admin/quiet-hours/queue');
+    const queue = res.queue || [];
+    
+    const queueListEl = document.getElementById('quietHoursQueueList');
+    if (!queueListEl) return;
+    
+    if (queue.length === 0) {
+      queueListEl.innerHTML = '<div class="muted small">暂无排队通知</div>';
+      return;
+    }
+    
+    queueListEl.innerHTML = queue.map(item => {
+      const time = new Date(item.queuedAt).toLocaleString('zh-CN');
+      return `
+        <div class="quiet-hours-queue-item">
+          <div class="quiet-hours-queue-item-time">${time}</div>
+          <div class="quiet-hours-queue-item-message">${escapeHtml(item.notification?.message || '—')}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('加载排队通知失败:', err);
+  }
+}
+
+async function saveQuietHoursConfig() {
+  const quietHoursEnabled = document.getElementById('quietHoursEnabled');
+  const quietHoursStartTime = document.getElementById('quietHoursStartTime');
+  const quietHoursEndTime = document.getElementById('quietHoursEndTime');
+  const quietHoursTimezone = document.getElementById('quietHoursTimezone');
+  const quietHoursAllowCritical = document.getElementById('quietHoursAllowCritical');
+  const quietHoursConfigMsg = document.getElementById('quietHoursConfigMsg');
+  
+  const dayCheckboxes = document.querySelectorAll('.quiet-hours-day-checkbox');
+  const daysOfWeek = Array.from(dayCheckboxes)
+    .filter(cb => cb.checked)
+    .map(cb => parseInt(cb.value));
+  
+  const queueModeRadios = document.querySelectorAll('input[name="queueMode"]');
+  let queueMode = 'discard';
+  queueModeRadios.forEach(radio => {
+    if (radio.checked) queueMode = radio.value;
+  });
+  
+  const config = {
+    enabled: quietHoursEnabled ? quietHoursEnabled.checked : false,
+    schedule: {
+      startTime: quietHoursStartTime ? quietHoursStartTime.value : '22:00',
+      endTime: quietHoursEndTime ? quietHoursEndTime.value : '08:00',
+      timezone: quietHoursTimezone ? quietHoursTimezone.value : 'Asia/Shanghai'
+    },
+    daysOfWeek,
+    queueMode,
+    allowCritical: quietHoursAllowCritical ? quietHoursAllowCritical.checked : true
+  };
+  
+  try {
+    await fetchJson('/api/admin/quiet-hours/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+    if (quietHoursConfigMsg) {
+      quietHoursConfigMsg.textContent = '配置已保存';
+      quietHoursConfigMsg.className = 'form-msg success';
+      setTimeout(() => { quietHoursConfigMsg.textContent = ''; }, 3000);
+    }
+    loadQuietHoursStatus();
+  } catch (err) {
+    if (quietHoursConfigMsg) {
+      quietHoursConfigMsg.textContent = '保存失败: ' + err.message;
+      quietHoursConfigMsg.className = 'form-msg error';
+    }
+  }
+}
+
+async function processQuietHoursQueue() {
+  const processBtn = document.getElementById('processQuietHoursQueueBtn');
+  if (processBtn) {
+    processBtn.textContent = '处理中...';
+    processBtn.disabled = true;
+  }
+  
+  try {
+    await fetchJson('/api/admin/quiet-hours/queue/process', {
+      method: 'POST'
+    });
+    alert('队列已处理');
+    loadQuietHoursStatus();
+  } catch (err) {
+    alert('处理失败: ' + err.message);
+  } finally {
+    if (processBtn) {
+      processBtn.textContent = '立即处理';
+      processBtn.disabled = false;
+    }
+  }
+}
+
+async function clearQuietHoursQueue() {
+  if (!confirm('确定要清空排队通知吗？')) return;
+  
+  try {
+    await fetchJson('/api/admin/quiet-hours/queue', {
+      method: 'DELETE'
+    });
+    alert('队列已清空');
+    loadQuietHoursStatus();
+  } catch (err) {
+    alert('清空失败: ' + err.message);
+  }
+}
+
+function initQuietHoursHandlers() {
+  const saveQuietHoursConfigBtn = document.getElementById('saveQuietHoursConfigBtn');
+  if (saveQuietHoursConfigBtn) {
+    saveQuietHoursConfigBtn.addEventListener('click', saveQuietHoursConfig);
+  }
+  
+  const processQueueBtn = document.getElementById('processQuietHoursQueueBtn');
+  if (processQueueBtn) {
+    processQueueBtn.addEventListener('click', processQuietHoursQueue);
+  }
+  
+  const clearQueueBtn = document.getElementById('clearQuietHoursQueueBtn');
+  if (clearQueueBtn) {
+    clearQueueBtn.addEventListener('click', clearQuietHoursQueue);
+  }
+}
+
 function switchChannelTab(tab) {
   state.currentChannelTab = tab;
   channelTabs.forEach(t => {
@@ -5830,6 +6044,10 @@ function switchChannelTab(tab) {
   if (taskCompletionNotificationTab) {
     taskCompletionNotificationTab.classList.toggle('hidden', tab !== 'taskcompletion');
   }
+  const quietHoursTab = document.getElementById('quietHoursTab');
+  if (quietHoursTab) {
+    quietHoursTab.classList.toggle('hidden', tab !== 'quiethours');
+  }
   
   if (tab === 'history') {
     loadNotificationHistory();
@@ -5848,6 +6066,9 @@ function switchChannelTab(tab) {
   } else if (tab === 'healthcheck') {
     loadChannelHealthConfig();
     loadChannelHealthStatus();
+  } else if (tab === 'quiethours') {
+    loadQuietHoursConfig();
+    loadQuietHoursStatus();
   }
 }
 

@@ -543,6 +543,7 @@
             <button class="channel-tab" data-tab="scheduledbackup">定时备份通知</button>
             <button class="channel-tab" data-tab="taskcompletion">任务通知</button>
             <button class="channel-tab" data-tab="healthcheck">健康检查</button>
+            <button class="channel-tab" data-tab="quiethours">免打扰</button>
           </div>
           <div id="channelForm" class="channel-form hidden">
             <div class="channel-form-grid">
@@ -907,6 +908,134 @@
                 <div id="channelHealthStatusList" class="channel-health-status-list">
                   <div class="muted small">加载中...</div>
                 </div>
+              </div>
+            </div>
+            <div id="quietHoursTab" class="quiet-hours-tab hidden">
+              <div class="quiet-hours-config">
+                <div class="quiet-hours-header">
+                  <h3>免打扰时段配置</h3>
+                </div>
+                <div class="quiet-hours-form">
+                  <div class="quiet-hours-form-row">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="quietHoursEnabled" />
+                      <span>启用免打扰时段</span>
+                    </label>
+                  </div>
+                  <div class="quiet-hours-time-range">
+                    <div class="quiet-hours-time-field">
+                      <span class="field-label">开始时间</span>
+                      <input type="time" id="quietHoursStartTime" value="22:00" />
+                    </div>
+                    <div class="quiet-hours-time-field">
+                      <span class="field-label">结束时间</span>
+                      <input type="time" id="quietHoursEndTime" value="08:00" />
+                    </div>
+                  </div>
+                  <div class="quiet-hours-timezone">
+                    <span class="field-label">时区</span>
+                    <select id="quietHoursTimezone">
+                      <option value="Asia/Shanghai">Asia/Shanghai (UTC+8)</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                      <option value="Asia/Hong_Kong">Asia/Hong_Kong (UTC+8)</option>
+                      <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
+                      <option value="America/New_York">America/New_York (UTC-5)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (UTC-8)</option>
+                      <option value="Europe/London">Europe/London (UTC+0)</option>
+                      <option value="Europe/Paris">Europe/Paris (UTC+1)</option>
+                      <option value="UTC">UTC (UTC+0)</option>
+                    </select>
+                  </div>
+                  <div class="quiet-hours-days">
+                    <span class="field-label">适用日期</span>
+                    <div class="quiet-hours-days-checkboxes">
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="0" />
+                        <span>周日</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="1" />
+                        <span>周一</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="2" />
+                        <span>周二</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="3" />
+                        <span>周三</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="4" />
+                        <span>周四</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="5" />
+                        <span>周五</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input type="checkbox" class="quiet-hours-day-checkbox" value="6" />
+                        <span>周六</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="quiet-hours-queue-mode">
+                    <span class="field-label">免打扰模式</span>
+                    <div class="queue-mode-options">
+                      <label class="radio-label">
+                        <input type="radio" name="queueMode" value="discard" checked />
+                        <span>丢弃通知</span>
+                      </label>
+                      <label class="radio-label">
+                        <input type="radio" name="queueMode" value="queue" />
+                        <span>排队等结束后发送</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="quiet-hours-form-row">
+                    <label class="toggle-label">
+                      <input type="checkbox" id="quietHoursAllowCritical" />
+                      <span>允许紧急通知（priority=critical）在免打扰时段发送</span>
+                    </label>
+                  </div>
+                  <div class="quiet-hours-form-actions">
+                    <button id="saveQuietHoursConfigBtn" class="primary">保存配置</button>
+                  </div>
+                  <div id="quietHoursConfigMsg" class="form-msg"></div>
+                </div>
+              </div>
+              <div class="quiet-hours-status">
+                <div class="quiet-hours-status-header">
+                  <h3>当前状态</h3>
+                </div>
+                <div id="quietHoursStatusDisplay" class="quiet-hours-status-display">
+                  <div class="quiet-hours-status-row">
+                    <span class="quiet-hours-status-label">免打扰时段：</span>
+                    <span id="quietHoursCurrentStatus" class="quiet-hours-status-value">—</span>
+                  </div>
+                  <div class="quiet-hours-status-row">
+                    <span class="quiet-hours-status-label">下次开始：</span>
+                    <span id="quietHoursNextStart" class="quiet-hours-status-value">—</span>
+                  </div>
+                  <div class="quiet-hours-status-row">
+                    <span class="quiet-hours-status-label">下次结束：</span>
+                    <span id="quietHoursNextEnd" class="quiet-hours-status-value">—</span>
+                  </div>
+                  <div class="quiet-hours-status-row">
+                    <span class="quiet-hours-status-label">排队数量：</span>
+                    <span id="quietHoursQueueCount" class="quiet-hours-status-value">0</span>
+                  </div>
+                </div>
+              </div>
+              <div id="quietHoursQueueSection" class="quiet-hours-queue-section hidden">
+                <div class="quiet-hours-queue-header">
+                  <h3>排队通知</h3>
+                  <div class="quiet-hours-queue-actions">
+                    <button id="processQuietHoursQueueBtn" class="ghost small">立即处理</button>
+                    <button id="clearQuietHoursQueueBtn" class="ghost small">清空队列</button>
+                  </div>
+                </div>
+                <div id="quietHoursQueueList" class="quiet-hours-queue-list"></div>
               </div>
             </div>
           </div>

@@ -25,6 +25,7 @@ const notificationChannels = require('./lib/notification-channels');
 const notificationHistory = require('./lib/notification-history');
 const notificationTemplates = require('./lib/notification-templates');
 const channelHealthCheck = require('./lib/channel-health-check');
+const quietHours = require('./lib/quiet-hours');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -2342,6 +2343,45 @@ async function requestHandler(req, res) {
           } catch (err) {
             return json(res, 400, { error: err.message });
           }
+        }
+
+        // Quiet Hours APIs
+        if (req.method === 'GET' && adminPath === 'quiet-hours/config') {
+          const config = quietHours.getConfig();
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'PUT' && adminPath === 'quiet-hours/config') {
+          const body = await readJson(req);
+          const config = quietHours.updateConfig(body);
+          await addAuditEvent('quiet_hours.config_changed', {
+            config
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, config);
+        }
+
+        if (req.method === 'GET' && adminPath === 'quiet-hours/status') {
+          const status = quietHours.getStatus();
+          return json(res, 200, status);
+        }
+
+        if (req.method === 'GET' && adminPath === 'quiet-hours/queue') {
+          const queue = quietHours.getQueuedNotifications();
+          return json(res, 200, { queue });
+        }
+
+        if (req.method === 'POST' && adminPath === 'quiet-hours/queue/process') {
+          const result = await quietHours.processQueue();
+          await addAuditEvent('quiet_hours.queue_processed', {
+            processedCount: result.processed
+          }, currentUser.name, currentUser.id);
+          return json(res, 200, result);
+        }
+
+        if (req.method === 'DELETE' && adminPath === 'quiet-hours/queue') {
+          quietHours.clearQueue();
+          await addAuditEvent('quiet_hours.queue_cleared', {}, currentUser.name, currentUser.id);
+          return json(res, 200, { success: true });
         }
 
         const BACKUP_METADATA_FILE = path.join(DATA_DIR, 'backup-metadata.json');
