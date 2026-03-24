@@ -252,6 +252,7 @@ const channelForm = document.getElementById('channelForm');
 const channelNameInput = document.getElementById('channelNameInput');
 const channelTypeInput = document.getElementById('channelTypeInput');
 const channelWebhookInput = document.getElementById('channelWebhookInput');
+const channelPriorityInput = document.getElementById('channelPriorityInput');
 const saveChannelBtn = document.getElementById('saveChannelBtn');
 const cancelChannelBtn = document.getElementById('cancelChannelBtn');
 const channelListEl = document.getElementById('channelList');
@@ -5202,18 +5203,28 @@ function renderNotificationChannels() {
     channelListEl.innerHTML = '<div class="empty-state muted">暂无通知渠道，点击上方按钮创建</div>';
     return;
   }
+  const sortedChannels = [...channels].sort((a, b) => (a.priority || 5) - (b.priority || 5));
   const channelTypeLabels = {
     feishu: '飞书',
     dingtalk: '钉钉',
     wecom: '企业微信',
     slack: 'Slack'
   };
-  channelListEl.innerHTML = channels.map(channel => `
-    <div class="channel-item" data-channel-id="${channel.id}">
+  channelListEl.innerHTML = sortedChannels.map((channel, index) => {
+    const priority = channel.priority || 5;
+    const priorityClass = priority <= 2 ? 'priority-high' : (priority >= 8 ? 'priority-low' : '');
+    const roleLabel = index === 0 ? '<span class="channel-role-badge primary">主渠道</span>' : '<span class="channel-role-badge backup">备用</span>';
+    return `
+    <div class="channel-item" data-channel-id="${channel.id}" draggable="true">
+      <div class="channel-priority-controls">
+        <button class="channel-priority-btn channel-priority-up" data-channel-id="${channel.id}" ${index === 0 ? 'disabled' : ''} title="提高优先级">↑</button>
+        <button class="channel-priority-btn channel-priority-down" data-channel-id="${channel.id}" ${index === sortedChannels.length - 1 ? 'disabled' : ''} title="降低优先级">↓</button>
+      </div>
       <div class="channel-info">
-        <div class="channel-name">${escapeHtml(channel.name)}</div>
+        <div class="channel-name">${escapeHtml(channel.name)} ${roleLabel}</div>
         <div class="channel-meta">
           <span class="channel-type-badge">${channelTypeLabels[channel.type] || channel.type}</span>
+          <span class="channel-priority-badge ${priorityClass}">优先级: ${priority}</span>
           <span class="channel-webhook muted small">${escapeHtml(channel.webhook || channel.webhookUrl || '')}</span>
         </div>
       </div>
@@ -5229,7 +5240,7 @@ function renderNotificationChannels() {
         <button class="ghost small danger channel-delete-btn" data-channel-id="${channel.id}">删除</button>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 
   channelListEl.querySelectorAll('.channel-toggle').forEach(el => {
     el.addEventListener('change', () => {
@@ -5258,6 +5269,22 @@ function renderNotificationChannels() {
       deleteChannel(channelId);
     });
   });
+
+  channelListEl.querySelectorAll('.channel-priority-up').forEach(el => {
+    el.addEventListener('click', () => {
+      const channelId = el.dataset.channelId;
+      moveChannelPriority(channelId, -1);
+    });
+  });
+
+  channelListEl.querySelectorAll('.channel-priority-down').forEach(el => {
+    el.addEventListener('click', () => {
+      const channelId = el.dataset.channelId;
+      moveChannelPriority(channelId, 1);
+    });
+  });
+
+  initDragAndDrop();
 }
 
 function openChannelModal(channelId = null) {
@@ -5268,11 +5295,13 @@ function openChannelModal(channelId = null) {
       channelNameInput.value = channel.name;
       channelTypeInput.value = channel.type;
       channelWebhookInput.value = channel.webhook || channel.webhookUrl || '';
+      channelPriorityInput.value = channel.priority || 5;
     }
   } else {
     channelNameInput.value = '';
     channelTypeInput.value = '';
     channelWebhookInput.value = '';
+    channelPriorityInput.value = 5;
   }
   channelForm.classList.remove('hidden');
 }
@@ -5286,6 +5315,7 @@ async function saveChannel() {
   const name = channelNameInput.value.trim();
   const type = channelTypeInput.value;
   const webhook = channelWebhookInput.value.trim();
+  const priority = parseInt(channelPriorityInput.value) || 5;
 
   if (!name) {
     alert('请输入渠道名称');
@@ -5301,7 +5331,7 @@ async function saveChannel() {
   }
 
   try {
-    const data = { name, type, webhook };
+    const data = { name, type, webhook, priority };
     if (state.editingChannelId) {
       await fetchJson(`/api/admin/notification-channels/${state.editingChannelId}`, {
         method: 'PUT',
@@ -5365,6 +5395,89 @@ async function testChannel(channelId) {
     btn.textContent = originalText;
     btn.disabled = false;
   }
+}
+
+async function moveChannelPriority(channelId, direction) {
+  const sorted = [...state.notificationChannels].sort((a, b) => (a.priority || 5) - (b.priority || 5));
+  const currentIndex = sorted.findIndex(c => c.id === channelId);
+  if (currentIndex === -1) return;
+  
+  const newIndex = currentIndex + direction;
+  if (newIndex < 0 || newIndex >= sorted.length) return;
+  
+  const newOrder = sorted.map(c => c.id);
+  const [movedId] = newOrder.splice(currentIndex, 1);
+  newOrder.splice(newIndex, 0, movedId);
+  
+  try {
+    await fetchJson('/api/admin/notification-channels/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ channelIds: newOrder })
+    });
+    await loadNotificationChannels();
+  } catch (err) {
+    alert('调整优先级失败: ' + err.message);
+  }
+}
+
+function initDragAndDrop() {
+  const items = channelListEl.querySelectorAll('.channel-item');
+  let draggedItem = null;
+
+  items.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      items.forEach(i => i.classList.remove('drag-over'));
+      draggedItem = null;
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (draggedItem && draggedItem !== item) {
+        item.classList.add('drag-over');
+      }
+    });
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over');
+    });
+
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      
+      if (!draggedItem || draggedItem === item) return;
+      
+      const draggedId = draggedItem.dataset.channelId;
+      const targetId = item.dataset.channelId;
+      
+      const sorted = [...state.notificationChannels].sort((a, b) => (a.priority || 5) - (b.priority || 5));
+      const currentIndex = sorted.findIndex(c => c.id === draggedId);
+      const targetIndex = sorted.findIndex(c => c.id === targetId);
+      
+      if (currentIndex === -1 || targetIndex === -1) return;
+      
+      const newOrder = sorted.map(c => c.id);
+      const [movedId] = newOrder.splice(currentIndex, 1);
+      newOrder.splice(targetIndex, 0, movedId);
+      
+      try {
+        await fetchJson('/api/admin/notification-channels/reorder', {
+          method: 'POST',
+          body: JSON.stringify({ channelIds: newOrder })
+        });
+        await loadNotificationChannels();
+      } catch (err) {
+        alert('排序失败: ' + err.message);
+      }
+    });
+  });
 }
 
 function initChannelFormHandlers() {

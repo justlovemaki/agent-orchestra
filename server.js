@@ -3551,6 +3551,39 @@ async function requestHandler(req, res) {
           return json(res, 200, { channel });
         }
 
+        if (req.method === 'PATCH' && adminPath.match(/^notification-channels\/[\w-]+\/priority$/)) {
+          const channelId = adminPath.split('/')[1];
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          const oldChannel = await notificationChannels.getChannel(channelId);
+          const oldPriority = oldChannel?.priority;
+          const channel = await notificationChannels.updateChannelPriority(channelId, body.priority);
+          await addAuditEvent('notification_channel.priority_changed', {
+            channelId: channel.id,
+            channelName: channel.name,
+            channelType: channel.type,
+            oldPriority,
+            newPriority: channel.priority
+          }, userName, currentUser?.id);
+          return json(res, 200, { channel });
+        }
+
+        if (req.method === 'POST' && adminPath === 'notification-channels/reorder') {
+          const body = await readJson(req);
+          const currentUser = await verifyTokenFromRequest(req);
+          const userName = currentUser?.name || 'Master';
+          if (!Array.isArray(body.channelIds)) {
+            throw new Error('需要提供渠道 ID 数组');
+          }
+          const channels = await notificationChannels.reorderChannels(body.channelIds);
+          await addAuditEvent('notification_channel.reordered', {
+            channelIds: body.channelIds,
+            count: body.channelIds.length
+          }, userName, currentUser?.id);
+          return json(res, 200, { channels });
+        }
+
         if (req.method === 'GET' && adminPath === 'notification-history') {
           const filters = {
             status: parsed.query?.status,

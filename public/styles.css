@@ -4535,6 +4535,175 @@ button.ghost.tiny {
   border-radius: var(--radius-xs);
 }
 
+.channel-priority-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--bg-2);
+  color: var(--text-muted);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--line);
+}
+
+.channel-priority-badge.priority-high {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.channel-priority-badge.priority-low {
+  background: var(--bg-2);
+  color: var(--text-muted);
+}
+
+.channel-role-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.channel-role-badge.primary {
+  background: #22c55e20;
+  color: #22c55e;
+  border: 1px solid #22c55e40;
+}
+
+.channel-role-badge.backup {
+  background: #f59e0b20;
+  color: #f59e0b;
+  border: 1px solid #f59e0b40;
+}
+
+.channel-priority-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.channel-priority-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.channel-priority-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.channel-priority-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.channel-item.dragging {
+  opacity: 0.5;
+  background: var(--accent-soft);
+}
+
+.channel-item.drag-over {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.channel-test-result {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.channel-test-result.success {
+  background: #22c55e15;
+  border: 1px solid #22c55e40;
+  color: #22c55e;
+}
+
+.channel-test-result.fallback {
+  background: #f59e0b15;
+  border: 1px solid #f59e0b40;
+  color: #f59e0b;
+}
+
+.channel-test-result.failed {
+  background: #ef444415;
+  border: 1px solid #ef444440;
+  color: #ef4444;
+}
+
+.channel-send-order {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-2);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.channel-send-order-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
+.channel-send-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.channel-send-order-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-1);
+  border-radius: var(--radius-xs);
+}
+
+.channel-send-order-item .order-num {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.channel-send-order-item .order-channel {
+  flex: 1;
+}
+
+.channel-send-order-item .order-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+}
+
+.channel-send-order-item .order-status.success {
+  background: #22c55e20;
+  color: #22c55e;
+}
+
+.channel-send-order-item .order-status.failed {
+  background: #ef444420;
+  color: #ef4444;
+}
+
 .channel-webhook {
   overflow: hidden;
   text-overflow: ellipsis;
