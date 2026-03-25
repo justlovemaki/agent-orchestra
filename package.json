@@ -10,7 +10,7 @@
     "status": "node status.js",
     "restart": "node restart.js",
     "verify": "node scripts/verify.js",
-    "test": "node scripts/verify.js",
+    "test": "node test/run-tests.js",
     "install-deps": "npm install @aws-sdk/client-s3"
   },
   "dependencies": {
