@@ -27,6 +27,7 @@ const notificationHistory = require('./lib/notification-history');
 const notificationTemplates = require('./lib/notification-templates');
 const channelHealthCheck = require('./lib/channel-health-check');
 const quietHours = require('./lib/quiet-hours');
+const apiDocs = require('./lib/api-docs');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -979,6 +980,11 @@ function startTaskWatcher() {
 async function requestHandler(req, res) {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
+
+  // API Documentation routes
+  if (pathname === '/api-docs' || pathname === '/api-docs/' || pathname === '/api/docs/openapi.json') {
+    if (apiDocs.handleApiDocsRequest(pathname, req, res, currentPort)) return;
+  }
 
   if (pathname.startsWith('/api/')) {
     try {
