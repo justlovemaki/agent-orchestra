@@ -4537,7 +4537,13 @@ function hideWorkflowForm() {
   state.editingWorkflowId = null;
 }
 
+const workflowStepDebounceTimers = {};
+
 function renderWorkflowSteps(steps = []) {
+  Object.keys(workflowStepDebounceTimers).forEach(key => {
+    clearTimeout(workflowStepDebounceTimers[key]);
+  });
+
   workflowStepsList.innerHTML = steps.map((step, index) => `
     <div class="workflow-step-item" data-step-index="${index}">
       <div class="workflow-step-header">
@@ -4557,6 +4563,7 @@ function renderWorkflowSteps(steps = []) {
         <span class="field-label">任务描述</span>
         <textarea class="step-prompt-input" data-step-index="${index}" rows="3" placeholder="描述此步骤要执行的任务">${escapeHtml(step.prompt || '')}</textarea>
       </label>
+      <div class="step-suggestion-area hidden" data-step-index="${index}"></div>
     </div>
   `).join('');
 
@@ -4570,6 +4577,93 @@ function renderWorkflowSteps(steps = []) {
       }
     });
   });
+
+  workflowStepsList.querySelectorAll('.step-prompt-input').forEach(textarea => {
+    textarea.addEventListener('input', handleStepPromptInput);
+  });
+}
+
+async function handleStepPromptInput(e) {
+  const textarea = e.target;
+  const stepIndex = Number(textarea.dataset.stepIndex);
+  const prompt = textarea.value;
+
+  if (workflowStepDebounceTimers[stepIndex]) {
+    clearTimeout(workflowStepDebounceTimers[stepIndex]);
+  }
+
+  workflowStepDebounceTimers[stepIndex] = setTimeout(async () => {
+    await fetchAgentSuggestions(stepIndex, prompt);
+  }, 500);
+}
+
+async function fetchAgentSuggestions(stepIndex, prompt) {
+  const suggestionArea = workflowStepsList.querySelector(`.step-suggestion-area[data-step-index="${stepIndex}"]`);
+  if (!suggestionArea) return;
+
+  if (prompt.trim().length < 4) {
+    suggestionArea.classList.add('hidden');
+    suggestionArea.innerHTML = '';
+    return;
+  }
+
+  try {
+    const steps = getWorkflowStepsFromForm();
+    const currentStep = { prompt };
+    const stepsToCheck = steps.map((s, i) => i === stepIndex ? currentStep : s);
+
+    const res = await fetchJson('/api/workflows/suggest-agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: stepsToCheck })
+    });
+
+    const suggestion = res.suggestions?.find(s => s.stepIndex === stepIndex);
+    if (suggestion && suggestion.suggestedAgents && suggestion.suggestedAgents.length > 0) {
+      renderAgentSuggestions(stepIndex, suggestion.suggestedAgents);
+    } else {
+      suggestionArea.classList.add('hidden');
+    }
+  } catch (err) {
+    console.error('获取推荐失败:', err);
+    suggestionArea.classList.add('hidden');
+  }
+}
+
+function renderAgentSuggestions(stepIndex, agents) {
+  const suggestionArea = workflowStepsList.querySelector(`.step-suggestion-area[data-step-index="${stepIndex}"]`);
+  if (!suggestionArea) return;
+
+  const agentsMap = {};
+  (state.overview?.agents || []).forEach(a => { agentsMap[a.id] = a.name; });
+
+  suggestionArea.innerHTML = `
+    <div class="step-suggestion-header">
+      <span class="step-suggestion-label">推荐 Agent</span>
+    </div>
+    <div class="step-suggestion-tags">
+      ${agents.map(agent => `
+        <button type="button" class="step-suggestion-tag" data-agent-id="${agent.agentId}" data-step-index="${stepIndex}">
+          <span class="step-suggestion-agent-name">${escapeHtml(agentsMap[agent.agentId] || agent.agentId)}</span>
+          <span class="step-suggestion-confidence">${Math.round(agent.confidence * 100)}%</span>
+          <span class="step-suggestion-reason">${escapeHtml(agent.reason)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  suggestionArea.classList.remove('hidden');
+
+  suggestionArea.querySelectorAll('.step-suggestion-tag').forEach(tag => {
+    tag.addEventListener('click', () => {
+      const agentId = tag.dataset.agentId;
+      const idx = Number(tag.dataset.stepIndex);
+      const agentSelect = workflowStepsList.querySelector(`.step-agent-select[data-step-index="${idx}"]`);
+      if (agentSelect) {
+        agentSelect.value = agentId;
+      }
+    });
+  });
 }
 
 function reindexWorkflowSteps() {
@@ -4579,6 +4673,14 @@ function reindexWorkflowSteps() {
     item.querySelector('.workflow-step-remove').dataset.stepIndex = index;
     item.querySelector('.step-agent-select').dataset.stepIndex = index;
     item.querySelector('.step-prompt-input').dataset.stepIndex = index;
+    const suggestionArea = item.querySelector('.step-suggestion-area');
+    if (suggestionArea) {
+      suggestionArea.dataset.stepIndex = index;
+    }
+    const suggestionTags = item.querySelectorAll('.step-suggestion-tag');
+    suggestionTags.forEach(tag => {
+      tag.dataset.stepIndex = index;
+    });
   });
 }
 
