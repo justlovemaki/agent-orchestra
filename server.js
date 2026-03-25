@@ -18,6 +18,7 @@ const taskCompletionConfig = require('./lib/task-completion-config');
 const taskCompletionNotifier = require('./lib/task-completion-notifier');
 const workflowCompletionConfig = require('./lib/workflow-completion-config');
 const workflowCompletionNotifier = require('./lib/workflow-completion-notifier');
+const workflowRecommendations = require('./lib/workflow-recommendations');
 const scheduledBackupConfig = require('./lib/scheduled-backup-config');
 const scheduledBackupNotifier = require('./lib/scheduled-backup-notifier');
 const cloudStorage = require('./lib/cloud-storage');
@@ -1899,7 +1900,7 @@ async function requestHandler(req, res) {
         const body = await readJson(req);
         return json(res, 201, { workflow: await createWorkflow(body) });
       }
-      if (req.method === 'GET' && pathname.startsWith('/api/workflows/')) {
+      if (req.method === 'GET' && pathname.startsWith('/api/workflows/') && pathname.split('/').length === 4) {
         const workflowId = pathname.split('/')[3];
         const workflow = await getWorkflow(workflowId);
         if (!workflow) throw new Error('工作流不存在');
@@ -1937,6 +1938,52 @@ async function requestHandler(req, res) {
         const workflowId = pathname.split('/')[3];
         const runs = await getWorkflowRuns(workflowId);
         return json(res, 200, { runs });
+      }
+
+      // ── Workflow Recommendations ──────────────────────────────────
+      if (req.method === 'GET' && pathname.startsWith('/api/workflows/') && pathname.endsWith('/recommendations')) {
+        const workflowId = pathname.split('/')[3];
+        const result = await workflowRecommendations.getAgentRecommendationsForWorkflow(workflowId);
+        if (!result) throw new Error('工作流不存在');
+        return json(res, 200, result);
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/workflows/') && pathname.endsWith('/analysis')) {
+        const workflowId = pathname.split('/')[3];
+        const result = await workflowRecommendations.analyzeWorkflowHistory(workflowId);
+        if (!result) throw new Error('工作流不存在');
+        return json(res, 200, result);
+      }
+      if (req.method === 'GET' && pathname === '/api/agent-performance') {
+        const result = await workflowRecommendations.getGlobalAgentPerformance();
+        return json(res, 200, { agents: result });
+      }
+      if (req.method === 'POST' && pathname === '/api/workflows/suggest-agents') {
+        const body = await readJson(req);
+        if (!body.steps || !Array.isArray(body.steps)) throw new Error('steps 参数必须为数组');
+        const result = await workflowRecommendations.suggestWorkflowAgents(body.steps);
+        return json(res, 200, { suggestions: result });
+      }
+      if (req.method === 'POST' && pathname.startsWith('/api/workflows/') && pathname.endsWith('/apply-recommendations')) {
+        const workflowId = pathname.split('/')[3];
+        const body = await readJson(req);
+        // body: { recommendations: [{ stepIndex, agentId }] }
+        const workflow = await getWorkflow(workflowId);
+        if (!workflow) throw new Error('工作流不存在');
+        const changes = [];
+        for (const rec of (body.recommendations || [])) {
+          if (rec.stepIndex != null && rec.agentId && workflow.steps[rec.stepIndex]) {
+            const oldAgent = workflow.steps[rec.stepIndex].agentId;
+            workflow.steps[rec.stepIndex].agentId = rec.agentId;
+            changes.push({ stepIndex: rec.stepIndex, oldAgent, newAgent: rec.agentId });
+          }
+        }
+        const updated = await updateWorkflow(workflowId, { steps: workflow.steps });
+        await addAuditEvent('workflow.recommendation_applied', {
+          workflowId,
+          workflowName: workflow.name,
+          changes
+        }, 'Master');
+        return json(res, 200, { workflow: updated, appliedChanges: changes });
       }
       if (req.method === 'PUT' && pathname.startsWith('/api/agents/') && pathname.endsWith('/groups')) {
         const agentId = pathname.split('/')[3];

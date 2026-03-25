@@ -4445,6 +4445,8 @@ function renderWorkflows() {
         </div>
         <div class="workflow-actions">
           <button class="ghost tiny run-workflow-btn" data-workflow-id="${workflow.id}" title="执行工作流">执行</button>
+          <button class="ghost tiny recommend-workflow-btn" data-workflow-id="${workflow.id}" title="Agent 推荐">推荐</button>
+          <button class="ghost tiny analysis-workflow-btn" data-workflow-id="${workflow.id}" title="历史分析">分析</button>
           <button class="ghost tiny view-runs-btn" data-workflow-id="${workflow.id}" title="查看执行记录">记录</button>
           <button class="ghost tiny edit-workflow-btn" data-workflow-id="${workflow.id}" title="编辑工作流">编辑</button>
           <button class="ghost tiny danger delete-workflow-btn" data-workflow-id="${workflow.id}" title="删除工作流">删除</button>
@@ -4498,6 +4500,20 @@ function renderWorkflows() {
       } catch (err) {
         alert(err.message);
       }
+    });
+  });
+
+  workflowListEl.querySelectorAll('.recommend-workflow-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showWorkflowRecommendations(btn.dataset.workflowId);
+    });
+  });
+
+  workflowListEl.querySelectorAll('.analysis-workflow-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showWorkflowAnalysis(btn.dataset.workflowId);
     });
   });
 }
@@ -9265,3 +9281,203 @@ if (notificationStats30d) {
 }
 
 loadTrends();
+
+// ── Workflow Recommendations & Analysis ─────────────────────────────
+async function showWorkflowRecommendations(workflowId) {
+  const workflow = state.workflows.find(w => w.id === workflowId);
+  if (!workflow) return;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:700px">
+      <div class="modal-header">
+        <h3>Agent 推荐 - ${escapeHtml(workflow.name)}</h3>
+        <button class="ghost tiny close-modal-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted small" id="wfRecLoading">正在分析历史数据…</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close-modal-btn').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  try {
+    const data = await fetchJson(`/api/workflows/${workflowId}/recommendations`);
+    const bodyEl = modal.querySelector('.modal-body');
+    if (!data.recommendations || data.recommendations.length === 0) {
+      bodyEl.innerHTML = '<div class="muted small">暂无推荐数据（需要更多执行历史）</div>';
+      return;
+    }
+
+    bodyEl.innerHTML = `
+      <div class="muted small" style="margin-bottom:12px">基于 ${data.totalHistoricalRuns} 次执行历史分析</div>
+      ${data.recommendations.map((rec, i) => `
+        <div class="wf-rec-card" style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid var(--border-color)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <strong>步骤 ${i + 1}</strong>
+            <span class="badge" style="background:${rec.confidence >= 0.7 ? 'var(--success)' : rec.confidence >= 0.4 ? 'var(--warning)' : 'var(--text-muted)'};color:#fff;font-size:11px;padding:2px 8px;border-radius:10px">
+              置信度 ${Math.round(rec.confidence * 100)}%
+            </span>
+          </div>
+          <div class="muted small" style="margin-bottom:6px">${escapeHtml(rec.stepPrompt.substring(0, 100))}${rec.stepPrompt.length > 100 ? '…' : ''}</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+            <span class="muted small">当前:</span>
+            <span class="badge">${escapeHtml(rec.currentAgent || '未设置')}</span>
+            ${rec.recommendedAgent && rec.recommendedAgent !== rec.currentAgent ? `
+              <span class="muted small">→ 推荐:</span>
+              <span class="badge" style="background:var(--primary);color:#fff">${escapeHtml(rec.recommendedAgent)}</span>
+            ` : '<span class="muted small" style="color:var(--success)">✓ 当前即最优</span>'}
+          </div>
+          <div class="muted small">${escapeHtml(rec.reason)}</div>
+          ${rec.alternatives && rec.alternatives.length > 0 ? `
+            <div class="muted small" style="margin-top:4px">备选: ${rec.alternatives.map(a =>
+              `${escapeHtml(a.agentId)}(${a.successRate != null ? a.successRate + '%' : ''})`
+            ).join(', ')}</div>
+          ` : ''}
+        </div>
+      `).join('')}
+      <div style="text-align:right;margin-top:12px">
+        <button class="primary small apply-rec-btn">一键应用推荐</button>
+      </div>
+    `;
+
+    modal.querySelector('.apply-rec-btn')?.addEventListener('click', async () => {
+      const changes = data.recommendations
+        .filter(r => r.recommendedAgent && r.recommendedAgent !== r.currentAgent)
+        .map(r => ({ stepIndex: r.stepIndex, agentId: r.recommendedAgent }));
+      if (changes.length === 0) { alert('所有步骤已是最优配置'); return; }
+      if (!confirm(`将对 ${changes.length} 个步骤应用推荐配置，是否继续？`)) return;
+      try {
+        await fetchJson(`/api/workflows/${workflowId}/apply-recommendations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recommendations: changes })
+        });
+        alert('推荐已应用');
+        modal.remove();
+        await loadWorkflows();
+        renderWorkflows();
+      } catch (err) { alert('应用失败: ' + err.message); }
+    });
+  } catch (err) {
+    modal.querySelector('.modal-body').innerHTML = `<div class="muted small" style="color:var(--danger)">加载失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function showWorkflowAnalysis(workflowId) {
+  const workflow = state.workflows.find(w => w.id === workflowId);
+  if (!workflow) return;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:700px">
+      <div class="modal-header">
+        <h3>历史分析 - ${escapeHtml(workflow.name)}</h3>
+        <button class="ghost tiny close-modal-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted small">正在加载分析数据…</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close-modal-btn').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  try {
+    const data = await fetchJson(`/api/workflows/${workflowId}/analysis`);
+    const bodyEl = modal.querySelector('.modal-body');
+
+    if (!data.stepAnalysis || data.stepAnalysis.length === 0 || data.totalRuns === 0) {
+      bodyEl.innerHTML = '<div class="muted small">此工作流尚无执行记录，无法分析</div>';
+      return;
+    }
+
+    bodyEl.innerHTML = `
+      <div class="muted small" style="margin-bottom:12px">共 ${data.totalRuns} 次执行</div>
+      ${data.stepAnalysis.map(step => `
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid var(--border-color)">
+          <strong>步骤 ${step.stepIndex + 1}</strong>
+          <div class="muted small" style="margin-bottom:8px">${escapeHtml((step.stepPrompt || '').substring(0, 80))}</div>
+          ${step.agentStats.map(agent => {
+            const barWidth = Math.max(5, agent.successRate);
+            return `
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="min-width:100px;font-size:12px">${escapeHtml(agent.agentId)}</span>
+                <div style="flex:1;height:16px;background:var(--bg-primary);border-radius:4px;overflow:hidden">
+                  <div style="width:${barWidth}%;height:100%;background:${agent.successRate >= 80 ? 'var(--success)' : agent.successRate >= 50 ? 'var(--warning)' : 'var(--danger)'};border-radius:4px;transition:width 0.3s"></div>
+                </div>
+                <span class="muted small" style="min-width:120px;text-align:right">${agent.successRate}% · ${Math.round(agent.avgDuration / 1000)}s · ${agent.runCount}次</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `).join('')}
+    `;
+  } catch (err) {
+    modal.querySelector('.modal-body').innerHTML = `<div class="muted small" style="color:var(--danger)">加载失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ── Agent Performance Panel ─────────────────────────────────────────
+async function loadAgentPerformance() {
+  const container = document.getElementById('agentPerformancePanel');
+  if (!container) return;
+
+  try {
+    const data = await fetchJson('/api/agent-performance');
+    if (!data.agents || data.agents.length === 0) {
+      container.innerHTML = '<div class="muted small">暂无 Agent 性能数据</div>';
+      return;
+    }
+
+    function renderPerf(agents, by) {
+      const sorted = [...agents].sort((a, b) => {
+        if (by === 'successRate') return b.successRate - a.successRate;
+        if (by === 'speed') return (a.avgDuration || Infinity) - (b.avgDuration || Infinity);
+        return b.totalTasks - a.totalTasks;
+      });
+
+      container.innerHTML = `
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="ghost tiny perf-sort-btn ${by === 'successRate' ? 'active' : ''}" data-sort="successRate">按成功率</button>
+          <button class="ghost tiny perf-sort-btn ${by === 'speed' ? 'active' : ''}" data-sort="speed">按速度</button>
+          <button class="ghost tiny perf-sort-btn ${by === 'usage' ? 'active' : ''}" data-sort="usage">按使用量</button>
+        </div>
+        <div class="agent-perf-list">
+          ${sorted.map((agent, idx) => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-color)">
+              <span style="font-size:16px;font-weight:700;min-width:28px;color:${idx < 3 ? 'var(--primary)' : 'var(--text-muted)'}">#${idx + 1}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(agent.agentId)}</div>
+                <div class="muted small">${agent.groups.length > 0 ? agent.groups.join(', ') : ''}${agent.bestTaskTypes.length > 0 ? ' 擅长: ' + agent.bestTaskTypes.join(', ') : ''}</div>
+              </div>
+              <div style="text-align:right;min-width:140px">
+                <div style="font-size:13px">
+                  <span style="color:${agent.successRate >= 80 ? 'var(--success)' : agent.successRate >= 50 ? 'var(--warning)' : 'var(--danger)'}">${agent.successRate}%</span>
+                  · ${agent.avgDuration > 0 ? Math.round(agent.avgDuration / 1000) + 's' : '-'}
+                  · ${agent.totalTasks}次
+                </div>
+                ${agent.workflowStepCount > 0 ? `<div class="muted small">工作流 ${agent.workflowStepCount} 次</div>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      container.querySelectorAll('.perf-sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => renderPerf(agents, btn.dataset.sort));
+      });
+    }
+
+    renderPerf(data.agents, 'successRate');
+  } catch (err) {
+    container.innerHTML = `<div class="muted small" style="color:var(--danger)">加载失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+loadAgentPerformance();
