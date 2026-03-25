@@ -1004,13 +1004,42 @@ async function requestHandler(req, res) {
         const runtime = await readRuntime();
         const startedAt = runtime?.startedAt || process.uptime() * 1000;
         const uptime = Date.now() - startedAt;
-        return json(res, 200, {
-          ok: true,
-          pid: process.pid,
-          port: currentPort,
-          startedAt,
+        const version = '0.1.0';
+        const timestamp = new Date().toISOString();
+
+        const checks = {
+          data_dir: { status: 'ok' },
+          memory: { status: 'ok' }
+        };
+        let healthy = true;
+
+        try {
+          await fsp.access(DATA_DIR, fs.constants.W_OK);
+        } catch {
+          checks.data_dir.status = 'error';
+          checks.data_dir.message = 'data directory not writable';
+          healthy = false;
+        }
+
+        const memUsage = process.memoryUsage();
+        const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+        const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+        checks.memory.used = `${heapUsedMB}MB`;
+        checks.memory.total = `${heapTotalMB}MB`;
+        if (heapUsedMB > 1500) {
+          checks.memory.status = 'warning';
+          checks.memory.message = 'high memory usage';
+        }
+
+        const status = healthy ? 'ok' : 'degraded';
+        const httpStatus = healthy ? 200 : 503;
+
+        return json(res, httpStatus, {
+          status,
+          version,
           uptime,
-          status: 'healthy'
+          timestamp,
+          checks
         });
       }
       if (req.method === 'GET' && pathname === '/api/stats') {
