@@ -30,8 +30,11 @@ module.exports = function registerTaskRoutes(server, deps) {
     fsp,
     path,
     execFile,
-    spawn
+    spawn,
+    apiValidation
   } = deps;
+  
+  const validator = apiValidation?.validator;
 
   /**
    * GET /api/tasks - List all tasks with optional filtering
@@ -50,10 +53,22 @@ module.exports = function registerTaskRoutes(server, deps) {
    * POST /api/tasks - Create a new task
    */
   server.on('request', async (req, res) => {
-    const { pathname } = parseRequest(req);
+    const { pathname, parsed } = parseRequest(req);
     if (req.method === 'POST' && pathname === '/api/tasks') {
       try {
         const body = await readJson(req);
+        
+        // Validate request against OpenAPI spec
+        if (validator) {
+          const validation = validator.validateRequest('POST', pathname, parsed.query || {}, body);
+          if (!validation.valid && validation.operation) {
+            return json(res, 400, { 
+              error: 'Validation failed', 
+              details: validation.errors 
+            });
+          }
+        }
+        
         const task = await createTask(body);
         return json(res, 201, { task: formatTaskForUi(task) });
       } catch (error) {

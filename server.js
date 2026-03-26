@@ -29,6 +29,8 @@ const channelHealthCheck = require('./lib/channel-health-check');
 const quietHours = require('./lib/quiet-hours');
 const apiDocs = require('./lib/api-docs');
 const notificationSenders = require('./lib/notification-senders');
+const { createValidationMiddleware } = require('./lib/api-validation');
+const { getFeishuConfig, sendFeishuImageMessage, getDingTalkConfig, sendDingTalkImageMessage, getWecomConfig, sendWecomImageMessage, getSlackConfig, sendSlackImageMessage } = notificationSenders;
 
 const tasksRoutes = require('./routes/tasks');
 const templatesRoutes = require('./routes/templates');
@@ -1570,6 +1572,7 @@ ensureData().then(async () => {
     channelHealthCheck,
     quietHours,
     apiDocs,
+    apiValidation: createValidationMiddleware(currentPort),
     workflowRecommendations,
     verifyToken,
     register,
