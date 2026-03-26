@@ -1,0 +1,34 @@
+{
+  "name": "dashboard-demo",
+  "version": "1.0.0",
+  "description": "示例面板插件 - 展示自定义仪表板组件功能",
+  "type": "panel",
+  "author": "Agent Orchestra Team",
+  "component": "DemoDashboardPanel",
+  "renderMethod": "react",
+  "props": {
+    "title": "演示面板",
+    "refreshInterval": 30000,
+    "columns": 2
+  },
+  "configSchema": {
+    "title": {
+      "type": "string",
+      "required": false,
+      "default": "演示面板",
+      "description": "面板显示标题"
+    },
+    "refreshInterval": {
+      "type": "number",
+      "required": false,
+      "default": 30000,
+      "description": "刷新间隔（毫秒）"
+    },
+    "showChart": {
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否显示图表"
+    }
+  }
+}

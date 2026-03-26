@@ -1,0 +1,44 @@
+{
+  "name": "datasource-weather",
+  "version": "1.0.0",
+  "description": "天气数据源插件 - 展示外部 API 数据接入能力",
+  "type": "datasource",
+  "author": "Agent Orchestra Team",
+  "schema": {
+    "fields": [
+      { "name": "city", "type": "string", "description": "城市名称" },
+      { "name": "temperature", "type": "number", "description": "温度（摄氏度）" },
+      { "name": "condition", "type": "string", "description": "天气状况" },
+      { "name": "humidity", "type": "number", "description": "湿度（%）" },
+      { "name": "windSpeed", "type": "number", "description": "风速（米/秒）" },
+      { "name": "timestamp", "type": "number", "description": "数据时间戳" }
+    ]
+  },
+  "configSchema": {
+    "apiKey": {
+      "type": "string",
+      "required": true,
+      "description": "天气 API 密钥"
+    },
+    "provider": {
+      "type": "string",
+      "required": false,
+      "default": "wttr",
+      "enum": ["wttr", "openweathermap"],
+      "description": "数据源提供商"
+    },
+    "defaultCity": {
+      "type": "string",
+      "required": false,
+      "default": "Beijing",
+      "description": "默认城市"
+    },
+    "units": {
+      "type": "string",
+      "required": false,
+      "default": "celsius",
+      "enum": ["celsius", "fahrenheit"],
+      "description": "温度单位"
+    }
+  }
+}

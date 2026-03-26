@@ -30,6 +30,7 @@ const quietHours = require('./lib/quiet-hours');
 const apiDocs = require('./lib/api-docs');
 const notificationSenders = require('./lib/notification-senders');
 const { createValidationMiddleware } = require('./lib/api-validation');
+const { createPluginSystem } = require('./lib/plugin-system');
 const { getFeishuConfig, sendFeishuImageMessage, getDingTalkConfig, sendDingTalkImageMessage, getWecomConfig, sendWecomImageMessage, getSlackConfig, sendSlackImageMessage } = notificationSenders;
 
 const tasksRoutes = require('./routes/tasks');
@@ -44,6 +45,7 @@ const agentCombinationsRoutes = require('./routes/agent-combinations');
 const auditRoutes = require('./routes/audit');
 const exportRoutes = require('./routes/export');
 const healthRoutes = require('./routes/health');
+const pluginsRoutes = require('./routes/plugins');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -59,6 +61,7 @@ const USER_TEMPLATES_FILE = path.join(DATA_DIR, 'user-templates.json');
 const AGENT_COMBINATIONS_FILE = path.join(DATA_DIR, 'agent-combinations.json');
 const PID_FILE = path.join(DATA_DIR, 'agent-orchestra.pid');
 const LOG_DIR = path.join(DATA_DIR, 'task-logs');
+const PLUGINS_DIR = path.join(ROOT, 'plugins');
 const OVERVIEW_CACHE_TTL_MS = 8000;
 
 const sseClients = new Map();
@@ -1473,6 +1476,10 @@ ensureData().then(async () => {
     console.log(`Channel health check started (interval: ${healthConfig.intervalMinutes}min)`);
   }
 
+  const pluginSystem = createPluginSystem(PLUGINS_DIR);
+  const pluginLoadResults = await pluginSystem.initialize(DATA_DIR);
+  console.log(`Plugin system initialized: ${pluginLoadResults.success.length} plugins loaded, ${pluginLoadResults.failed.length} failed`);
+
   const deps = {
     readTasks,
     writeTasks,
@@ -1593,7 +1600,8 @@ ensureData().then(async () => {
     createBackupData,
     performRestore: async function(data, mode) {
       throw new Error('Restore functionality not yet implemented');
-    }
+    },
+    pluginSystem
   };
 
   tasksRoutes(serverWithEvents, deps);
@@ -1608,6 +1616,7 @@ ensureData().then(async () => {
   auditRoutes(serverWithEvents, deps);
   exportRoutes.register(serverWithEvents, deps);
   healthRoutes(serverWithEvents, deps);
+  pluginsRoutes(serverWithEvents, deps);
 
   console.log(`Registered ${requestHandlers.length} route handlers`);
 

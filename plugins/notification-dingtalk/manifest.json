@@ -1,0 +1,32 @@
+{
+  "name": "notification-dingtalk",
+  "version": "1.0.0",
+  "description": "钉钉通知渠道插件 - 支持通过钉钉机器人发送消息",
+  "type": "notification",
+  "author": "Agent Orchestra Team",
+  "channelName": "钉钉",
+  "supportedFormats": ["text", "markdown", "link", "actionCard"],
+  "configSchema": {
+    "webhookUrl": {
+      "type": "string",
+      "required": true,
+      "description": "钉钉机器人 Webhook 地址"
+    },
+    "secret": {
+      "type": "string",
+      "required": false,
+      "description": "加签密钥（可选）"
+    },
+    "atMobiles": {
+      "type": "array",
+      "required": false,
+      "description": "@手机号列表"
+    },
+    "isAtAll": {
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "是否@所有人"
+    }
+  }
+}
