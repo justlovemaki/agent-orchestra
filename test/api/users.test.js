@@ -176,6 +176,58 @@ async function runTests(baseUrl) {
     
     clearAuthToken();
     
+    const secUser = {
+      name: `secuser_${Date.now()}`,
+      password: 'testpass123'
+    };
+    
+    const secRegister = await post(`${base}/api/auth/register`, secUser);
+    setAuthToken(secRegister.body.token);
+    
+    response = await post(`${base}/api/auth/security-question`, {
+      question: 'pet',
+      answer: 'fluffy'
+    });
+    assert.strictEqual(response.status, 200, 'Setting security question should return 200');
+    console.log('    ✓ POST /api/auth/security-question sets security question');
+    
+    clearAuthToken();
+    
+    response = await post(`${base}/api/auth/reset-password`, {
+      name: secUser.name,
+      answer: 'fluffy',
+      newPassword: 'newpass456'
+    });
+    assert.strictEqual(response.status, 200, 'Password reset should return 200');
+    console.log('    ✓ POST /api/auth/reset-password resets password via security question');
+    
+    const loginAfterReset = await post(`${base}/api/auth/login`, {
+      name: secUser.name,
+      password: 'newpass456'
+    });
+    assert.strictEqual(loginAfterReset.status, 200, 'Login with new password should work');
+    console.log('    ✓ Password reset allows new password login');
+    
+    setAuthToken(loginAfterReset.body.token);
+    
+    response = await get(`${base}/api/auth/sessions`);
+    assert.strictEqual(response.status, 200, 'Get sessions should return 200');
+    assert(Array.isArray(response.body.sessions), 'Should have sessions array');
+    console.log('    ✓ GET /api/auth/sessions returns user sessions');
+    
+    response = await post(`${base}/api/auth/2fa/setup`);
+    assert.strictEqual(response.status, 200, '2FA setup should return 200');
+    assert(response.body.secret, 'Should have secret');
+    assert(response.body.totpUrl, 'Should have totpUrl');
+    console.log('    ✓ POST /api/auth/2fa/setup returns secret and totpUrl');
+    
+    response = await get(`${base}/api/auth/2fa/status`);
+    assert.strictEqual(response.status, 200, '2FA status should return 200');
+    assert.strictEqual(response.body.enabled, false, '2FA should not be enabled initially');
+    console.log('    ✓ GET /api/auth/2fa/status returns correct status');
+    
+    clearAuthToken();
+    
   } catch (err) {
     clearAuthToken();
     throw new Error(`Users API tests failed: ${err.message}`);

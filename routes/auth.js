@@ -22,7 +22,17 @@ module.exports = function registerAuthRoutes(server, deps) {
     setUserGroupId,
     getUserById,
     getUserPermissions,
-    userGroups
+    userGroups,
+    setSecurityQuestion,
+    resetPasswordBySecurityQuestion,
+    getUserSessions,
+    invalidateUserSessions,
+    invalidateToken,
+    generateTwoFactorSetup,
+    enableTwoFactor,
+    disableTwoFactor,
+    loginWith2FA,
+    loadTokens
   } = deps;
 
   /**
@@ -176,6 +186,210 @@ module.exports = function registerAuthRoutes(server, deps) {
       }
       const permissions = await getUserPermissions(currentUser.id);
       return json(res, 200, { permissions });
+    }
+  });
+
+  /**
+   * POST /api/auth/security-question - Set security question
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/security-question') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const body = await readJson(req);
+        const result = await setSecurityQuestion(currentUser.id, body.question, body.answer);
+        await addAuditEvent('user.security_question_set', { userId: currentUser.id }, currentUser.name, currentUser.id);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 400, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/reset-password - Reset password via security question
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/reset-password') {
+      try {
+        const body = await readJson(req);
+        const result = await resetPasswordBySecurityQuestion(body.name, body.answer, body.newPassword);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 400, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * GET /api/auth/sessions - Get current user sessions
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'GET' && pathname === '/api/auth/sessions') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const sessions = await getUserSessions(currentUser.id);
+        return json(res, 200, { sessions });
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/sessions/invalidate - Invalidate all other sessions
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/sessions/invalidate') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      const authHeader = req.headers['authorization'] || '';
+      const currentToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      try {
+        const result = await invalidateUserSessions(currentUser.id, currentToken);
+        await addAuditEvent('user.sessions_invalidated', { userId: currentUser.id }, currentUser.name, currentUser.id);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * DELETE /api/auth/sessions/:token - Invalidate specific session (admin can invalidate any)
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    const match = pathname.match(/^\/api\/auth\/sessions\/([^\/]+)$/);
+    if (req.method === 'DELETE' && match) {
+      const token = match[1];
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const tokens = await loadTokens();
+        const tokenUserId = tokens[token];
+        if (!tokenUserId) {
+          return json(res, 404, { error: '会话不存在' });
+        }
+        const admin = await isAdmin(currentUser.id);
+        if (tokenUserId !== currentUser.id && !admin) {
+          return json(res, 403, { error: '无权限' });
+        }
+        await invalidateToken(token);
+        await addAuditEvent('session.invalidated', { token: token.substring(0, 16) + '...' }, currentUser.name, currentUser.id);
+        return json(res, 200, { success: true });
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/2fa/setup - Start 2FA setup
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/2fa/setup') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const result = await generateTwoFactorSetup(currentUser.id);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/2fa/enable - Enable 2FA
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/2fa/enable') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const body = await readJson(req);
+        const result = await enableTwoFactor(currentUser.id, body.code);
+        await addAuditEvent('user.two_factor_enabled', { userId: currentUser.id }, currentUser.name, currentUser.id);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 400, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/2fa/disable - Disable 2FA
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/2fa/disable') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      try {
+        const body = await readJson(req);
+        const result = await disableTwoFactor(currentUser.id, body.code);
+        await addAuditEvent('user.two_factor_disabled', { userId: currentUser.id }, currentUser.name, currentUser.id);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 400, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * POST /api/auth/login/2fa - Login with 2FA
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'POST' && pathname === '/api/auth/login/2fa') {
+      try {
+        const body = await readJson(req);
+        const result = await loginWith2FA(body.name, body.password, body.code);
+        return json(res, 200, result);
+      } catch (error) {
+        return json(res, 401, { error: error.message });
+      }
+    }
+  });
+
+  /**
+   * GET /api/auth/2fa/status - Get 2FA status for current user
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'GET' && pathname === '/api/auth/2fa/status') {
+      const currentUser = await verifyTokenFromRequest(req);
+      if (!currentUser) {
+        return json(res, 401, { error: '未登录' });
+      }
+      const user = await getUserById(currentUser.id);
+      return json(res, 200, { 
+        enabled: user?.twoFactorEnabled || false,
+        hasSecret: !!user?.twoFactorSecret
+      });
     }
   });
 };

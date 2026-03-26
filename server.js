@@ -12,7 +12,7 @@ const { runWorkflow, getWorkflowRun, getWorkflowRuns, loadWorkflowRuns } = requi
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
 const agentCombinations = require('./lib/agent-combinations');
 const combinationRecommendations = require('./lib/combination-recommendations');
-const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, setUserGroupId, getUserById, getUserPermissions, loadUsers, loadTokens } = require('./lib/users');
+const { register, login, logout, verifyToken, getCurrentUser, getUsers, getUserRole, isAdmin, setRole, setUserGroupId, getUserById, getUserPermissions, loadUsers, loadTokens, setSecurityQuestion, resetPasswordBySecurityQuestion, getUserSessions, invalidateUserSessions, invalidateToken, generateTwoFactorSetup, enableTwoFactor, disableTwoFactor, loginWith2FA } = require('./lib/users');
 const userGroups = require('./lib/user-groups');
 const scheduledBackup = require('./lib/scheduled-backup');
 const taskCompletionConfig = require('./lib/task-completion-config');
@@ -1597,6 +1597,15 @@ ensureData().then(async () => {
     getUserPermissions,
     loadUsers,
     loadTokens,
+    setSecurityQuestion,
+    resetPasswordBySecurityQuestion,
+    getUserSessions,
+    invalidateUserSessions,
+    invalidateToken,
+    generateTwoFactorSetup,
+    enableTwoFactor,
+    disableTwoFactor,
+    loginWith2FA,
     currentPort,
     HOME: process.env.HOME,
     createBackupData,

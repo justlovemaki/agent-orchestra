@@ -81,7 +81,12 @@ async function startTestServer() {
         if (authHeader.startsWith('Bearer ')) {
           const token = authHeader.slice(7);
           if (token && !token.startsWith('invalid-')) {
-            return { id: 'test-user-id', name: 'test-user' };
+            const users = require('../lib/users');
+            const user = await users.verifyToken(token);
+            if (user) {
+              const fullUser = await users.getUserById(user.id);
+              return fullUser ? { id: fullUser.id, name: fullUser.name } : { id: user.id, name: user.name };
+            }
           }
         }
         return null;
@@ -141,7 +146,17 @@ async function startTestServer() {
       setRole: require('../lib/users').setRole,
       setUserGroupId: require('../lib/users').setUserGroupId,
       getUserById: require('../lib/users').getUserById,
-      getUserPermissions: require('../lib/users').getUserPermissions
+      getUserPermissions: require('../lib/users').getUserPermissions,
+      setSecurityQuestion: require('../lib/users').setSecurityQuestion,
+      resetPasswordBySecurityQuestion: require('../lib/users').resetPasswordBySecurityQuestion,
+      getUserSessions: require('../lib/users').getUserSessions,
+      invalidateUserSessions: require('../lib/users').invalidateUserSessions,
+      invalidateToken: require('../lib/users').invalidateToken,
+      generateTwoFactorSetup: require('../lib/users').generateTwoFactorSetup,
+      enableTwoFactor: require('../lib/users').enableTwoFactor,
+      disableTwoFactor: require('../lib/users').disableTwoFactor,
+      loginWith2FA: require('../lib/users').loginWith2FA,
+      loadTokens: require('../lib/users').loadTokens
     };
     
     require('../routes/health')(mockServer, mockDeps);
