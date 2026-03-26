@@ -7,6 +7,7 @@ const url = require('url');
 const crypto = require('crypto');
 const { filterTasks, parseTaskFilters } = require('./lib/task-filters');
 const { loadWorkflows, createWorkflow, getWorkflow, updateWorkflow, deleteWorkflow } = require('./lib/workflows');
+const { overviewCache } = require('./lib/cache');
 const { runWorkflow, getWorkflowRun, getWorkflowRuns, loadWorkflowRuns } = require('./lib/workflow-runner');
 const { addAuditEvent, queryAuditEvents, getAuditEventTypes } = require('./lib/audit');
 const agentCombinations = require('./lib/agent-combinations');
@@ -76,11 +77,8 @@ const serverWithEvents = {
   }
 };
 
-let overviewCache = {
-  value: null,
-  expiresAt: 0,
-  inFlight: null
-};
+// 使用 lib/cache 中的 overviewCache 实例
+let overviewCacheInFlight = null;
 
 async function verifyTokenFromRequest(req) {
   const authHeader = req.headers['authorization'] || '';
@@ -589,28 +587,31 @@ async function buildOverviewFresh() {
 
 async function buildOverview(force = false) {
   const now = Date.now();
-  if (!force && overviewCache.value && overviewCache.expiresAt > now) {
-    return overviewCache.value;
+  
+  // 使用新的缓存模块
+  if (!force) {
+    const cached = overviewCache.get('overview');
+    if (cached) return cached;
   }
-  if (!force && overviewCache.inFlight) {
-    return overviewCache.inFlight;
+  
+  if (!force && overviewCacheInFlight) {
+    return overviewCacheInFlight;
   }
 
-  overviewCache.inFlight = buildOverviewFresh()
+  overviewCacheInFlight = buildOverviewFresh()
     .then(data => {
-      overviewCache.value = data;
-      overviewCache.expiresAt = Date.now() + OVERVIEW_CACHE_TTL_MS;
+      overviewCache.set('overview', data, OVERVIEW_CACHE_TTL_MS);
       return data;
     })
     .finally(() => {
-      overviewCache.inFlight = null;
+      overviewCacheInFlight = null;
     });
 
-  return overviewCache.inFlight;
+  return overviewCacheInFlight;
 }
 
 function invalidateOverviewCache() {
-  overviewCache.expiresAt = 0;
+  overviewCache.delete('overview');
 }
 
 function summarizeTasks(tasks) {

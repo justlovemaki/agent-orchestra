@@ -12,6 +12,8 @@ module.exports = function registerAuditRoutes(server, deps) {
     queryAuditEvents,
     getAuditEventTypes
   } = deps;
+  
+  const { parsePagination, paginate, sliceArray } = require('../lib/pagination');
 
   /**
    * POST /api/audit - Create an audit event
@@ -29,7 +31,7 @@ module.exports = function registerAuditRoutes(server, deps) {
   });
 
   /**
-   * GET /api/audit - Query audit events
+   * GET /api/audit - Query audit events with pagination
    */
   server.on('request', async (req, res) => {
     const { pathname, parsed } = parseRequest(req);
@@ -43,8 +45,13 @@ module.exports = function registerAuditRoutes(server, deps) {
         limit: parsed.query.limit ? parseInt(parsed.query.limit, 10) : null,
         offset: parsed.query.offset ? parseInt(parsed.query.offset, 10) : null
       };
-      const events = await queryAuditEvents(filters);
-      return json(res, 200, { events });
+      const allEvents = await queryAuditEvents(filters);
+      
+      // 应用分页（如果未指定 limit/offset，则使用默认分页）
+      const { page, limit, offset } = parsePagination(req);
+      const paginated = paginate(sliceArray(allEvents, offset, limit), allEvents.length, page, limit);
+      
+      return json(res, 200, paginated);
     }
   });
 

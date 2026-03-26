@@ -34,10 +34,12 @@ module.exports = function registerTaskRoutes(server, deps) {
     apiValidation
   } = deps;
   
+  const { parsePagination, paginate, sliceArray } = require('../lib/pagination');
+  
   const validator = apiValidation?.validator;
 
   /**
-   * GET /api/tasks - List all tasks with optional filtering
+   * GET /api/tasks - List all tasks with optional filtering and pagination
    */
   server.on('request', async (req, res) => {
     const { pathname, parsed } = parseRequest(req);
@@ -45,7 +47,13 @@ module.exports = function registerTaskRoutes(server, deps) {
       const tasks = await readTasks();
       const filters = parseTaskFilters(parsed.query);
       const filtered = filterTasks(tasks, filters);
-      return json(res, 200, { tasks: filtered.map(formatTaskForUi) });
+      const formatted = filtered.map(formatTaskForUi);
+      
+      // 应用分页
+      const { page, limit, offset } = parsePagination(req);
+      const paginated = paginate(sliceArray(formatted, offset, limit), filtered.length, page, limit);
+      
+      return json(res, 200, paginated);
     }
   });
 
