@@ -33,6 +33,7 @@ const notificationSenders = require('./lib/notification-senders');
 const { createValidationMiddleware } = require('./lib/api-validation');
 const { createPluginSystem } = require('./lib/plugin-system');
 const workloadAlerts = require('./lib/workload-alerts');
+const { performanceMonitor } = require('./lib/performance-monitor');
 const { getFeishuConfig, sendFeishuImageMessage, getDingTalkConfig, sendDingTalkImageMessage, getWecomConfig, sendWecomImageMessage, getSlackConfig, sendSlackImageMessage } = notificationSenders;
 
 const tasksRoutes = require('./routes/tasks');
@@ -1008,6 +1009,9 @@ function startTaskWatcher() {
 }
 
 async function requestHandler(req, res) {
+  const perfMiddleware = performanceMonitor.createMiddleware();
+  perfMiddleware(req, res, () => {});
+
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
 
@@ -1612,7 +1616,8 @@ ensureData().then(async () => {
     performRestore: async function(data, mode) {
       throw new Error('Restore functionality not yet implemented');
     },
-    pluginSystem
+    pluginSystem,
+    performanceMonitor
   };
 
   tasksRoutes(serverWithEvents, deps);

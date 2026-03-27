@@ -21,7 +21,8 @@ module.exports = function registerHealthRoutes(server, deps) {
     formatTaskForUi,
     DATA_DIR,
     fsp,
-    path
+    path,
+    performanceMonitor
   } = deps;
 
   /**
@@ -164,6 +165,64 @@ module.exports = function registerHealthRoutes(server, deps) {
         .map(([date, data]) => ({ date, ...data }));
       
       return json(res, 200, { days, trends });
+    }
+  });
+
+  /**
+   * GET /api/metrics - Get performance metrics
+   * Supports timeRange parameter: 1h, 24h, 7d
+   */
+  server.on('request', async (req, res) => {
+    const { pathname, parsed } = parseRequest(req);
+    if (req.method === 'GET' && pathname === '/api/metrics') {
+      const timeRange = parsed.query?.timeRange || '1h';
+      const validRanges = ['1h', '24h', '7d', '1m'];
+      
+      if (!validRanges.includes(timeRange)) {
+        return json(res, 400, { error: 'Invalid timeRange. Use: 1h, 24h, 7d, or 1m' });
+      }
+      
+      const metrics = performanceMonitor.getMetrics(timeRange);
+      return json(res, 200, metrics);
+    }
+  });
+
+  /**
+   * GET /api/metrics/slow-requests - Get slow request list
+   */
+  server.on('request', async (req, res) => {
+    const { pathname, parsed } = parseRequest(req);
+    if (req.method === 'GET' && pathname === '/api/metrics/slow-requests') {
+      const timeRange = parsed.query?.timeRange || '1h';
+      const limit = parseInt(parsed.query?.limit) || 50;
+      const threshold = parseInt(parsed.query?.threshold) || null;
+      
+      const validRanges = ['1h', '24h', '7d', '1m'];
+      if (!validRanges.includes(timeRange)) {
+        return json(res, 400, { error: 'Invalid timeRange. Use: 1h, 24h, 7d, or 1m' });
+      }
+      
+      const slowRequests = threshold 
+        ? performanceMonitor.getSlowRequests(threshold, limit)
+        : performanceMonitor.getSlowRequestsList(timeRange, limit);
+      
+      return json(res, 200, {
+        timeRange,
+        threshold: threshold || performanceMonitor.slowRequestThreshold,
+        count: slowRequests.length,
+        slowRequests
+      });
+    }
+  });
+
+  /**
+   * GET /api/metrics/summary - Get performance summary
+   */
+  server.on('request', async (req, res) => {
+    const { pathname } = parseRequest(req);
+    if (req.method === 'GET' && pathname === '/api/metrics/summary') {
+      const summary = performanceMonitor.getSummary();
+      return json(res, 200, summary);
     }
   });
 };
