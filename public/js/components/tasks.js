@@ -7,6 +7,27 @@ import { fetchJson, createTask, retryTask, cancelTask, pauseTask, resumeTask, ge
 import { escapeHtml, formatDate, formatDuration, show, hide } from '../utils/dom.js';
 import { getFilters, hasActiveFilters, syncFiltersToUrl, clearFilterUrl, saveFiltersToStorage, loadFiltersFromStorage, parseFiltersFromUrl, getResolvedDefaultPresets } from '../utils/storage.js';
 
+/**
+ * 性能优化: 日志懒加载
+ * 任务日志默认不加载，只有点击展开时才请求日志数据
+ */
+const lazyLoadLogTaskIds = new Set();
+
+/**
+ * 性能优化: 虚拟滚动配置
+ * 只渲染可见区域的任务，支持大数据量场景
+ */
+const VIRTUAL_SCROLL_ITEM_HEIGHT = 120;
+const VIRTUAL_SCROLL_BUFFER = 5;
+let virtualScrollState = {
+  container: null,
+  totalHeight: 0,
+  visibleCount: 0,
+  scrollTop: 0,
+  startIndex: 0,
+  endIndex: 0
+};
+
 let selectedCombinationId = null;
 
 export function getTaskElements() {
@@ -91,53 +112,96 @@ export function renderTaskBoard() {
     return;
   }
   
-  taskBoardEl.innerHTML = tasks.map(task => {
-    const statusClass = task.status === 'completed' ? 'success' : 
-                        task.status === 'failed' ? 'danger' : 
-                        task.status === 'running' ? 'primary' : 
-                        task.status === 'paused' ? 'warning' : '';
-    const priorityClass = task.priority === 'high' ? 'priority-high' : 
-                         task.priority === 'low' ? 'priority-low' : '';
-    const isSelected = state.selectedTaskIds.has(task.id);
+  virtualScrollState.totalHeight = tasks.length * VIRTUAL_SCROLL_ITEM_HEIGHT;
+  
+  const container = taskBoardEl;
+  container.innerHTML = '';
+  container.style.position = 'relative';
+  container.style.height = `${virtualScrollState.totalHeight}px`;
+  
+  const spacer = document.createElement('div');
+  spacer.className = 'virtual-scroll-spacer';
+  spacer.style.height = `${virtualScrollState.totalHeight}px`;
+  container.appendChild(spacer);
+  
+  virtualScrollState.container = container;
+  
+  const updateVirtualScroll = () => {
+    virtualScrollState.scrollTop = container.scrollTop;
+    virtualScrollState.visibleCount = Math.ceil(container.clientHeight / VIRTUAL_SCROLL_ITEM_HEIGHT) + VIRTUAL_SCROLL_BUFFER * 2;
     
-    return `
-      <div class="task-card ${statusClass} ${priorityClass} ${isSelected ? 'selected' : ''}" data-task-id="${task.id}">
-        <div class="task-card-header">
-          <input type="checkbox" class="task-select-checkbox" ${isSelected ? 'checked' : ''} data-task-id="${task.id}" />
-          <span class="task-status-badge ${statusClass}">${getStatusLabel(task.status)}</span>
-          <span class="task-priority-badge ${priorityClass}">${getPriorityLabel(task.priority)}</span>
+    virtualScrollState.startIndex = Math.max(0, Math.floor(virtualScrollState.scrollTop / VIRTUAL_SCROLL_ITEM_HEIGHT) - VIRTUAL_SCROLL_BUFFER);
+    virtualScrollState.endIndex = Math.min(tasks.length, virtualScrollState.startIndex + virtualScrollState.visibleCount);
+    
+    const visibleTasks = tasks.slice(virtualScrollState.startIndex, virtualScrollState.endIndex);
+    
+    const contentContainer = container.querySelector('.virtual-scroll-content');
+    if (contentContainer) {
+      contentContainer.remove();
+    }
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'virtual-scroll-content';
+    contentDiv.style.position = 'absolute';
+    contentDiv.style.top = `${virtualScrollState.startIndex * VIRTUAL_SCROLL_ITEM_HEIGHT}px`;
+    contentDiv.style.left = '0';
+    contentDiv.style.right = '0';
+    
+    contentDiv.innerHTML = visibleTasks.map(task => {
+      const statusClass = task.status === 'completed' ? 'success' : 
+                          task.status === 'failed' ? 'danger' : 
+                          task.status === 'running' ? 'primary' : 
+                          task.status === 'paused' ? 'warning' : '';
+      const priorityClass = task.priority === 'high' ? 'priority-high' : 
+                           task.priority === 'low' ? 'priority-low' : '';
+      const isSelected = state.selectedTaskIds.has(task.id);
+      
+      return `
+        <div class="task-card ${statusClass} ${priorityClass} ${isSelected ? 'selected' : ''}" data-task-id="${task.id}" data-index="${tasks.indexOf(task)}">
+          <div class="task-card-header">
+            <input type="checkbox" class="task-select-checkbox" ${isSelected ? 'checked' : ''} data-task-id="${task.id}" />
+            <span class="task-status-badge ${statusClass}">${getStatusLabel(task.status)}</span>
+            <span class="task-priority-badge ${priorityClass}">${getPriorityLabel(task.priority)}</span>
+          </div>
+          <div class="task-card-title">${escapeHtml(task.title || task.id)}</div>
+          <div class="task-card-meta">
+            <span>${task.mode === 'parallel' ? '并行' : '串行'}</span>
+            <span>${task.agents?.length || 0} 个 Agent</span>
+            <span>${formatDate(task.createdAt)}</span>
+          </div>
+          ${task.duration ? `<div class="task-card-duration">耗时: ${formatDuration(task.duration)}</div>` : ''}
         </div>
-        <div class="task-card-title">${escapeHtml(task.title || task.id)}</div>
-        <div class="task-card-meta">
-          <span>${task.mode === 'parallel' ? '并行' : '串行'}</span>
-          <span>${task.agents?.length || 0} 个 Agent</span>
-          <span>${formatDate(task.createdAt)}</span>
-        </div>
-        ${task.duration ? `<div class="task-card-duration">耗时: ${formatDuration(task.duration)}</div>` : ''}
-      </div>
-    `;
-  }).join('');
-  
-  taskBoardEl.querySelectorAll('.task-card').forEach(card => {
-    card.addEventListener('click', (e) => {
-      if (e.target.classList.contains('task-select-checkbox')) return;
-      const taskId = card.dataset.taskId;
-      selectTask(taskId);
+      `;
+    }).join('');
+    
+    container.insertBefore(contentDiv, spacer);
+    
+    contentDiv.querySelectorAll('.task-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.classList.contains('task-select-checkbox')) return;
+        const taskId = card.dataset.taskId;
+        selectTask(taskId);
+      });
     });
-  });
-  
-  taskBoardEl.querySelectorAll('.task-select-checkbox').forEach(cb => {
-    cb.addEventListener('change', (e) => {
-      const taskId = cb.dataset.taskId;
-      if (cb.checked) {
-        state.selectedTaskIds.add(taskId);
-      } else {
-        state.selectedTaskIds.delete(taskId);
-      }
-      updateBatchToolbar();
-      cardSelectionToggle(taskId, cb.checked);
+    
+    contentDiv.querySelectorAll('.task-select-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const taskId = cb.dataset.taskId;
+        if (cb.checked) {
+          state.selectedTaskIds.add(taskId);
+        } else {
+          state.selectedTaskIds.delete(taskId);
+        }
+        updateBatchToolbar();
+        cardSelectionToggle(taskId, cb.checked);
+      });
     });
-  });
+  };
+  
+  container.addEventListener('scroll', updateVirtualScroll, { passive: true });
+  container._virtualScrollHandler = updateVirtualScroll;
+  
+  updateVirtualScroll();
 }
 
 function cardSelectionToggle(taskId, selected) {
@@ -185,7 +249,25 @@ export async function loadTaskDetail(taskId) {
     }
     
     if (logBoxEl) {
-      logBoxEl.textContent = task.log || '暂无日志';
+      logBoxEl.innerHTML = '<div class="log-lazy-load-prompt">点击加载日志</div>';
+      logBoxEl.dataset.logLoaded = 'false';
+      logBoxEl.dataset.taskId = taskId;
+      
+      logBoxEl.onclick = async () => {
+        if (logBoxEl.dataset.logLoaded === 'true') return;
+        
+        logBoxEl.innerHTML = '<div class="log-loading">加载中...</div>';
+        
+        try {
+          const fullTask = await getTaskDetail(taskId);
+          logBoxEl.textContent = fullTask.log || '暂无日志';
+          logBoxEl.dataset.logLoaded = 'true';
+          logBoxEl.onclick = null;
+          lazyLoadLogTaskIds.add(taskId);
+        } catch (err) {
+          logBoxEl.textContent = '加载日志失败: ' + err.message;
+        }
+      };
     }
     
     if (pauseBtn && resumeBtn) {

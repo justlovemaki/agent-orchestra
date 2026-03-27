@@ -1,5 +1,8 @@
 /**
  * Chart rendering - Chart.js based visualizations
+ * 
+ * 性能优化: 图表懒加载
+ * 使用 IntersectionObserver 实现图表进入视口才渲染，减少初始加载时间
  */
 
 import { state } from '../state.js';
@@ -14,6 +17,47 @@ let notificationTrendsChartInstance = null;
 let notificationStatsChartInstance = null;
 let channelDistChartInstance = null;
 let typeDistChartInstance = null;
+
+/**
+ * 图表懒加载观察器
+ * 监控图表元素是否进入视口，进入后才执行渲染
+ */
+const chartObserverMap = new Map();
+let lazyObserver = null;
+
+function getLazyObserver() {
+  if (!lazyObserver) {
+    lazyObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const chartKey = entry.target.dataset.chartKey;
+          const renderFn = chartObserverMap.get(chartKey);
+          if (renderFn) {
+            renderFn();
+            chartObserverMap.delete(chartKey);
+          }
+          lazyObserver.unobserve(entry.target);
+        }
+      });
+    }, {
+      rootMargin: '100px',
+      threshold: 0.1
+    });
+  }
+  return lazyObserver;
+}
+
+export function observeChartRender(chartEl, chartKey, renderFn) {
+  if (!chartEl) return;
+  chartEl.dataset.chartKey = chartKey;
+  chartObserverMap.set(chartKey, renderFn);
+  getLazyObserver().observe(chartEl);
+}
+
+export function unobserveChartRender(chartEl) {
+  if (!chartEl || !lazyObserver) return;
+  lazyObserver.unobserve(chartEl);
+}
 
 export function getChartElements() {
   return {
@@ -81,10 +125,27 @@ export async function loadTrends(days = state.trendsDays, loadTrendsFn, renderFn
     state.agentUsage = res.agentUsage || [];
     state.taskStatusDistribution = res.taskStatusDistribution || [];
     state.agentWorkloadDistribution = res.agentWorkloadDistribution || [];
-    if (renderFns?.renderTrends) renderFns.renderTrends();
-    if (renderFns?.renderAgentUsage) renderFns.renderAgentUsage();
-    if (renderFns?.renderTaskStatusDistribution) renderFns.renderTaskStatusDistribution();
-    if (renderFns?.renderAgentWorkloadDistribution) renderFns.renderAgentWorkloadDistribution();
+    
+    if (trendsChartEl) {
+      observeChartRender(trendsChartEl, 'trends', () => {
+        if (renderFns?.renderTrends) renderFns.renderTrends();
+      });
+    }
+    if (agentUsageChartEl) {
+      observeChartRender(agentUsageChartEl, 'agentUsage', () => {
+        if (renderFns?.renderAgentUsage) renderFns.renderAgentUsage();
+      });
+    }
+    if (taskStatusChartEl) {
+      observeChartRender(taskStatusChartEl, 'taskStatus', () => {
+        if (renderFns?.renderTaskStatusDistribution) renderFns.renderTaskStatusDistribution();
+      });
+    }
+    if (agentWorkloadChartEl) {
+      observeChartRender(agentWorkloadChartEl, 'agentWorkload', () => {
+        if (renderFns?.renderAgentWorkloadDistribution) renderFns.renderAgentWorkloadDistribution();
+      });
+    }
   } catch (err) {
     state.trends = [];
     state.agentUsage = [];
@@ -664,4 +725,10 @@ export function destroyAllCharts() {
   if (notificationStatsChartInstance) { notificationStatsChartInstance.destroy(); notificationStatsChartInstance = null; }
   if (channelDistChartInstance) { channelDistChartInstance.destroy(); channelDistChartInstance = null; }
   if (typeDistChartInstance) { typeDistChartInstance.destroy(); typeDistChartInstance = null; }
+  
+  chartObserverMap.clear();
+  const { trendsChartEl, agentUsageChartEl, taskStatusChartEl, agentWorkloadChartEl } = getChartElements();
+  [trendsChartEl, agentUsageChartEl, taskStatusChartEl, agentWorkloadChartEl].forEach(el => {
+    if (el) unobserveChartRender(el);
+  });
 }
