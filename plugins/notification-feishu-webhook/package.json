@@ -1,0 +1,16 @@
+{
+  "name": "notification-feishu-webhook",
+  "version": "1.0.0",
+  "description": "飞书 Webhook 通知渠道插件 - 支持通过飞书机器人发送消息",
+  "main": "index.js",
+  "type": "module",
+  "keywords": [
+    "agent-orchestra",
+    "notification",
+    "feishu",
+    "webhook"
+  ],
+  "author": "Agent Orchestra Team",
+  "license": "MIT",
+  "homepage": "https://github.com/agent-orchestra/agent-orchestra"
+}

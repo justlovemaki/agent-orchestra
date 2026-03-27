@@ -1,0 +1,32 @@
+{
+  "name": "notification-feishu-webhook",
+  "version": "1.0.0",
+  "description": "飞书 Webhook 通知渠道插件 - 支持通过飞书机器人发送文本消息",
+  "type": "notification",
+  "author": "Agent Orchestra Team",
+  "license": "MIT",
+  "channelName": "飞书",
+  "supportedFormats": ["text"],
+  "configSchema": {
+    "webhookUrl": {
+      "type": "string",
+      "required": true,
+      "description": "飞书机器人 Webhook 地址"
+    },
+    "secret": {
+      "type": "string",
+      "required": false,
+      "description": "签名密钥（用于签名验证，安全加强）"
+    },
+    "userId": {
+      "type": "string",
+      "required": false,
+      "description": "指定接收用户 ID（可选）"
+    },
+    "departmentId": {
+      "type": "string",
+      "required": false,
+      "description": "指定接收部门 ID（可选）"
+    }
+  }
+}
