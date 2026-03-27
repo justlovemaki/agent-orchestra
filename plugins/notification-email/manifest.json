@@ -1,0 +1,56 @@
+{
+  "name": "notification-email",
+  "version": "1.0.0",
+  "description": "邮件通知渠道插件 - 支持通过 SMTP 协议发送 HTML 和纯文本邮件",
+  "type": "notification",
+  "author": "Agent Orchestra Team",
+  "license": "MIT",
+  "channelName": "Email",
+  "supportedFormats": ["text", "html"],
+  "configSchema": {
+    "smtpHost": {
+      "type": "string",
+      "required": true,
+      "description": "SMTP 服务器地址"
+    },
+    "smtpPort": {
+      "type": "number",
+      "required": true,
+      "default": 465,
+      "description": "SMTP 服务器端口（SSL: 465, TLS: 587, 普通: 25）"
+    },
+    "username": {
+      "type": "string",
+      "required": true,
+      "description": "SMTP 认证用户名"
+    },
+    "password": {
+      "type": "string",
+      "required": true,
+      "secure": true,
+      "description": "SMTP 认证密码或 API 密钥"
+    },
+    "from": {
+      "type": "string",
+      "required": true,
+      "description": "发件人邮箱地址"
+    },
+    "fromName": {
+      "type": "string",
+      "required": false,
+      "description": "发件人显示名称"
+    },
+    "secure": {
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否使用 SSL/TLS 加密连接（465 端口建议启用）"
+    },
+    "rejectUnauthorized": {
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否验证服务器证书（生产环境建议启用）"
+    }
+  }
+}
