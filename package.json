@@ -11,6 +11,9 @@
     "restart": "node restart.js",
     "verify": "node scripts/verify.js",
     "test": "node test/run-tests.js",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
     "build": "node scripts/build.js",
     "install-deps": "npm install @aws-sdk/client-s3"
   },
@@ -19,6 +22,7 @@
     "better-sqlite3": "^9.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "mocha": "^10.0.0"
   }
 }

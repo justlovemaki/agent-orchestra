@@ -1,6 +1,6 @@
 # Test Suite
 
-Automated test framework for Agent Orchestra using Node.js native `assert` module.
+Automated test framework for Agent Orchestra using Node.js native `assert` module and Playwright for E2E tests.
 
 ## Directory Structure
 
@@ -15,8 +15,66 @@ test/
 ├── unit/                  # Unit tests
 │   ├── task-filters.test.js  # Task filtering logic tests
 │   └── quiet-hours.test.js   # Quiet hours logic tests
+├── e2e/                   # End-to-End tests (Playwright)
+│   ├── app.spec.js       # Main E2E tests
+│   └── helpers.js        # E2E test utilities
 └── README.md             # This file
 ```
+
+## E2E Tests (Playwright)
+
+E2E tests use Playwright to test the full application flow in a real browser.
+
+### Prerequisites
+
+```bash
+# Install Playwright browsers
+npx playwright install chromium
+```
+
+### Running E2E Tests
+
+```bash
+# Run all E2E tests
+npm run test:e2e
+
+# Run with visible browser (headed mode)
+npm run test:e2e:headed
+
+# Run with interactive UI
+npm run test:e2e:ui
+
+# Run specific test file
+npx playwright test test/e2e/app.spec.js
+
+# Run specific test
+npx playwright test test/e2e/app.spec.js -g "should load the dashboard"
+```
+
+### Environment Variables
+
+```bash
+# Override base URL (default: http://127.0.0.1:3210)
+BASE_URL=http://127.0.0.1:3210 npm run test:e2e
+```
+
+### E2E Test Coverage
+
+The E2E tests cover:
+- Dashboard page loading
+- User registration
+- User login/logout
+- Task creation form
+- Workflow panel display
+- System status panel
+- Authentication error handling
+
+### Notes
+
+- E2E tests automatically start the server if not already running
+- Tests use Chromium browser by default
+- Screenshots and videos are captured on test failures
+- Trace files are saved for debugging failed tests
 
 ## Running Tests
 
