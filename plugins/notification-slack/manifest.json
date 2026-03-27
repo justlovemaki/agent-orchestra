@@ -1,0 +1,39 @@
+{
+  "name": "notification-slack",
+  "version": "1.0.0",
+  "description": "Slack 通知渠道插件 - 支持通过 Slack Webhook 发送各种格式的消息",
+  "type": "notification",
+  "author": "Agent Orchestra Team",
+  "license": "MIT",
+  "channelName": "Slack",
+  "supportedFormats": ["text", "markdown", "blocks"],
+  "configSchema": {
+    "webhookUrl": {
+      "type": "string",
+      "required": true,
+      "description": "Slack Incoming Webhook URL"
+    },
+    "defaultChannel": {
+      "type": "string",
+      "required": false,
+      "description": "默认频道（可选，覆盖 Webhook 默认设置）"
+    },
+    "username": {
+      "type": "string",
+      "required": false,
+      "default": "Agent Orchestra",
+      "description": "发送者用户名"
+    },
+    "iconEmoji": {
+      "type": "string",
+      "required": false,
+      "default": ":robot_face:",
+      "description": "表情图标"
+    },
+    "iconUrl": {
+      "type": "string",
+      "required": false,
+      "description": "图标 URL（与 iconEmoji 二选一）"
+    }
+  }
+}
