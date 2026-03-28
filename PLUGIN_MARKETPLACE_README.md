@@ -2,9 +2,37 @@
 
 ## 概述
 
-插件市场（Plugin Marketplace）是 Agent Orchestra 的插件分享和发现平台，允许用户上传、下载、评价和分享插件。
+插件市场（Plugin Marketplace）是 Agent Orchestra 的插件分享和发现平台，允许用户上传、下载、评价、分享、安装和更新插件。
+
+**v2.0 新增功能：**
+- ✅ 真实插件下载与安装（支持 zip/tar.gz 格式）
+- ✅ 插件自动更新检测与一键更新
+- ✅ 插件卸载功能（支持备份）
+- ✅ 全局更新检测 API
+- ✅ 更新通知生成
 
 ## 功能特性
+
+### 核心模块
+
+#### 1. PluginInstaller (lib/plugin-installer.js)
+
+插件安装引擎，提供以下功能：
+
+- `downloadPlugin(pluginUrl, destPath)` - 从 URL 下载插件包
+- `extractPlugin(archivePath, destPath)` - 解压插件包
+- `installPlugin(pluginId, userId, options)` - 完整安装流程
+- `updatePlugin(pluginName, userId, options)` - 更新已安装插件
+- `validatePlugin(pluginPath)` - 验证插件完整性
+- `uninstallPlugin(pluginName, userId, options)` - 卸载插件
+
+#### 2. PluginUpdateNotifier (lib/plugin-update-notifier.js)
+
+更新检测与通知模块：
+
+- `checkAllUpdates(userId)` - 检查用户所有插件的更新
+- `getPendingUpdates(userId)` - 获取待更新列表
+- `notifyUpdates(userId)` - 生成更新通知
 
 ### 后端 API
 
@@ -338,7 +366,145 @@ agent-orchestra/
 └── server.js                       # 主服务器（已集成路由）
 ```
 
+#### 10. 安装插件（需要认证）— v2.0 新增
+```
+POST /api/plugins/marketplace/:id/install
+```
+
+**功能：** 从市场真实下载并安装插件到 `plugins/` 目录
+
+**响应示例：**
+```json
+{
+  "success": true,
+  "plugin": { ... },
+  "installResult": {
+    "pluginName": "my-plugin",
+    "version": "1.0.0",
+    "installedPath": "/path/to/plugins/my-plugin",
+    "validated": true
+  },
+  "message": "插件安装成功"
+}
+```
+
+#### 11. 更新插件（需要认证）— v2.0 新增
+```
+POST /api/plugins/marketplace/:id/update
+```
+
+**功能：** 更新已安装插件到最新版本
+
+**响应示例：**
+```json
+{
+  "success": true,
+  "updateResult": {
+    "pluginName": "my-plugin",
+    "oldVersion": "1.0.0",
+    "newVersion": "1.2.0",
+    "backupPath": "/path/to/backups/my-plugin-1.0.0"
+  },
+  "message": "插件已更新至 1.2.0 版本"
+}
+```
+
+#### 12. 卸载插件（需要认证）— v2.0 新增
+```
+POST /api/plugins/marketplace/:id/uninstall
+```
+
+**功能：** 卸载已安装插件（可选择保留备份）
+
+**响应示例：**
+```json
+{
+  "success": true,
+  "uninstallResult": {
+    "pluginName": "my-plugin",
+    "backupCreated": true,
+    "backupPath": "/path/to/backups/my-plugin"
+  },
+  "message": "插件卸载成功"
+}
+```
+
+#### 13. 检查插件更新（需要认证）— v2.0 新增
+```
+GET /api/plugins/marketplace/:id/check-updates
+```
+
+**响应示例：**
+```json
+{
+  "pluginId": "xxx",
+  "pluginName": "my-plugin",
+  "currentVersion": "1.0.0",
+  "latestVersion": "1.2.0",
+  "hasUpdate": true,
+  "downloadUrl": "https://..."
+}
+```
+
+#### 14. 获取所有可用更新（需要认证）— v2.0 新增
+```
+GET /api/plugins/updates
+```
+
+**功能：** 检查用户所有已安装插件的可用更新
+
+**响应示例：**
+```json
+{
+  "hasUpdates": true,
+  "updates": [
+    {
+      "pluginId": "xxx",
+      "pluginName": "my-plugin",
+      "currentVersion": "1.0.0",
+      "latestVersion": "1.2.0",
+      "updateType": "minor",
+      "updateReason": "新功能和性能改进"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### 15. 生成更新通知（需要认证）— v2.0 新增
+```
+POST /api/plugins/updates/notify
+```
+
+**功能：** 生成更新通知消息（可集成到通知系统）
+
+**响应示例：**
+```json
+{
+  "hasUpdates": true,
+  "count": 2,
+  "notification": {
+    "title": "插件更新通知",
+    "message": "您有 2 个插件可以更新：my-plugin (1.0.0 → 1.2.0), other-plugin (2.0.0 → 2.1.0)"
+  }
+}
+```
+
 ## 更新日志
+
+### v2.0.0 (2026-03-28) — 🚀 大演进
+- ✅ **PluginInstaller 模块** — 真实插件下载、解压、安装、验证、卸载引擎
+- ✅ **PluginUpdateNotifier 模块** — 更新检测与通知生成
+- ✅ **安装 API** — POST /api/plugins/marketplace/:id/install
+- ✅ **更新 API** — POST /api/plugins/marketplace/:id/update
+- ✅ **卸载 API** — POST /api/plugins/marketplace/:id/uninstall
+- ✅ **检查更新 API** — GET /api/plugins/marketplace/:id/check-updates
+- ✅ **全局更新检测** — GET /api/plugins/updates
+- ✅ **更新通知** — POST /api/plugins/updates/notify
+- ✅ **52 个单元测试** — 覆盖安装器、更新检测器核心功能
+- ✅ **npm 依赖** — 添加 tar 包用于解压
+
+从"有市场原型"到"有完整插件生态"的维度跃迁，支持真实的插件下载、安装、更新、卸载全流程。
 
 ### v1.0.0 (2026-03-28)
 - ✅ 实现插件市场核心 API

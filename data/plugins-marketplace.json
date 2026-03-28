@@ -18,7 +18,12 @@
       "downloadUrl": "https://github.com/example/auto-reporter/releases",
       "manifest": { "name": "Auto Reporter", "version": "1.2.0", "author": "OpenClaw Team", "description": "自动生成日报、周报和月报", "category": "automation" },
       "uploadedBy": "admin",
-      "uploadedByName": "Admin"
+      "uploadedByName": "Admin",
+      "status": "approved",
+      "reviewedBy": "admin",
+      "reviewedByName": "Admin",
+      "reviewedAt": 1711600000000,
+      "installedBy": ["user1", "user2"]
     },
     {
       "id": "feishu-connector-1711500000000-def456",
@@ -37,7 +42,12 @@
       "downloadUrl": "https://github.com/example/feishu-connector",
       "manifest": { "name": "Feishu Connector", "version": "2.0.1", "author": "Lark Developer", "description": "飞书集成工具", "category": "integration" },
       "uploadedBy": "admin",
-      "uploadedByName": "Admin"
+      "uploadedByName": "Admin",
+      "status": "approved",
+      "reviewedBy": "admin",
+      "reviewedByName": "Admin",
+      "reviewedAt": 1711500000000,
+      "installedBy": ["user3"]
     },
     {
       "id": "task-analytics-1711400000000-ghi789",
@@ -54,7 +64,12 @@
       "downloadUrl": "",
       "manifest": { "name": "Task Analytics", "version": "1.0.5", "author": "Data Team", "description": "任务数据分析工具", "category": "analytics" },
       "uploadedBy": "admin",
-      "uploadedByName": "Admin"
+      "uploadedByName": "Admin",
+      "status": "approved",
+      "reviewedBy": "admin",
+      "reviewedByName": "Admin",
+      "reviewedAt": 1711400000000,
+      "installedBy": []
     },
     {
       "id": "notification-hub-1711300000000-jkl012",
@@ -75,7 +90,12 @@
       "downloadUrl": "https://github.com/example/notification-hub",
       "manifest": { "name": "Notification Hub", "version": "3.1.0", "author": "Comm Team", "description": "统一通知中心", "category": "communication" },
       "uploadedBy": "admin",
-      "uploadedByName": "Admin"
+      "uploadedByName": "Admin",
+      "status": "approved",
+      "reviewedBy": "admin",
+      "reviewedByName": "Admin",
+      "reviewedAt": 1711300000000,
+      "installedBy": ["user4", "user5", "user6"]
     },
     {
       "id": "backup-helper-1711200000000-mno345",
@@ -94,7 +114,33 @@
       "downloadUrl": "https://github.com/example/backup-helper",
       "manifest": { "name": "Backup Helper", "version": "1.1.2", "author": "Security Team", "description": "定时备份助手", "category": "utility" },
       "uploadedBy": "admin",
-      "uploadedByName": "Admin"
+      "uploadedByName": "Admin",
+      "status": "approved",
+      "reviewedBy": "admin",
+      "reviewedByName": "Admin",
+      "reviewedAt": 1711200000000,
+      "installedBy": ["user7"]
+    },
+    {
+      "id": "pending-plugin-1712000000000-xyz000",
+      "name": "Pending Test Plugin",
+      "description": "待审核的测试插件",
+      "version": "1.0.0",
+      "author": "Test Author",
+      "category": "utility",
+      "downloads": 0,
+      "rating": 0,
+      "reviews": [],
+      "createdAt": 1712000000000,
+      "updatedAt": 1712000000000,
+      "downloadUrl": "https://github.com/example/pending-test",
+      "manifest": { "name": "Pending Test Plugin", "version": "1.0.0", "author": "Test Author", "description": "待审核的测试插件", "category": "utility" },
+      "uploadedBy": "testuser",
+      "uploadedByName": "Test User",
+      "status": "pending",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "installedBy": []
     }
   ],
   "categories": [
