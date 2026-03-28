@@ -69,6 +69,10 @@ function pluginsRoutes(serverWithEvents, deps) {
 
     if (pathname.match(/^\/api\/plugins\/[\w-]+$/) && req.method === 'GET') {
       const pluginName = pathname.split('/')[3];
+      // 排除插件市场路径
+      if (pluginName === 'marketplace') {
+        return; // 让插件市场路由处理
+      }
       try {
         const plugin = pluginSystem.getPlugin(pluginName);
         if (!plugin) {

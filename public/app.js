@@ -9583,3 +9583,11 @@ async function loadAgentPerformance() {
 }
 
 loadAgentPerformance();
+
+// 插件市场入口
+const marketplaceBtn = document.getElementById('marketplaceBtn');
+if (marketplaceBtn) {
+  marketplaceBtn.addEventListener('click', () => {
+    window.location.href = '/plugins-marketplace.html';
+  });
+}

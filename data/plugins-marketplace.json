@@ -1,0 +1,110 @@
+{
+  "plugins": [
+    {
+      "id": "auto-reporter-1711600000000-abc123",
+      "name": "Auto Reporter",
+      "description": "自动生成日报、周报和月报，支持多种格式导出",
+      "version": "1.2.0",
+      "author": "OpenClaw Team",
+      "category": "automation",
+      "downloads": 128,
+      "rating": 4.5,
+      "reviews": [
+        { "userId": "user1", "userName": "张三", "rating": 5, "comment": "非常好用，节省了大量时间！", "createdAt": 1711700000000 },
+        { "userId": "user2", "userName": "李四", "rating": 4, "comment": "功能强大，希望能支持更多格式", "createdAt": 1711800000000 }
+      ],
+      "createdAt": 1711600000000,
+      "updatedAt": 1711900000000,
+      "downloadUrl": "https://github.com/example/auto-reporter/releases",
+      "manifest": { "name": "Auto Reporter", "version": "1.2.0", "author": "OpenClaw Team", "description": "自动生成日报、周报和月报", "category": "automation" },
+      "uploadedBy": "admin",
+      "uploadedByName": "Admin"
+    },
+    {
+      "id": "feishu-connector-1711500000000-def456",
+      "name": "Feishu Connector",
+      "description": "飞书集成工具，支持消息发送、日历同步、任务管理等功能",
+      "version": "2.0.1",
+      "author": "Lark Developer",
+      "category": "integration",
+      "downloads": 256,
+      "rating": 4.8,
+      "reviews": [
+        { "userId": "user3", "userName": "王五", "rating": 5, "comment": "集成非常完善，推荐！", "createdAt": 1711600000000 }
+      ],
+      "createdAt": 1711500000000,
+      "updatedAt": 1711700000000,
+      "downloadUrl": "https://github.com/example/feishu-connector",
+      "manifest": { "name": "Feishu Connector", "version": "2.0.1", "author": "Lark Developer", "description": "飞书集成工具", "category": "integration" },
+      "uploadedBy": "admin",
+      "uploadedByName": "Admin"
+    },
+    {
+      "id": "task-analytics-1711400000000-ghi789",
+      "name": "Task Analytics",
+      "description": "任务数据分析工具，提供丰富的图表和统计报告",
+      "version": "1.0.5",
+      "author": "Data Team",
+      "category": "analytics",
+      "downloads": 89,
+      "rating": 4.2,
+      "reviews": [],
+      "createdAt": 1711400000000,
+      "updatedAt": 1711500000000,
+      "downloadUrl": "",
+      "manifest": { "name": "Task Analytics", "version": "1.0.5", "author": "Data Team", "description": "任务数据分析工具", "category": "analytics" },
+      "uploadedBy": "admin",
+      "uploadedByName": "Admin"
+    },
+    {
+      "id": "notification-hub-1711300000000-jkl012",
+      "name": "Notification Hub",
+      "description": "统一通知中心，支持飞书、钉钉、企业微信、Slack 等多个平台",
+      "version": "3.1.0",
+      "author": "Comm Team",
+      "category": "communication",
+      "downloads": 312,
+      "rating": 4.6,
+      "reviews": [
+        { "userId": "user4", "userName": "赵六", "rating": 5, "comment": "多平台支持太方便了", "createdAt": 1711400000000 },
+        { "userId": "user5", "userName": "钱七", "rating": 4, "comment": "很好用，但配置有点复杂", "createdAt": 1711500000000 },
+        { "userId": "user6", "userName": "孙八", "rating": 5, "comment": "团队必备工具", "createdAt": 1711600000000 }
+      ],
+      "createdAt": 1711300000000,
+      "updatedAt": 1711800000000,
+      "downloadUrl": "https://github.com/example/notification-hub",
+      "manifest": { "name": "Notification Hub", "version": "3.1.0", "author": "Comm Team", "description": "统一通知中心", "category": "communication" },
+      "uploadedBy": "admin",
+      "uploadedByName": "Admin"
+    },
+    {
+      "id": "backup-helper-1711200000000-mno345",
+      "name": "Backup Helper",
+      "description": "定时备份助手，支持本地和云存储备份",
+      "version": "1.1.2",
+      "author": "Security Team",
+      "category": "utility",
+      "downloads": 175,
+      "rating": 4.3,
+      "reviews": [
+        { "userId": "user7", "userName": "周九", "rating": 4, "comment": "稳定可靠", "createdAt": 1711300000000 }
+      ],
+      "createdAt": 1711200000000,
+      "updatedAt": 1711600000000,
+      "downloadUrl": "https://github.com/example/backup-helper",
+      "manifest": { "name": "Backup Helper", "version": "1.1.2", "author": "Security Team", "description": "定时备份助手", "category": "utility" },
+      "uploadedBy": "admin",
+      "uploadedByName": "Admin"
+    }
+  ],
+  "categories": [
+    { "id": "automation", "name": "自动化", "icon": "⚙️" },
+    { "id": "integration", "name": "集成工具", "icon": "🔌" },
+    { "id": "analytics", "name": "数据分析", "icon": "📊" },
+    { "id": "communication", "name": "通讯工具", "icon": "💬" },
+    { "id": "utility", "name": "实用工具", "icon": "🛠️" },
+    { "id": "security", "name": "安全工具", "icon": "🔒" },
+    { "id": "monitoring", "name": "监控告警", "icon": "📈" },
+    { "id": "other", "name": "其他", "icon": "📦" }
+  ]
+}

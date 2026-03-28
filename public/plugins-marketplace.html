@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>插件市场 - Agent Orchestra</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .marketplace-container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .marketplace-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-wrap: wrap; gap: 16px; }
+    .marketplace-title { font-size: 28px; font-weight: 700; color: #1a1a1a; margin: 0; }
+    .marketplace-subtitle { color: #666; margin-top: 4px; }
+    .marketplace-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .search-input { padding: 10px 16px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; width: 280px; }
+    .search-input:focus { outline: none; border-color: #4a90d9; }
+    .category-filter, .sort-select { padding: 10px 16px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: white; cursor: pointer; }
+    .plugins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px; }
+    .plugin-card { background: white; border: 1px solid #e8e8e8; border-radius: 12px; padding: 20px; transition: all 0.2s; cursor: pointer; }
+    .plugin-card:hover { border-color: #4a90d9; box-shadow: 0 4px 12px rgba(74, 144, 217, 0.1); transform: translateY(-2px); }
+    .plugin-name { font-size: 18px; font-weight: 600; color: #1a1a1a; margin: 0; }
+    .plugin-version { font-size: 12px; color: #666; background: #f5f5f5; padding: 2px 8px; border-radius: 4px; margin-left: 8px; }
+    .plugin-category { font-size: 12px; color: #4a90d9; background: rgba(74, 144, 217, 0.1); padding: 4px 10px; border-radius: 12px; display: inline-block; margin-bottom: 12px; }
+    .plugin-description { color: #666; font-size: 14px; line-height: 1.5; margin-bottom: 16px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .plugin-meta { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+    .plugin-author { font-size: 13px; color: #666; }
+    .plugin-rating { display: flex; align-items: center; gap: 4px; font-size: 14px; color: #f59e0b; }
+    .plugin-stats { display: flex; gap: 16px; margin-top: 8px; }
+    .stat-item { font-size: 12px; color: #999; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s; }
+    .modal-overlay.active { opacity: 1; visibility: visible; }
+    .modal-content { background: white; border-radius: 16px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 24px; border-bottom: 1px solid #e8e8e8; position: sticky; top: 0; background: white; z-index: 1; }
+    .modal-title { font-size: 24px; font-weight: 600; margin: 0; }
+    .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+    .modal-body { padding: 24px; }
+    .plugin-detail-section { margin-bottom: 24px; }
+    .plugin-detail-label { font-size: 14px; font-weight: 600; color: #666; margin-bottom: 8px; }
+    .plugin-detail-value { font-size: 16px; color: #1a1a1a; line-height: 1.6; }
+    .rating-section { display: flex; gap: 24px; align-items: flex-start; margin-top: 24px; }
+    .rating-summary { text-align: center; padding: 20px; background: #f9f9f9; border-radius: 12px; min-width: 150px; }
+    .rating-number { font-size: 48px; font-weight: 700; color: #f59e0b; line-height: 1; }
+    .rating-stars { font-size: 24px; margin: 8px 0; }
+    .rating-count { font-size: 14px; color: #999; }
+    .star-rating { display: flex; gap: 8px; margin-bottom: 12px; }
+    .star-btn { background: none; border: none; font-size: 32px; cursor: pointer; color: #e0e0e0; }
+    .star-btn.active, .star-btn:hover { color: #f59e0b; }
+    .rating-comment { width: 100%; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 80px; font-family: inherit; }
+    .submit-rating-btn { margin-top: 12px; padding: 10px 24px; background: #4a90d9; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
+    .submit-rating-btn:hover { background: #3a7bc8; }
+    .reviews-list { margin-top: 24px; }
+    .review-item { padding: 16px; border-bottom: 1px solid #f0f0f0; }
+    .review-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .reviewer-name { font-weight: 500; color: #1a1a1a; }
+    .review-date { font-size: 12px; color: #999; }
+    .review-comment { color: #666; font-size: 14px; line-height: 1.5; }
+    .upload-form { display: flex; flex-direction: column; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 14px; font-weight: 500; color: #1a1a1a; }
+    .form-input, .form-select, .form-textarea { padding: 10px 14px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; font-family: inherit; }
+    .form-textarea { min-height: 100px; resize: vertical; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: #4a90d9; }
+    .form-help { font-size: 12px; color: #999; }
+    .upload-btn { padding: 12px 24px; background: #4a90d9; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; align-self: flex-start; }
+    .upload-btn:hover { background: #3a7bc8; }
+    .upload-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .empty-state, .loading-state { text-align: center; padding: 60px 20px; }
+    .empty-state-icon { font-size: 64px; margin-bottom: 16px; }
+    .empty-state-text { font-size: 18px; margin-bottom: 8px; color: #999; }
+    .empty-state-subtext { font-size: 14px; color: #999; }
+    .loading-spinner { border: 3px solid #f0f0f0; border-top-color: #4a90d9; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 24px; background: #1a1a1a; color: white; border-radius: 8px; font-size: 14px; z-index: 2000; opacity: 0; transform: translateY(20px); transition: all 0.3s; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { background: #ef4444; }
+    .toast.success { background: #10b981; }
+    .plugin-actions { display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #e8e8e8; }
+    .action-btn { flex: 1; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; text-decoration: none; text-align: center; }
+    .action-btn.primary { background: #4a90d9; color: white; }
+    .action-btn.primary:hover { background: #3a7bc8; }
+    .action-btn.secondary { background: #f5f5f5; color: #1a1a1a; }
+    .action-btn.secondary:hover { background: #e8e8e8; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="marketplace-container">
+    <div class="marketplace-header">
+      <div>
+        <h1 class="marketplace-title">🔌 插件市场</h1>
+        <p class="marketplace-subtitle">发现和分享 Agent Orchestra 插件</p>
+      </div>
+      <div class="marketplace-controls">
+        <input type="text" class="search-input" id="searchInput" placeholder="搜索插件...">
+        <select class="category-filter" id="categoryFilter"><option value="">全部分类</option></select>
+        <select class="sort-select" id="sortSelect">
+          <option value="createdAt:desc">最新发布</option>
+          <option value="rating:desc">评分最高</option>
+          <option value="downloads:desc">下载最多</option>
+          <option value="name:asc">名称 A-Z</option>
+        </select>
+        <button class="primary" id="uploadPluginBtn">上传插件</button>
+        <button class="ghost" id="backToMainBtn">返回主页</button>
+      </div>
+    </div>
+    <div id="pluginsGrid" class="plugins-grid"></div>
+    <div id="emptyState" class="empty-state hidden"><div class="empty-state-icon">📦</div><div class="empty-state-text">暂无插件</div><div class="empty-state-subtext">成为第一个上传插件的人吧！</div></div>
+    <div id="loadingState" class="loading-state"><div class="loading-spinner"></div><div>加载中...</div></div>
+  </div>
+
+  <div class="modal-overlay" id="pluginModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalPluginName">插件详情</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="uploadModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">上传插件</h2>
+        <button class="modal-close" id="uploadModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form class="upload-form" id="uploadForm">
+          <div class="form-group">
+            <label class="form-label">插件名称 *</label>
+            <input type="text" class="form-input" id="pluginNameInput" required placeholder="例如：Auto Reporter">
+          </div>
+          <div class="form-group">
+            <label class="form-label">版本号 *</label>
+            <input type="text" class="form-input" id="pluginVersionInput" required placeholder="1.0.0" pattern="\d+\.\d+\.\d+">
+            <span class="form-help">格式：x.y.z</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">作者 *</label>
+            <input type="text" class="form-input" id="pluginAuthorInput" required placeholder="您的名字或组织">
+          </div>
+          <div class="form-group">
+            <label class="form-label">分类</label>
+            <select class="form-select" id="pluginCategoryInput">
+              <option value="automation">自动化</option>
+              <option value="integration">集成工具</option>
+              <option value="analytics">数据分析</option>
+              <option value="communication">通讯工具</option>
+              <option value="utility">实用工具</option>
+              <option value="security">安全工具</option>
+              <option value="monitoring">监控告警</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">描述 *</label>
+            <textarea class="form-textarea" id="pluginDescInput" required placeholder="简要描述插件的功能和用途"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">下载地址</label>
+            <input type="url" class="form-input" id="pluginDownloadUrlInput" placeholder="https://...">
+            <span class="form-help">插件包或源代码的下载链接（可选）</span>
+          </div>
+          <button type="submit" class="upload-btn" id="submitUploadBtn">上传插件</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function() {
+      let currentPlugins = [], currentCategories = [], selectedPlugin = null;
+
+      async function fetchAPI(endpoint) {
+        const res = await fetch(endpoint);
+        if (!res.ok) { const err = await res.json().catch(() => ({ error: '请求失败' })); throw new Error(err.error || '请求失败'); }
+        return res.json();
+      }
+
+      async function postAPI(endpoint, data) {
+        const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        if (!res.ok) { const err = await res.json().catch(() => ({ error: '请求失败' })); throw new Error(err.error || '请求失败'); }
+        return res.json();
+      }
+
+      function showToast(msg, type = 'info') {
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.className = `toast ${type} show`;
+        setTimeout(() => { t.className = 'toast'; }, 3000);
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      function renderStars(rating) {
+        const full = Math.floor(rating), hasHalf = rating % 1 >= 0.5;
+        return '★'.repeat(full) + (hasHalf ? '☆' : '') + '☆'.repeat(5 - full - (hasHalf ? 1 : 0));
+      }
+
+      function getCategoryName(id) {
+        const c = currentCategories.find(x => x.id === id);
+        return c ? `${c.icon} ${c.name}` : '📦 其他';
+      }
+
+      async function loadCategories() {
+        try {
+          const data = await fetchAPI('/api/plugins/marketplace/categories');
+          currentCategories = data.categories || [];
+          const sel = document.getElementById('categoryFilter');
+          sel.innerHTML = '<option value="">全部分类</option>';
+          currentCategories.forEach(c => {
+            const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.icon} ${c.name}`; sel.appendChild(o);
+          });
+        } catch (e) { console.error('加载分类失败:', e); }
+      }
+
+      async function loadPlugins() {
+        const grid = document.getElementById('pluginsGrid'), empty = document.getElementById('emptyState'), loading = document.getElementById('loadingState');
+        loading.classList.remove('hidden'); grid.classList.add('hidden'); empty.classList.add('hidden');
+        try {
+          const search = document.getElementById('searchInput').value, category = document.getElementById('categoryFilter').value, sort = document.getElementById('sortSelect').value;
+          const [sortBy, order] = sort.split(':');
+          let url = `/api/plugins/marketplace?sortBy=${sortBy}&order=${order}`;
+          if (search) url += `&search=${encodeURIComponent(search)}`;
+          if (category) url += `&category=${category}`;
+          const data = await fetchAPI(url);
+          currentPlugins = data.plugins || [];
+          loading.classList.add('hidden');
+          if (currentPlugins.length === 0) { empty.classList.remove('hidden'); }
+          else { grid.classList.remove('hidden'); renderPlugins(currentPlugins); }
+        } catch (e) { loading.classList.add('hidden'); showToast('加载失败：' + e.message, 'error'); }
+      }
+
+      function renderPlugins(plugins) {
+        const grid = document.getElementById('pluginsGrid'); grid.innerHTML = '';
+        plugins.forEach(p => {
+          const card = document.createElement('div'); card.className = 'plugin-card';
+          card.innerHTML = `<div class="plugin-card-header"><h3 class="plugin-name">${escapeHtml(p.name)} <span class="plugin-version">v${p.version}</span></h3></div>
+            <div class="plugin-category">${getCategoryName(p.category)}</div>
+            <p class="plugin-description">${escapeHtml(p.description)}</p>
+            <div class="plugin-meta">
+              <div><div class="plugin-author">by ${escapeHtml(p.author)}</div><div class="plugin-stats"><span class="stat-item">⬇️ ${p.downloads || 0} 次下载</span></div></div>
+              <div class="plugin-rating">${renderStars(p.rating)} <span>${p.rating.toFixed(1)}</span> <span class="plugin-downloads">(${p.reviews?.length || 0})</span></div>
+            </div>`;
+          card.addEventListener('click', () => showPluginDetail(p)); grid.appendChild(card);
+        });
+      }
+
+      async function showPluginDetail(plugin) {
+        selectedPlugin = plugin;
+        const modal = document.getElementById('pluginModal'), modalBody = document.getElementById('modalBody'), modalTitle = document.getElementById('modalPluginName');
+        modalTitle.textContent = `${plugin.name} v${plugin.version}`;
+        try { const data = await fetchAPI(`/api/plugins/marketplace/${plugin.id}`); plugin = data.plugin; } catch (e) { console.error('加载详情失败:', e); }
+        const reviewsHtml = plugin.reviews && plugin.reviews.length > 0 ?
+          `<div class="reviews-list"><h3>用户评价 (${plugin.reviews.length})</h3>${plugin.reviews.map(r =>
+            `<div class="review-item"><div class="review-header"><span class="reviewer-name">${escapeHtml(r.userName)}</span><span class="review-date">${new Date(r.createdAt).toLocaleDateString('zh-CN')}</span></div>
+            <div class="review-rating">${renderStars(r.rating)}</div>${r.comment ? `<p class="review-comment">${escapeHtml(r.comment)}</p>` : ''}</div>`).join('')}</div>` :
+          '<p class="muted">暂无评价</p>';
+        modalBody.innerHTML = `<div class="plugin-detail-section"><div class="plugin-detail-label">描述</div><div class="plugin-detail-value">${escapeHtml(plugin.description)}</div></div>
+          <div class="plugin-detail-section"><div class="plugin-detail-label">分类</div><div class="plugin-detail-value">${getCategoryName(plugin.category)}</div></div>
+          <div class="plugin-detail-section"><div class="plugin-detail-label">作者</div><div class="plugin-detail-value">${escapeHtml(plugin.author)}</div></div>
+          <div class="plugin-detail-section"><div class="plugin-detail-label">版本</div><div class="plugin-detail-value">${plugin.version}</div></div>
+          <div class="plugin-detail-section"><div class="plugin-detail-label">下载</div><div class="plugin-detail-value">${plugin.downloadUrl ? `<a href="${escapeHtml(plugin.downloadUrl)}" target="_blank">${escapeHtml(plugin.downloadUrl)}</a>` : '暂无下载链接'}</div></div>
+          <div class="plugin-detail-section"><div class="plugin-detail-label">统计</div><div class="plugin-detail-value">⬇️ ${plugin.downloads || 0} 次下载 | ⭐ ${plugin.rating.toFixed(1)} 分 (${plugin.reviews?.length || 0} 条评价) | 📅 ${new Date(plugin.createdAt).toLocaleDateString('zh-CN')} 发布</div></div>
+          <div class="rating-section">
+            <div class="rating-summary"><div class="rating-number">${plugin.rating.toFixed(1)}</div><div class="rating-stars">${renderStars(plugin.rating)}</div><div class="rating-count">${plugin.reviews?.length || 0} 条评价</div></div>
+            <div class="rating-form"><h3>评价此插件</h3><div class="star-rating" id="starRating">${[1,2,3,4,5].map(i => `<button type="button" class="star-btn" data-rating="${i}">☆</button>`).join('')}</div>
+            <textarea class="rating-comment" id="ratingComment" placeholder="写下您的评价（可选）"></textarea>
+            <button class="submit-rating-btn" id="submitRatingBtn">提交评价</button></div>
+          </div>${reviewsHtml}
+          <div class="plugin-actions">${plugin.downloadUrl ? `<a href="${escapeHtml(plugin.downloadUrl)}" target="_blank" class="action-btn primary">⬇️ 下载插件</a>` : ''}<button class="action-btn secondary" id="closeDetailBtn">关闭</button></div>`;
+        let selectedRating = 0;
+        modalBody.querySelectorAll('.star-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            selectedRating = parseInt(btn.dataset.rating);
+            modalBody.querySelectorAll('.star-btn').forEach((b, i) => { b.classList.toggle('active', i < selectedRating); b.textContent = i < selectedRating ? '★' : '☆'; });
+          });
+        });
+        modalBody.querySelector('#submitRatingBtn').addEventListener('click', async () => {
+          if (selectedRating === 0) { showToast('请选择评分', 'error'); return; }
+          try { await postAPI(`/api/plugins/marketplace/${plugin.id}/rate`, { rating: selectedRating, comment: modalBody.querySelector('#ratingComment').value }); showToast('评价成功！', 'success'); showPluginDetail(plugin); }
+          catch (e) { showToast(e.message, 'error'); }
+        });
+        modalBody.querySelector('#closeDetailBtn').addEventListener('click', () => modal.classList.remove('active'));
+        modal.classList.add('active');
+      }
+
+      function showUploadForm() { document.getElementById('uploadModal').classList.add('active'); }
+
+      document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('submitUploadBtn'); btn.disabled = true; btn.textContent = '上传中...';
+        try {
+          const manifest = { name: document.getElementById('pluginNameInput').value, version: document.getElementById('pluginVersionInput').value, author: document.getElementById('pluginAuthorInput').value, category: document.getElementById('pluginCategoryInput').value, description: document.getElementById('pluginDescInput').value };
+          const downloadUrl = document.getElementById('pluginDownloadUrlInput').value;
+          await postAPI('/api/plugins/marketplace/upload', { manifest, downloadUrl: downloadUrl || null });
+          showToast('插件上传成功！', 'success'); document.getElementById('uploadModal').classList.remove('active'); document.getElementById('uploadForm').reset(); loadPlugins();
+        } catch (e) { showToast(e.message, 'error'); }
+        finally { btn.disabled = false; btn.textContent = '上传插件'; }
+      });
+
+      function debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; }
+
+      document.getElementById('searchInput').addEventListener('input', debounce(loadPlugins, 300));
+      document.getElementById('categoryFilter').addEventListener('change', loadPlugins);
+      document.getElementById('sortSelect').addEventListener('change', loadPlugins);
+      document.getElementById('uploadPluginBtn').addEventListener('click', showUploadForm);
+      document.getElementById('modalClose').addEventListener('click', () => document.getElementById('pluginModal').classList.remove('active'));
+      document.getElementById('uploadModalClose').addEventListener('click', () => document.getElementById('uploadModal').classList.remove('active'));
+      document.getElementById('backToMainBtn').addEventListener('click', () => window.location.href = '/');
+      document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); }));
+
+      // 初始化
+      loadCategories();
+      loadPlugins();
+    })();
+  </script>
+</body>
+</html>
