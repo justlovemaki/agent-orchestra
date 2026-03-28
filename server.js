@@ -38,6 +38,7 @@ const workloadAlerts = require('./lib/workload-alerts');
 const { performanceMonitor } = require('./lib/performance-monitor');
 const { emitTaskCreated, emitTaskCompleted, emitTaskFailed, emitWorkflowStarted, emitWorkflowCompleted, emitNotificationSent } = require('./lib/plugin-event-system');
 const { getFeishuConfig, sendFeishuImageMessage, getDingTalkConfig, sendDingTalkImageMessage, getWecomConfig, sendWecomImageMessage, getSlackConfig, sendSlackImageMessage } = notificationSenders;
+const { createOpenClawIntegration, loadOpenClawConfig } = require('./lib/openclaw-integration');
 
 const tasksRoutes = require('./routes/tasks');
 const templatesRoutes = require('./routes/templates');
@@ -53,6 +54,7 @@ const exportRoutes = require('./routes/export');
 const healthRoutes = require('./routes/health');
 const pluginsRoutes = require('./routes/plugins');
 const pluginsMarketplaceRoutes = require('./routes/plugins-marketplace');
+const openclawRoutes = require('./routes/openclaw');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -1516,6 +1518,75 @@ ensureData().then(async () => {
   const pluginLoadResults = await pluginSystem.initialize(DATA_DIR);
   console.log(`Plugin system initialized: ${pluginLoadResults.success.length} plugins loaded, ${pluginLoadResults.failed.length} failed`);
 
+  const openclawConfig = loadOpenClawConfig(DATA_DIR);
+  const openclawIntegration = createOpenClawIntegration({
+    gatewayUrl: openclawConfig.gatewayUrl || 'http://127.0.0.1:13000',
+    token: openclawConfig.token || ''
+  });
+
+  openclawIntegration.subscribeToEvent('agent.spawned', (data) => {
+    console.log('[OpenClaw] Agent spawned:', data);
+    addAuditEvent('openclaw.agent.spawned', data, 'openclaw').catch(() => {});
+  });
+
+  openclawIntegration.subscribeToEvent('agent.completed', (data) => {
+    console.log('[OpenClaw] Agent completed:', data);
+    addAuditEvent('openclaw.agent.completed', data, 'openclaw').catch(() => {});
+  });
+
+  openclawIntegration.subscribeToEvent('session.created', (data) => {
+    console.log('[OpenClaw] Session created:', data);
+    addAuditEvent('openclaw.session.created', data, 'openclaw').catch(() => {});
+  });
+
+  openclawIntegration.subscribeToEvent('session.ended', (data) => {
+    console.log('[OpenClaw] Session ended:', data);
+    addAuditEvent('openclaw.session.ended', data, 'openclaw').catch(() => {});
+  });
+
+  openclawIntegration.registerTool({
+    name: 'orchestra-tasks',
+    description: 'Create and manage tasks in Agent Orchestra',
+    parameters: {
+      title: { type: 'string', description: 'Task title' },
+      prompt: { type: 'string', description: 'Task prompt/content' },
+      agents: { type: 'array', description: 'Array of agent IDs to run the task' },
+      mode: { type: 'string', enum: ['broadcast', 'parallel'], description: 'Execution mode' }
+    },
+    handler: async (params) => {
+      const task = await createTask({
+        title: params.title,
+        prompt: params.prompt,
+        agents: params.agents,
+        mode: params.mode
+      });
+      return task;
+    }
+  });
+
+  openclawIntegration.registerTool({
+    name: 'orchestra-status',
+    description: 'Get Agent Orchestra system status',
+    parameters: {},
+    handler: async () => {
+      const overview = await buildOverview(true);
+      return overview;
+    }
+  });
+
+  if (openclawConfig.autoConnect) {
+    console.log('[OpenClaw] Auto-connect enabled, connecting to Gateway...');
+    openclawIntegration.connect().then(result => {
+      if (result.success) {
+        console.log('[OpenClaw] Connected to Gateway');
+      } else {
+        console.log('[OpenClaw] Auto-connect failed:', result.message);
+      }
+    }).catch(err => {
+      console.log('[OpenClaw] Auto-connect error:', err.message);
+    });
+  }
+
   const deps = {
     readTasks,
     writeTasks,
@@ -1647,7 +1718,8 @@ ensureData().then(async () => {
       throw new Error('Restore functionality not yet implemented');
     },
     pluginSystem,
-    performanceMonitor
+    performanceMonitor,
+    openclawIntegration
   };
 
   tasksRoutes(serverWithEvents, deps);
@@ -1664,6 +1736,7 @@ ensureData().then(async () => {
   healthRoutes(serverWithEvents, deps);
   pluginsRoutes(serverWithEvents, deps);
   pluginsMarketplaceRoutes(serverWithEvents, deps);
+  openclawRoutes(serverWithEvents, deps);
 
   console.log(`Registered ${requestHandlers.length} route handlers`);
 

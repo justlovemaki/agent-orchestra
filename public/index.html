@@ -1054,6 +1054,115 @@
           </div>
         </section>
 
+        <section id="openclawPanel" class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">OpenClaw Integration</div>
+              <h2>OpenClaw 集成设置</h2>
+            </div>
+          </div>
+          <div id="openclawConfig" class="openclaw-config">
+            <div class="openclaw-status-row">
+              <div class="openclaw-connection-status">
+                <span id="openclawStatusIndicator" class="status-indicator disconnected"></span>
+                <span id="openclawStatusText">未连接</span>
+              </div>
+              <button id="openclawConnectBtn" class="primary small">连接</button>
+              <button id="openclawDisconnectBtn" class="ghost small" style="display:none;">断开</button>
+            </div>
+            <div class="openclaw-form">
+              <div class="openclaw-form-row">
+                <label class="openclaw-field">
+                  <span class="field-label">Gateway URL</span>
+                  <input type="text" id="openclawGatewayUrl" placeholder="http://127.0.0.1:13000" value="http://127.0.0.1:13000" />
+                </label>
+              </div>
+              <div class="openclaw-form-row">
+                <label class="openclaw-field">
+                  <span class="field-label">Token</span>
+                  <input type="password" id="openclawToken" placeholder="Enter your OpenClaw token" />
+                </label>
+              </div>
+              <div class="openclaw-form-row">
+                <label class="toggle-label">
+                  <input type="checkbox" id="openclawAutoConnect" />
+                  <span>启动时自动连接</span>
+                </label>
+              </div>
+              <div class="openclaw-form-actions">
+                <button id="openclawSaveConfigBtn" class="primary">保存配置</button>
+                <button id="openclawTestBtn" class="ghost">测试连接</button>
+              </div>
+              <div id="openclawConfigMsg" class="form-msg"></div>
+            </div>
+          </div>
+          <div class="openclaw-tabs">
+            <button class="openclaw-tab active" data-tab="tools">已注册工具</button>
+            <button class="openclaw-tab" data-tab="events">事件订阅</button>
+            <button class="openclaw-tab" data-tab="sessions">会话管理</button>
+          </div>
+          <div id="openclawTabContent">
+            <div id="openclawToolsTab" class="openclaw-tab-panel">
+              <div class="openclaw-tools-header">
+                <button id="openclawRegisterToolBtn" class="ghost small">+ 注册新工具</button>
+              </div>
+              <div id="openclawToolsList" class="openclaw-tools-list">
+                <div class="muted small">加载中...</div>
+              </div>
+              <div id="openclawToolForm" class="openclaw-tool-form hidden">
+                <div class="openclaw-tool-form-grid">
+                  <label>
+                    <span class="field-label">工具名称</span>
+                    <input id="toolNameInput" placeholder="e.g., my-custom-tool" required />
+                  </label>
+                  <label>
+                    <span class="field-label">描述</span>
+                    <input id="toolDescInput" placeholder="Tool description" />
+                  </label>
+                  <label>
+                    <span class="field-label">处理类型</span>
+                    <select id="toolHandlerType">
+                      <option value="orchestra-api">Orchestra API 代理</option>
+                      <option value="task-create">创建任务</option>
+                      <option value="custom">自定义处理</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="openclaw-tool-form-actions">
+                  <button id="saveToolBtn" class="primary">保存</button>
+                  <button id="cancelToolBtn" class="ghost">取消</button>
+                </div>
+              </div>
+            </div>
+            <div id="openclawEventsTab" class="openclaw-tab-panel hidden">
+              <div class="openclaw-events-config">
+                <div class="openclaw-events-header">
+                  <h3>事件订阅配置</h3>
+                </div>
+                <div id="openclawEventSubscriptions" class="openclaw-event-subscriptions">
+                </div>
+                <div class="openclaw-form-actions">
+                  <button id="openclawSaveEventsBtn" class="primary">保存事件配置</button>
+                </div>
+              </div>
+              <div class="openclaw-events-active">
+                <h3>当前订阅</h3>
+                <div id="openclawActiveSubscriptions" class="openclaw-active-subscriptions">
+                  <div class="muted small">暂无活跃订阅</div>
+                </div>
+              </div>
+            </div>
+            <div id="openclawSessionsTab" class="openclaw-tab-panel hidden">
+              <div class="openclaw-sessions-header">
+                <button id="refreshSessionsBtn" class="ghost small">刷新</button>
+              </div>
+              <div id="openclawSessionsList" class="openclaw-sessions-list">
+                <div class="muted small">加载中...</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="adminPanel" class="panel section-panel hidden">
           <div class="panel-head panel-head-tight">
             <div>

@@ -15,6 +15,7 @@ import { initSessionComponent, renderSessions } from './components/sessions.js';
 import { initNotificationComponent, renderChannels, switchChannelTab } from './components/notifications.js';
 import { initCombinationComponent, renderCombinations, switchCombinationTab } from './components/combinations.js';
 import { initAdminComponent, renderAdminUI } from './components/admin.js';
+import { renderOpenClawUI } from './components/openclaw.js';
 
 let refreshInterval = null;
 
@@ -66,6 +67,7 @@ export function render() {
   renderChannels();
   renderAuthUI();
   renderAdminUI();
+  renderOpenClawUI();
 }
 
 function renderStats() {
