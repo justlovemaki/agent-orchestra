@@ -31,11 +31,12 @@ const quietHours = require('./lib/quiet-hours');
 const apiDocs = require('./lib/api-docs');
 const notificationSenders = require('./lib/notification-senders');
 const { createValidationMiddleware } = require('./lib/api-validation');
-const { createPluginSystem } = require('./lib/plugin-system');
+const { createPluginSystem, getEventSystem } = require('./lib/plugin-system');
 const PluginInstaller = require('./lib/plugin-installer');
 const PluginUpdateNotifier = require('./lib/plugin-update-notifier');
 const workloadAlerts = require('./lib/workload-alerts');
 const { performanceMonitor } = require('./lib/performance-monitor');
+const { emitTaskCreated, emitTaskCompleted, emitTaskFailed, emitWorkflowStarted, emitWorkflowCompleted, emitNotificationSent } = require('./lib/plugin-event-system');
 const { getFeishuConfig, sendFeishuImageMessage, getDingTalkConfig, sendDingTalkImageMessage, getWecomConfig, sendWecomImageMessage, getSlackConfig, sendSlackImageMessage } = notificationSenders;
 
 const tasksRoutes = require('./routes/tasks');
@@ -701,6 +702,16 @@ async function createTask(body) {
     mode: task.mode,
     priority: task.priority
   }, task.createdBy);
+  
+  emitTaskCreated({
+    taskId: task.id,
+    title: task.title,
+    agents: task.agents,
+    mode: task.mode,
+    priority: task.priority,
+    createdBy: task.createdBy
+  }).catch(err => console.error('[EventSystem] Failed to emit task.created:', err.message));
+  
   const runner = await launchTaskRunner(task);
   return formatTaskForUi({ ...task, ...runner });
 }
@@ -990,8 +1001,24 @@ function startTaskWatcher() {
           if (task && task.status !== 'running' && task.status !== 'queued') {
             if (task.status === 'completed') {
               client.res.write(`event: task-complete\ndata: ${JSON.stringify({ taskId, status: task.status })}\n\n`);
+              emitTaskCompleted({
+                taskId: task.id,
+                title: task.title,
+                agents: task.agents,
+                runs: task.runs,
+                finishedAt: task.finishedAt
+              }).catch(err => console.error('[EventSystem] Failed to emit task.completed:', err.message));
             } else if (task.status === 'failed' || task.status === 'canceled') {
               client.res.write(`event: task-error\ndata: ${JSON.stringify({ taskId, status: task.status, error: task.error || task.runs?.[0]?.error })}\n\n`);
+              emitTaskFailed({
+                taskId: task.id,
+                title: task.title,
+                agents: task.agents,
+                runs: task.runs,
+                status: task.status,
+                error: task.error || task.runs?.[0]?.error,
+                finishedAt: task.finishedAt
+              }).catch(err => console.error('[EventSystem] Failed to emit task.failed:', err.message));
             }
             clients.delete(client);
           }
@@ -1744,6 +1771,14 @@ async function handleScheduledBackupNotification(params) {
         source: 'scheduled_backup',
         backupType: type
       }, 'system');
+      emitNotificationSent({
+        channelId: channel?.id,
+        channelName: channel?.name,
+        channelType: channel?.type,
+        source: 'scheduled_backup',
+        backupType: type,
+        status: 'sent'
+      }).catch(err => console.error('[EventSystem] Failed to emit notification.sent:', err.message));
       results.sent.push(channelId);
     } catch (err) {
       console.error(`[ScheduledBackup] 发送通知到渠道 ${channelId} 失败:`, err.message);

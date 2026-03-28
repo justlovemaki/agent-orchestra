@@ -523,4 +523,165 @@ A: 目前插件市场正在建设中。可以先发布到 GitHub，然后在 Age
 
 ---
 
+## 10. 事件系统 (Event System)
+
+### 10.1 概述
+
+事件系统允许插件订阅和响应系统级事件。插件可以通过在 manifest 中声明感兴趣的事件类型来注册事件处理器。
+
+### 10.2 支持的事件类型
+
+| 事件类型 | 说明 | 事件 payload |
+|----------|------|-------------|
+| `task.created` | 任务创建时触发 | `{ taskId, title, agents, mode, priority, createdBy }` |
+| `task.completed` | 任务完成时触发 | `{ taskId, title, agents, runs, finishedAt }` |
+| `task.failed` | 任务失败时触发 | `{ taskId, title, agents, runs, status, error, finishedAt }` |
+| `workflow.started` | 工作流开始执行时触发 | `{ workflowRunId, workflowId, workflowName, status, startedAt, steps }` |
+| `workflow.completed` | 工作流完成时触发 | `{ workflowRunId, workflowId, workflowName, status, startedAt, finishedAt, steps, error }` |
+| `agent.status_changed` | Agent 状态变化时触发 | `{ agentId, status, ...metadata }` |
+| `session.message_sent` | 会话消息发送时触发 | `{ sessionId, message, ...metadata }` |
+| `notification.sent` | 通知发送成功时触发 | `{ channelId, channelName, channelType, source, status }` |
+
+### 10.3 在 manifest 中声明事件类型
+
+```json
+{
+  "name": "my-event-handler",
+  "version": "1.0.0",
+  "description": "任务事件处理插件",
+  "type": "panel",
+  "author": "Your Name",
+  
+  "eventTypes": [
+    "task.created",
+    "task.completed",
+    "task.failed"
+  ]
+}
+```
+
+### 10.4 实现事件处理器
+
+```javascript
+'use strict';
+
+module.exports = async function(plugin, context) {
+  /**
+   * 处理系统事件
+   * @param {string} eventType - 事件类型
+   * @param {object} payload - 事件数据
+   * @returns {Promise<object>} 处理结果
+   */
+  plugin.onEvent = async function(eventType, payload) {
+    console.log(`[${plugin.name}] Received event: ${eventType}`, payload);
+    
+    switch (eventType) {
+      case 'task.created':
+        return await handleTaskCreated(payload);
+      case 'task.completed':
+        return await handleTaskCompleted(payload);
+      case 'task.failed':
+        return await handleTaskFailed(payload);
+      default:
+        console.log(`[${plugin.name}] Unhandled event type: ${eventType}`);
+        return { handled: false };
+    }
+  };
+  
+  async function handleTaskCreated(payload) {
+    console.log(`[${plugin.name}] New task created: ${payload.title}`);
+    return { handled: true, action: 'logged' };
+  }
+  
+  async function handleTaskCompleted(payload) {
+    console.log(`[${plugin.name}] Task completed: ${payload.title}`);
+    return { handled: true, action: 'notified' };
+  }
+  
+  async function handleTaskFailed(payload) {
+    console.log(`[${plugin.name}] Task failed: ${payload.title}, error: ${payload.error}`);
+    return { handled: true, action: 'alerted' };
+  }
+};
+```
+
+### 10.5 事件系统 API
+
+#### 获取事件系统实例
+
+```javascript
+const { getEventSystem } = require('./lib/plugin-event-system');
+
+const eventSystem = getEventSystem();
+```
+
+#### 手动注册事件处理器
+
+```javascript
+const { getEventSystem } = require('./lib/plugin-event-system');
+
+const eventSystem = getEventSystem();
+
+eventSystem.registerPlugin({
+  name: 'my-plugin',
+  manifest: {
+    name: 'my-plugin',
+    version: '1.0.0',
+    type: 'panel',
+    eventTypes: ['task.created']
+  },
+  onEvent: async (eventType, payload) => {
+    console.log('Event received:', eventType, payload);
+  }
+});
+```
+
+#### 获取事件日志
+
+```javascript
+const { getEventSystem } = require('./lib/plugin-event-system');
+
+const eventSystem = getEventSystem();
+
+// 获取所有事件日志
+const logs = eventSystem.getEventLog();
+
+// 按事件类型过滤
+const taskLogs = eventSystem.getEventLog({ eventType: 'task.created' });
+
+// 按插件名称过滤
+const pluginLogs = eventSystem.getEventLog({ pluginName: 'my-plugin' });
+```
+
+### 10.6 事件系统特性
+
+- **异步处理**：事件处理器以异步方式执行，不会阻塞主流程
+- **错误隔离**：单个处理器错误不会影响其他处理器或主流程
+- **敏感信息脱敏**：密码、token 等敏感字段在日志中自动脱敏
+- **事件日志**：记录所有事件触发和处理情况，便于调试
+
+### 10.7 最佳实践
+
+```javascript
+plugin.onEvent = async function(eventType, payload) {
+  try {
+    switch (eventType) {
+      case 'task.created':
+        return await handleTaskCreated(payload);
+      case 'task.completed':
+        return await handleTaskCompleted(payload);
+      case 'task.failed':
+        return await handleTaskFailed(payload);
+      default:
+        return { handled: false };
+    }
+  } catch (error) {
+    console.error(`[${plugin.name}] Event handling error:`, error.message);
+    return { handled: false, error: error.message };
+  }
+};
+```
+
+---
+
 *构建丰富的插件生态，让 Agent Orchestra 更强大！* 🧩
