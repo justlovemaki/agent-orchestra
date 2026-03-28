@@ -1,0 +1,48 @@
+{
+  "name": "{{PLUGIN_NAME}}",
+  "version": "{{VERSION}}",
+  "description": "Dashboard panel plugin for Agent Orchestra",
+  "type": "panel",
+  "author": "{{AUTHOR}}",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "repository": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "keywords": ["agent-orchestra", "panel", "dashboard", "plugin"],
+  "platformVersion": ">=1.0.0",
+  
+  "component": "{{PLUGIN_NAME_CAMEL}}-panel",
+  "renderMethod": "default",
+  
+  "props": {
+    "title": "{{PLUGIN_NAME_PASCAL}} Panel",
+    "icon": "📊",
+    "refreshInterval": 30000,
+    "height": 200,
+    "width": "full"
+  },
+  
+  "configSchema": {
+    "refreshInterval": {
+      "type": "number",
+      "required": false,
+      "description": "Panel refresh interval in milliseconds",
+      "default": 30000
+    },
+    "showHeader": {
+      "type": "boolean",
+      "required": false,
+      "description": "Show panel header",
+      "default": true
+    },
+    "dataSource": {
+      "type": "string",
+      "required": false,
+      "description": "Data source plugin to use",
+      "default": ""
+    }
+  },
+  
+  "eventTypes": [],
+  
+  "dependencies": {}
+}

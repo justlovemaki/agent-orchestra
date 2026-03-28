@@ -1,0 +1,53 @@
+{
+  "name": "{{PLUGIN_NAME}}",
+  "version": "{{VERSION}}",
+  "description": "Automation plugin for Agent Orchestra",
+  "type": "automation",
+  "author": "{{AUTHOR}}",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "repository": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "keywords": ["agent-orchestra", "automation", "task", "plugin"],
+  "platformVersion": ">=1.0.0",
+  
+  "trigger": {
+    "type": "schedule",
+    "cron": "0 * * * *",
+    "description": "Run every hour"
+  },
+  
+  "configSchema": {
+    "enabled": {
+      "type": "boolean",
+      "required": false,
+      "description": "Enable or disable the automation",
+      "default": true
+    },
+    "schedule": {
+      "type": "string",
+      "required": false,
+      "description": "Cron expression for scheduling",
+      "default": "0 * * * *"
+    },
+    "retryCount": {
+      "type": "number",
+      "required": false,
+      "description": "Number of retries on failure",
+      "default": 3
+    },
+    "retryDelay": {
+      "type": "number",
+      "required": false,
+      "description": "Delay between retries in milliseconds",
+      "default": 5000
+    }
+  },
+  
+  "eventTypes": [
+    "task.created",
+    "task.completed",
+    "workflow.completed"
+  ],
+  
+  "dependencies": {}
+}

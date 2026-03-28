@@ -4,7 +4,15 @@
   "private": true,
   "description": "OpenClaw Agent 管理与调度面板 MVP",
   "main": "server.js",
+  "bin": {
+    "orchestra-plugin": "./bin/orchestra-plugin-cli.js"
+  },
   "scripts": {
+    "plugin:create": "node bin/orchestra-plugin-cli.js create",
+    "plugin:validate": "node bin/orchestra-plugin-cli.js validate",
+    "plugin:test": "node bin/orchestra-plugin-cli.js test",
+    "plugin:publish": "node bin/orchestra-plugin-cli.js publish",
+    "plugin:list-templates": "node bin/orchestra-plugin-cli.js list-templates",
     "start": "node server.js",
     "stop": "node stop.js",
     "status": "node status.js",

@@ -1,0 +1,45 @@
+{
+  "name": "{{PLUGIN_NAME}}",
+  "version": "{{VERSION}}",
+  "description": "Notification channel plugin for Agent Orchestra",
+  "type": "notification",
+  "author": "{{AUTHOR}}",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "repository": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "keywords": ["agent-orchestra", "notification", "plugin"],
+  "platformVersion": ">=1.0.0",
+  
+  "channelName": "{{PLUGIN_NAME_PASCAL}}",
+  "supportedFormats": ["text", "markdown"],
+  
+  "configSchema": {
+    "webhookUrl": {
+      "type": "string",
+      "required": true,
+      "description": "Webhook URL for sending notifications",
+      "secret": true
+    },
+    "channel": {
+      "type": "string",
+      "required": false,
+      "description": "Target channel or room",
+      "default": "general"
+    },
+    "username": {
+      "type": "string",
+      "required": false,
+      "description": "Bot username to display",
+      "default": "Agent Orchestra"
+    }
+  },
+  
+  "eventTypes": [
+    "task.completed",
+    "task.failed",
+    "workflow.completed",
+    "workflow.failed"
+  ],
+  
+  "dependencies": {}
+}

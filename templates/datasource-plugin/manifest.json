@@ -1,0 +1,68 @@
+{
+  "name": "{{PLUGIN_NAME}}",
+  "version": "{{VERSION}}",
+  "description": "Data source plugin for Agent Orchestra",
+  "type": "datasource",
+  "author": "{{AUTHOR}}",
+  "license": "MIT",
+  "homepage": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "repository": "https://github.com/your-org/{{PLUGIN_NAME}}",
+  "keywords": ["agent-orchestra", "datasource", "plugin"],
+  "platformVersion": ">=1.0.0",
+  
+  "configSchema": {
+    "apiKey": {
+      "type": "string",
+      "required": true,
+      "description": "API key for data source",
+      "secret": true
+    },
+    "baseUrl": {
+      "type": "string",
+      "required": false,
+      "description": "Base URL for API requests",
+      "default": "https://api.example.com"
+    },
+    "timeout": {
+      "type": "number",
+      "required": false,
+      "description": "Request timeout in milliseconds",
+      "default": 30000
+    },
+    "cacheEnabled": {
+      "type": "boolean",
+      "required": false,
+      "description": "Enable caching of responses",
+      "default": true
+    }
+  },
+  
+  "schema": {
+    "fields": [
+      {
+        "name": "id",
+        "type": "string",
+        "description": "Unique identifier"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Display name"
+      },
+      {
+        "name": "value",
+        "type": "number",
+        "description": "Current value"
+      },
+      {
+        "name": "timestamp",
+        "type": "timestamp",
+        "description": "Data timestamp"
+      }
+    ]
+  },
+  
+  "eventTypes": [],
+  
+  "dependencies": {}
+}

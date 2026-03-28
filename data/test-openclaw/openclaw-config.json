@@ -1,0 +1,5 @@
+{
+  "gatewayUrl": "http://custom:13000",
+  "token": "my-token",
+  "autoConnect": true
+}
