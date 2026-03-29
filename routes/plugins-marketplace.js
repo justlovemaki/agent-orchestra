@@ -8,6 +8,7 @@
  * - GitHub Releases integration for uploads
  * - Plugin review/approval mechanism
  * - Auto-update notifications
+ * - Download verification
  */
 
 const fs = require('fs');
@@ -17,16 +18,55 @@ const https = require('https');
 const http = require('http');
 const PluginInstaller = require('../lib/plugin-installer');
 const PluginUpdateNotifier = require('../lib/plugin-update-notifier');
+const PluginUpdateEmitter = require('../lib/plugin-update-emitter');
+const PluginDownloadVerifier = require('../lib/plugin-download-verifier');
+const GitHubAPI = require('../lib/github-api');
 const { SecurityPolicy, DANGEROUS_PATTERNS } = require('../lib/plugin-security-policy');
 
 let pluginInstaller = null;
 let pluginUpdateNotifier = null;
+let pluginUpdateEmitter = null;
+let pluginDownloadVerifier = null;
+let githubAPI = null;
 
 function pluginsMarketplaceRoutes(serverWithEvents, deps) {
   const { json, readJson, verifyTokenFromRequest } = deps;
   
   const dataFilePath = path.join(__dirname, '..', 'data', 'plugins-marketplace.json');
   const installedPluginsPath = path.join(__dirname, '..', 'data', 'installed-plugins.json');
+  
+  function initializeServices() {
+    if (!pluginInstaller) {
+      const pluginsDir = path.join(__dirname, '..', 'plugins');
+      pluginInstaller = new PluginInstaller(pluginsDir, {
+        eventEmitter: serverWithEvents
+      });
+    }
+    if (!pluginUpdateNotifier) {
+      const pluginsDir = path.join(__dirname, '..', 'plugins');
+      pluginUpdateNotifier = new PluginUpdateNotifier({
+        pluginsDir,
+        marketDataPath: dataFilePath,
+        installedPluginsPath
+      });
+    }
+    if (!pluginUpdateEmitter) {
+      const pluginsDir = path.join(__dirname, '..', 'plugins');
+      pluginUpdateEmitter = new PluginUpdateEmitter({
+        pluginsDir,
+        marketDataPath: dataFilePath,
+        installedPluginsPath
+      });
+    }
+    if (!pluginDownloadVerifier) {
+      pluginDownloadVerifier = new PluginDownloadVerifier();
+    }
+    if (!githubAPI) {
+      githubAPI = new GitHubAPI();
+    }
+  }
+  
+  initializeServices();
 
   function readInstalledPlugins() {
     try {
@@ -324,6 +364,129 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
       }
     }
 
+    // POST /api/plugins/marketplace/github/validate - Validate GitHub URL and extract info
+    if (method === 'POST' && pathname === '/api/plugins/marketplace/github/validate') {
+      try {
+        const body = await readJson(req);
+        const { githubUrl, token } = body;
+        
+        if (!githubUrl) {
+          return json(res, 400, { error: '缺少 GitHub URL' });
+        }
+        
+        if (!githubAPI.validateGitHubUrl(githubUrl)) {
+          return json(res, 400, { error: '无效的 GitHub URL 格式' });
+        }
+        
+        if (token) {
+          githubAPI.setCredentials(token);
+        }
+        
+        const result = await githubAPI.getReleaseForUpload(githubUrl);
+        
+        console.log(`[Marketplace] GitHub URL validated: ${result.owner}/${result.repo} (${result.version})`);
+        
+        return json(res, 200, {
+          valid: true,
+          owner: result.owner,
+          repo: result.repo,
+          version: result.version,
+          release: result.release,
+          repoInfo: {
+            name: result.repoInfo.name,
+            fullName: result.repoInfo.fullName,
+            description: result.repoInfo.description,
+            stars: result.repoInfo.stars,
+            forks: result.repoInfo.forks,
+            ownerAvatar: result.repoInfo.ownerAvatar,
+            htmlUrl: result.repoInfo.htmlUrl
+          },
+          manifest: result.manifest,
+          asset: result.asset,
+          downloadUrl: result.downloadUrl
+        });
+      } catch (error) {
+        console.error('[Marketplace] GitHub validate error:', error);
+        return json(res, 400, { error: `GitHub URL 验证失败: ${error.message}` });
+      }
+    }
+
+    // POST /api/plugins/marketplace/github/download - Download and verify plugin package
+    if (method === 'POST' && pathname === '/api/plugins/marketplace/github/download') {
+      try {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '请先登录' });
+        }
+        
+        const body = await readJson(req);
+        const { downloadUrl, expectedHash, expectedSize } = body;
+        
+        if (!downloadUrl) {
+          return json(res, 400, { error: '缺少下载链接' });
+        }
+        
+        initializeServices();
+        
+        console.log(`[Marketplace] Downloading plugin from: ${downloadUrl}`);
+        
+        const result = await pluginDownloadVerifier.downloadAndVerify(
+          downloadUrl,
+          expectedHash,
+          expectedSize
+        );
+        
+        return json(res, 200, {
+          success: true,
+          verified: result.hashValid && result.sizeValid && result.extensionValid,
+          details: {
+            filePath: result.filePath,
+            size: result.size,
+            sizeValid: result.sizeValid,
+            hash: result.hash,
+            hashValid: result.hashValid,
+            extensionValid: result.extensionValid,
+            format: result.format
+          }
+        });
+      } catch (error) {
+        console.error('[Marketplace] Download error:', error);
+        return json(res, 400, { error: `下载失败: ${error.message}` });
+      }
+    }
+
+    // POST /api/plugins/marketplace/github/extract-manifest - Extract manifest from downloaded package
+    if (method === 'POST' && pathname === '/api/plugins/marketplace/github/extract-manifest') {
+      try {
+        const body = await readJson(req);
+        const { filePath } = body;
+        
+        if (!filePath) {
+          return json(res, 400, { error: '缺少文件路径' });
+        }
+        
+        if (!fs.existsSync(filePath)) {
+          return json(res, 400, { error: '文件不存在' });
+        }
+        
+        initializeServices();
+        
+        const extractDir = path.join(require('os').tmpdir(), `plugin-extract-${Date.now()}`);
+        const result = await pluginDownloadVerifier.extractAndValidateManifest(filePath, extractDir);
+        
+        return json(res, 200, {
+          success: true,
+          manifest: result.manifest,
+          manifestPath: result.manifestPath,
+          rootPath: result.rootPath,
+          extractDir
+        });
+      } catch (error) {
+        console.error('[Marketplace] Extract manifest error:', error);
+        return json(res, 400, { error: `提取 manifest 失败: ${error.message}` });
+      }
+    }
+
     // GET /api/plugins/marketplace/pending - List pending plugins (admin only)
     if (method === 'GET' && pathname === '/api/plugins/marketplace/pending') {
       try {
@@ -369,6 +532,7 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
         }
         
         const now = Date.now();
+        const previousStatus = plugin.status;
         plugin.status = action === 'approve' ? 'approved' : 'rejected';
         plugin.reviewedBy = currentUser.id;
         plugin.reviewedByName = currentUser.name;
@@ -376,6 +540,30 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
         if (comment) {
           plugin.reviewComment = comment;
         }
+        
+        if (!plugin.reviewHistory) {
+          plugin.reviewHistory = [];
+        }
+        plugin.reviewHistory.push({
+          action: action,
+          status: plugin.status,
+          previousStatus: previousStatus,
+          reviewedBy: currentUser.id,
+          reviewedByName: currentUser.name,
+          reviewedAt: now,
+          comment: comment || null
+        });
+        
+        if (!plugin.statusHistory) {
+          plugin.statusHistory = [];
+        }
+        plugin.statusHistory.push({
+          status: plugin.status,
+          changedAt: now,
+          changedBy: currentUser.id,
+          changedByName: currentUser.name,
+          reason: comment || (action === 'approve' ? '审核通过' : '审核拒绝')
+        });
         
         if (plugin.securityAudit) {
           plugin.securityAudit.requiresReview = false;
@@ -919,6 +1107,168 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
         const notification = await pluginUpdateNotifier.notifyUpdates(currentUser.id);
 
         return json(res, 200, notification);
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // GET /api/plugins/marketplace/:id/status-history - Get plugin status history
+    const statusHistoryMatch = pathname.match(/^\/api\/plugins\/marketplace\/([^\/]+)\/status-history$/);
+    if (statusHistoryMatch && method === 'GET') {
+      const pluginId = statusHistoryMatch[1];
+      try {
+        const data = readMarketplaceData();
+        const plugin = data.plugins.find(p => p.id === pluginId);
+        if (!plugin) {
+          return json(res, 404, { error: '插件不存在' });
+        }
+        return json(res, 200, {
+          currentStatus: plugin.status,
+          statusHistory: plugin.statusHistory || [],
+          reviewHistory: plugin.reviewHistory || []
+        });
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // POST /api/plugins/marketplace/:id/status - Update plugin status (admin only)
+    const statusMatch = pathname.match(/^\/api\/plugins\/marketplace\/([^\/]+)\/status$/);
+    if (statusMatch && method === 'POST') {
+      const pluginId = statusMatch[1];
+      try {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '请先登录' });
+        }
+        if (currentUser.role !== 'admin') {
+          return json(res, 403, { error: '只有管理员可以修改插件状态' });
+        }
+        const body = await readJson(req);
+        const { status, reason } = body;
+        const validStatuses = ['pending', 'approved', 'rejected', 'deprecated', 'archived'];
+        if (!status || !validStatuses.includes(status)) {
+          return json(res, 400, { error: `无效的状态，可选值: ${validStatuses.join(', ')}` });
+        }
+        const data = readMarketplaceData();
+        const plugin = data.plugins.find(p => p.id === pluginId);
+        if (!plugin) {
+          return json(res, 404, { error: '插件不存在' });
+        }
+        const previousStatus = plugin.status;
+        const now = Date.now();
+        plugin.status = status;
+        plugin.updatedAt = now;
+        
+        if (!plugin.statusHistory) {
+          plugin.statusHistory = [];
+        }
+        plugin.statusHistory.push({
+          status: status,
+          previousStatus: previousStatus,
+          changedAt: now,
+          changedBy: currentUser.id,
+          changedByName: currentUser.name,
+          reason: reason || null
+        });
+        
+        if (!saveMarketplaceData(data)) {
+          return json(res, 500, { error: '保存失败' });
+        }
+        console.log(`[Marketplace] Plugin ${plugin.name} status changed from ${previousStatus} to ${status} by ${currentUser.name}`);
+        return json(res, 200, {
+          success: true,
+          plugin,
+          message: `插件状态已更新为 ${status}`
+        });
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // POST /api/plugins/updates/subscribe - Subscribe to update notifications
+    if (method === 'POST' && pathname === '/api/plugins/updates/subscribe') {
+      try {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '请先登录' });
+        }
+        
+        const body = await readJson(req);
+        const { enableAutoCheck, interval } = body;
+        
+        if (!pluginUpdateEmitter) {
+          initializeServices();
+        }
+        
+        if (enableAutoCheck) {
+          const checkInterval = interval || 1800000;
+          pluginUpdateEmitter.checkInterval = checkInterval;
+          pluginUpdateEmitter.startAutoCheck(currentUser.id, (updates) => {
+            console.log(`[Marketplace] Auto-update check for ${currentUser.name}: ${updates.length} updates found`);
+            if (serverWithEvents) {
+              serverWithEvents.emit('pluginUpdatesAvailable', {
+                userId: currentUser.id,
+                updates
+              });
+            }
+          });
+          return json(res, 200, {
+            success: true,
+            message: '已开启自动更新检测',
+            checkInterval: checkInterval
+          });
+        } else {
+          pluginUpdateEmitter.stopAutoCheck(currentUser.id);
+          return json(res, 200, {
+            success: true,
+            message: '已关闭自动更新检测'
+          });
+        }
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // POST /api/plugins/updates/unsubscribe - Unsubscribe from update notifications
+    if (method === 'POST' && pathname === '/api/plugins/updates/unsubscribe') {
+      try {
+        const currentUser = await verifyTokenFromRequest(req);
+        if (!currentUser) {
+          return json(res, 401, { error: '请先登录' });
+        }
+        
+        if (pluginUpdateEmitter) {
+          pluginUpdateEmitter.stopAutoCheck(currentUser.id);
+        }
+        
+        return json(res, 200, {
+          success: true,
+          message: '已取消订阅更新通知'
+        });
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // GET /api/plugins/marketplace/:id/changelog - Get plugin changelog
+    const changelogMatch = pathname.match(/^\/api\/plugins\/marketplace\/([^\/]+)\/changelog$/);
+    if (changelogMatch && method === 'GET') {
+      const pluginId = changelogMatch[1];
+      try {
+        const data = readMarketplaceData();
+        const plugin = data.plugins.find(p => p.id === pluginId);
+        if (!plugin) {
+          return json(res, 404, { error: '插件不存在' });
+        }
+        return json(res, 200, {
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          currentVersion: plugin.version,
+          changelog: plugin.changelog || '暂无更新日志',
+          releaseNotes: plugin.releaseNotes || [],
+          lastUpdated: plugin.updatedAt
+        });
       } catch (error) {
         return json(res, 500, { error: error.message });
       }
