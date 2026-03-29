@@ -34,6 +34,8 @@ const { createValidationMiddleware } = require('./lib/api-validation');
 const { createPluginSystem, getEventSystem } = require('./lib/plugin-system');
 const PluginInstaller = require('./lib/plugin-installer');
 const PluginUpdateNotifier = require('./lib/plugin-update-notifier');
+const PluginUpdateEmitter = require('./lib/plugin-update-emitter');
+const PluginUpdateWebSocket = require('./lib/plugin-update-websocket');
 const workloadAlerts = require('./lib/workload-alerts');
 const { performanceMonitor } = require('./lib/performance-monitor');
 const { emitTaskCreated, emitTaskCompleted, emitTaskFailed, emitWorkflowStarted, emitWorkflowCompleted, emitNotificationSent } = require('./lib/plugin-event-system');
@@ -1778,6 +1780,39 @@ ensureData().then(async () => {
     await cleanup('unhandledRejection', 1);
   });
 
+  const pluginUpdateEmitter = new PluginUpdateEmitter({
+    pluginsDir: PLUGINS_DIR,
+    marketDataPath: path.join(DATA_DIR, 'plugins-marketplace.json'),
+    installedPluginsPath: path.join(DATA_DIR, 'installed-plugins.json'),
+    checkInterval: 1800000
+  });
+
+  const pluginUpdateWebSocket = new PluginUpdateWebSocket({
+    path: '/api/plugins/updates/stream',
+    heartbeatInterval: 30000,
+    maxClients: 100
+  });
+  pluginUpdateWebSocket.initialize(serverInstance);
+
+  pluginUpdateEmitter.on('updatesAvailable', (data) => {
+    console.log(`[Server] Plugin updates available for user ${data.userId}: ${data.updates.length} updates`);
+    pluginUpdateWebSocket.broadcastUpdatesBatch(data.updates);
+  });
+
+  pluginUpdateEmitter.on('checkComplete', (data) => {
+    console.log(`[Server] Plugin update check complete for user ${data.userId}: ${data.updates.length} updates`);
+  });
+
+  pluginUpdateEmitter.on('checkError', (data) => {
+    console.error(`[Server] Plugin update check error for user ${data.userId}:`, data.error);
+  });
+
+  const depsWithPluginUpdate = {
+    ...deps,
+    pluginUpdateEmitter,
+    pluginUpdateWebSocket
+  };
+
   serverInstance = http.createServer(requestHandler);
   serverInstance.on('error', async (error) => {
     console.error(error);
@@ -1785,6 +1820,7 @@ ensureData().then(async () => {
   });
   serverInstance.listen(currentPort, () => {
     console.log(`Agent Orchestra running at http://127.0.0.1:${currentPort}`);
+    console.log(`Plugin update WebSocket available at ws://127.0.0.1:${currentPort}/api/plugins/updates/stream`);
     // Start periodic channel health check if enabled
     channelHealthCheck.getConfig().then(healthConfig => {
       if (healthConfig.enabled) {

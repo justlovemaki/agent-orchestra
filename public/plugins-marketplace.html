@@ -171,7 +171,13 @@
 
   <div class="toast" id="toast"></div>
 
-  <script>
+  <div class="realtime-indicator" id="realtimeIndicator" style="position: fixed; bottom: 20px; left: 20px; background: white; padding: 8px 16px; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-size: 12px; display: flex; align-items: center; gap: 8px; z-index: 1000;">
+    <span class="realtime-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #ccc;"></span>
+    <span class="realtime-text">实时更新</span>
+    <span class="realtime-count" style="display: none; background: #ef4444; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px;">0</span>
+  </div>
+
+  <script src="/js/components/plugin-updates-realtime.js"></script>
     (function() {
       let currentPlugins = [], currentCategories = [], selectedPlugin = null;
 
@@ -315,6 +321,57 @@
       document.getElementById('uploadModalClose').addEventListener('click', () => document.getElementById('uploadModal').classList.remove('active'));
       document.getElementById('backToMainBtn').addEventListener('click', () => window.location.href = '/');
       document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); }));
+
+      // 初始化实时更新通知
+      (function initRealtimeUpdates() {
+        const realtimeIndicator = document.getElementById('realtimeIndicator');
+        const realtimeDot = realtimeIndicator?.querySelector('.realtime-dot');
+        const realtimeCount = realtimeIndicator?.querySelector('.realtime-count');
+        
+        const realtimeUI = new PluginUpdateNotificationUI({
+          autoSubscribe: true,
+          maxNotifications: 20
+        });
+
+        realtimeUI.initialize();
+
+        realtimeUI.on('connected', () => {
+          if (realtimeDot) {
+            realtimeDot.style.background = '#22c55e';
+          }
+          console.log('[Marketplace] Connected to realtime updates');
+        });
+
+        realtimeUI.on('disconnected', () => {
+          if (realtimeDot) {
+            realtimeDot.style.background = '#ef4444';
+          }
+        });
+
+        realtimeUI.on('pluginUpdate', (data) => {
+          console.log('[Marketplace] Plugin update received:', data);
+          if (realtimeCount) {
+            realtimeCount.style.display = 'inline-block';
+            const count = parseInt(realtimeCount.textContent) || 0;
+            realtimeCount.textContent = count + 1;
+          }
+        });
+
+        realtimeUI.on('batchUpdate', (data) => {
+          console.log('[Marketplace] Batch update received:', data.count, 'updates');
+          if (realtimeCount) {
+            realtimeCount.style.display = 'inline-block';
+            const count = parseInt(realtimeCount.textContent) || 0;
+            realtimeCount.textContent = count + data.count;
+          }
+        });
+
+        realtimeUI.on('error', (data) => {
+          console.error('[Marketplace] Realtime error:', data.error);
+        });
+
+        window.pluginUpdateRealtime = realtimeUI;
+      })();
 
       // 初始化
       loadCategories();
