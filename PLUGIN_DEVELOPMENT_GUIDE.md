@@ -684,4 +684,95 @@ plugin.onEvent = async function(eventType, payload) {
 
 ---
 
+## 11. 安全规范 (Security)
+
+### 11.1 安全级别
+
+Agent Orchestra 插件系统支持三种安全级别：
+
+| 级别 | 说明 | 文件系统 | 网络 | 环境变量 | 进程控制 |
+|------|------|----------|------|----------|----------|
+| **sandboxed** | 沙箱模式（默认） | 无访问 | 无访问 | 无访问 | 无访问 |
+| **restricted** | 受限模式 | 读取 data/plugins | 仅 HTTPS | 读取 | 无访问 |
+| **trusted** | 信任模式 | 完整访问 | 完整访问 | 完整访问 | 有限访问 |
+
+### 11.2 在 manifest 中配置安全级别
+
+```json
+{
+  "name": "my-secure-plugin",
+  "version": "1.0.0",
+  "type": "panel",
+  "author": "Your Name",
+  
+  "securityLevel": "sandboxed",
+  "allowedAPIs": ["console", "JSON", "Math"],
+  "filesystemAccess": "none",
+  "networkAccess": "none",
+  "environmentAccess": "none"
+}
+```
+
+### 11.3 安全限制
+
+插件在沙箱模式下运行时，以下代码模式会被阻止：
+
+| 模式 | 危险级别 | 说明 |
+|------|----------|------|
+| `process.exit()` | 高 | 强制退出进程 |
+| `child_process` | 严重 | 子进程执行 |
+| `eval()` | 严重 | 动态代码执行 |
+| `Function()` | 严重 | 函数构造器 |
+| `require('fs')` | 高 | 文件系统访问 |
+| `process.env` | 高 | 环境变量访问 |
+| `__dirname` | 中 | 目录路径泄露 |
+| `../` 路径遍历 | 中 | 路径遍历攻击 |
+
+### 11.4 安全的插件开发
+
+```javascript
+'use strict';
+
+module.exports = async function(plugin, context) {
+  plugin.getData = async function(options = {}) {
+    // 使用 fetch 进行网络请求（需要 networkAccess: true）
+    // 沙箱模式下无法使用网络
+    return { status: 'ok', timestamp: Date.now() };
+  };
+  
+  plugin.render = async function(containerId) {
+    // 只能使用安全的 API
+    return {
+      html: '<div>Hello World</div>',
+      styles: '',
+      script: ''
+    };
+  };
+};
+```
+
+### 11.5 沙箱执行
+
+```javascript
+const { PluginSystem, SandboxManager } = require('./lib/plugin-system');
+
+const pluginSystem = new PluginSystem('./plugins', null, {
+  sandboxEnabled: true,
+  sandboxOptions: {
+    defaultTimeout: 30000,
+    defaultMemoryLimit: 128 * 1024 * 1024,
+    defaultPermissionLevel: 'sandboxed'
+  }
+});
+
+// 在沙箱中执行插件代码
+const result = await pluginSystem.executeInSandbox('my-plugin', `
+  return JSON.stringify({ status: 'ok', data: 42 });
+`, {});
+
+console.log(result.result);
+```
+
+---
+
 *构建丰富的插件生态，让 Agent Orchestra 更强大！* 🧩

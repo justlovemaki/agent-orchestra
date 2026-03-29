@@ -17,6 +17,7 @@ const https = require('https');
 const http = require('http');
 const PluginInstaller = require('../lib/plugin-installer');
 const PluginUpdateNotifier = require('../lib/plugin-update-notifier');
+const { SecurityPolicy, DANGEROUS_PATTERNS } = require('../lib/plugin-security-policy');
 
 let pluginInstaller = null;
 let pluginUpdateNotifier = null;
@@ -297,7 +298,19 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
           status: 'pending',
           reviewedBy: null,
           reviewedAt: null,
-          installedBy: []
+          installedBy: [],
+          securityAudit: {
+            level: manifest.securityLevel || 'sandboxed',
+            requiresReview: true,
+            reviewedAt: null,
+            reviewedBy: null,
+            scanResult: null,
+            issues: [],
+            approvedAPIs: manifest.allowedAPIs || [],
+            filesystemAccess: manifest.filesystemAccess || 'none',
+            networkAccess: manifest.networkAccess || 'none',
+            environmentAccess: manifest.environmentAccess || 'none'
+          }
         };
         data.plugins.push(newPlugin);
         if (!saveMarketplaceData(data)) {
@@ -364,6 +377,12 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
           plugin.reviewComment = comment;
         }
         
+        if (plugin.securityAudit) {
+          plugin.securityAudit.requiresReview = false;
+          plugin.securityAudit.reviewedAt = now;
+          plugin.securityAudit.reviewedBy = currentUser.id;
+        }
+        
         if (!saveMarketplaceData(data)) {
           return json(res, 500, { error: '保存失败' });
         }
@@ -375,6 +394,85 @@ function pluginsMarketplaceRoutes(serverWithEvents, deps) {
         });
       } catch (error) {
         console.error('[Marketplace] Review error:', error);
+        return json(res, 500, { error: error.message });
+      }
+    }
+
+    // POST /api/plugins/marketplace/:id/security-scan - Security scan for a plugin
+    const securityScanMatch = pathname.match(/^\/api\/plugins\/marketplace\/([^\/]+)\/security-scan$/);
+    if (securityScanMatch && method === 'POST') {
+      const pluginId = securityScanMatch[1];
+      try {
+        const data = readMarketplaceData();
+        const plugin = data.plugins.find(p => p.id === pluginId);
+        if (!plugin) {
+          return json(res, 404, { error: '插件不存在' });
+        }
+
+        const scanResult = {
+          timestamp: Date.now(),
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          version: plugin.version,
+          issues: [],
+          warnings: [],
+          passed: true
+        };
+
+        if (plugin.manifest.securityLevel) {
+          const policy = new SecurityPolicy({ permissionLevel: plugin.manifest.securityLevel });
+          scanResult.securityLevel = plugin.manifest.securityLevel;
+          scanResult.permissions = policy.getPermissions();
+        } else {
+          scanResult.securityLevel = 'sandboxed';
+        }
+
+        const codePatterns = [
+          { pattern: /process\.exit\s*\(/g, name: 'process.exit', severity: 'high' },
+          { pattern: /child_process/g, name: 'child_process', severity: 'critical' },
+          { pattern: /eval\s*\(/g, name: 'eval', severity: 'critical' },
+          { pattern: /Function\s*\(/g, name: 'Function constructor', severity: 'critical' },
+          { pattern: /require\s*\(\s*['"]fs['"]\s*\)/g, name: 'require fs', severity: 'high' },
+          { pattern: /__dirname/g, name: '__dirname', severity: 'medium' },
+          { pattern: /process\.env/g, name: 'process.env', severity: 'high' },
+          { pattern: /\.\.\//g, name: 'path traversal', severity: 'medium' }
+        ];
+
+        const pluginCode = JSON.stringify(plugin.manifest);
+        for (const { pattern, name, severity } of codePatterns) {
+          if (pattern.test(pluginCode)) {
+            const issue = { name, severity, message: `危险代码模式: ${name}` };
+            if (severity === 'critical' || severity === 'high') {
+              scanResult.issues.push(issue);
+              scanResult.passed = false;
+            } else {
+              scanResult.warnings.push(issue);
+            }
+          }
+        }
+
+        if (plugin.manifest.allowedAPIs) {
+          scanResult.approvedAPIs = plugin.manifest.allowedAPIs;
+        }
+
+        if (plugin.manifest.filesystemAccess) {
+          scanResult.filesystemAccess = plugin.manifest.filesystemAccess;
+        }
+
+        if (plugin.manifest.networkAccess) {
+          scanResult.networkAccess = plugin.manifest.networkAccess;
+        }
+
+        if (plugin.securityAudit) {
+          plugin.securityAudit.scanResult = scanResult;
+          plugin.securityAudit.issues = scanResult.issues;
+          saveMarketplaceData(data);
+        }
+
+        console.log(`[Marketplace] Security scan completed for ${plugin.name}: ${scanResult.passed ? 'PASSED' : 'FAILED'}`);
+        return json(res, 200, { success: true, scanResult });
+      } catch (error) {
+        console.error('[Marketplace] Security scan error:', error);
         return json(res, 500, { error: error.message });
       }
     }

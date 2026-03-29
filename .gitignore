@@ -8,3 +8,4 @@ node_modules/
 data/tokens.json
 data/users.json
 server.log
+sandbox-worker-*.js
