@@ -9591,3 +9591,17 @@ if (marketplaceBtn) {
     window.location.href = '/plugins-marketplace.html';
   });
 }
+
+// 分析洞察入口
+const analyticsBtn = document.getElementById('analyticsBtn');
+if (analyticsBtn) {
+  analyticsBtn.addEventListener('click', () => {
+    const analyticsPanel = document.getElementById('analyticsPanel');
+    if (analyticsPanel) {
+      analyticsPanel.scrollIntoView({ behavior: 'smooth' });
+      if (typeof initAnalyticsComponent === 'function') {
+        initAnalyticsComponent();
+      }
+    }
+  });
+}

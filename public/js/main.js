@@ -16,6 +16,7 @@ import { initNotificationComponent, renderChannels, switchChannelTab } from './c
 import { initCombinationComponent, renderCombinations, switchCombinationTab } from './components/combinations.js';
 import { initAdminComponent, renderAdminUI } from './components/admin.js';
 import { renderOpenClawUI } from './components/openclaw.js';
+import { initAnalyticsComponent } from './components/analytics.js';
 
 let refreshInterval = null;
 

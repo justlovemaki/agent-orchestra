@@ -55,6 +55,7 @@ const healthRoutes = require('./routes/health');
 const pluginsRoutes = require('./routes/plugins');
 const pluginsMarketplaceRoutes = require('./routes/plugins-marketplace');
 const openclawRoutes = require('./routes/openclaw');
+const analyticsRoutes = require('./routes/analytics');
 
 const PORT = parseInt(process.env.PORT) || 3210;
 const ROOT = __dirname;
@@ -1737,6 +1738,7 @@ ensureData().then(async () => {
   pluginsRoutes(serverWithEvents, deps);
   pluginsMarketplaceRoutes(serverWithEvents, deps);
   openclawRoutes(serverWithEvents, deps);
+  analyticsRoutes(serverWithEvents, deps);
 
   console.log(`Registered ${requestHandlers.length} route handlers`);
 

@@ -32,6 +32,7 @@
         </div>
         <button id="refreshBtn" class="ghost">刷新数据</button>
         <button id="exportBtn" class="ghost">导出</button>
+        <button id="analyticsBtn" class="ghost">📊 分析洞察</button>
         <button id="marketplaceBtn" class="ghost">🔌 插件市场</button>
         <span id="lastUpdated" class="muted small"></span>
       </div>
@@ -499,6 +500,44 @@
             <div id="spawnMsg" class="form-msg"></div>
           </div>
           <div id="sessionList" class="session-list"></div>
+        </section>
+
+        <section id="analyticsPanel" class="panel section-panel">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="section-kicker">Analytics</div>
+              <h2>智能分析洞察</h2>
+            </div>
+            <button id="analyticsRefreshBtn" class="ghost small">刷新</button>
+          </div>
+          <div id="analyticsLoading" class="trends-loading">
+            <div class="loading-spinner"></div>
+            <span>加载分析数据...</span>
+          </div>
+          <div id="analyticsEmpty" class="trends-empty hidden">
+            <span class="muted">暂无分析数据</span>
+          </div>
+          <div id="analyticsOverview" class="analytics-overview hidden">
+            <div class="analytics-health-section">
+              <div id="analyticsHealthScore" class="analytics-health-score"></div>
+            </div>
+            <div class="analytics-stats-row">
+              <div id="taskAnalyticsSummary" class="analytics-stats-grid"></div>
+            </div>
+            <div class="analytics-stats-row">
+              <div id="agentAnalyticsSummary" class="analytics-stats-grid"></div>
+            </div>
+            <div class="analytics-stats-row">
+              <div id="workflowAnalyticsSummary" class="analytics-stats-grid"></div>
+            </div>
+            <div class="analytics-stats-row">
+              <div id="anomalyAnalyticsSummary" class="analytics-stats-grid"></div>
+            </div>
+            <div class="analytics-insights-section">
+              <h3>智能洞察</h3>
+              <div id="analyticsInsights" class="analytics-insights-list"></div>
+            </div>
+          </div>
         </section>
 
         <section id="auditPanel" class="panel section-panel">
